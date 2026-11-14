@@ -25,6 +25,7 @@
       @load-more="loadMoreTasks"
       @refresh-open-files="applyOpenFiles"
       @rename="handleRenameTask"
+      @delete="handleDeleteTask"
     />
     <div
       class="chat-container"
@@ -60,6 +61,7 @@
           @close="historyPopoverOpen = false"
           @load-more="loadMoreTasks"
           @rename="handleRenameTask"
+          @delete="handleDeleteTask"
         />
       </div>
       <ChatMessages
@@ -117,7 +119,7 @@ import { useWebViewBridge } from './composables/useWebViewBridge'
 import { useChatFileUpload } from './composables/useChatFileUpload'
 import { ToolCallAccumulator } from './utils/toolCallAccumulator'
 import { fetchChatEmptyState } from './services/chatEmptyStateApi.js'
-import { listConversations, renameConversation, CONVERSATION_PAGE_SIZE } from './services/conversationsApi.js'
+import { listConversations, renameConversation, deleteConversation, CONVERSATION_PAGE_SIZE } from './services/conversationsApi.js'
 import { clearApiConfigCache } from './services/knowledgeBaseApi.js'
 import {
   MAX_SELECTED_OPEN_FILES,
@@ -236,6 +238,34 @@ async function handleRenameTask ({ id, title, previous }) {
     setTimeout(() => {
       if (panelHint.value === msg) panelHint.value = ''
     }, 2000)
+  }
+}
+
+async function handleDeleteTask ({ id }) {
+  const item = taskList.value.find((t) => String(t.id) === String(id))
+  if (!item || item.isDraft) return
+  const wasActive = String(activeTaskId.value) === String(id)
+  try {
+    await deleteConversation(id)
+  } catch (e) {
+    const msg = e?.message || '删除失败'
+    panelHint.value = msg
+    setTimeout(() => {
+      if (panelHint.value === msg) panelHint.value = ''
+    }, 2000)
+    return
+  }
+  taskList.value = taskList.value.filter((t) => String(t.id) !== String(id))
+  try {
+    const res = await sendMessage('deleteSessionDirectory', { conversationId: id })
+    if (res && res.success === false) {
+      console.warn('[App] 工作区目录未删除:', res.message || res)
+    }
+  } catch (e) {
+    console.warn('[App] 工作区目录未删除:', e?.message || e)
+  }
+  if (wasActive) {
+    await handleDesktopNewTask()
   }
 }
 const taskList = ref([])

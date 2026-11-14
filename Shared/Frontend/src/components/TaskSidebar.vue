@@ -249,6 +249,30 @@
         <img :src="renameEditIcon" alt="" class="task-rename-icon" aria-hidden="true" />
         重命名
       </button>
+      <div class="task-rename-sep" aria-hidden="true"></div>
+      <button type="button" class="open-file-ctx-item task-rename-item task-delete-item" @click="openTaskDeleteConfirm">
+        <span
+          class="task-delete-icon"
+          :style="deleteIconMaskStyle"
+          aria-hidden="true"
+        ></span>
+        删除
+      </button>
+    </div>
+
+    <div
+      v-if="deleteConfirm.visible"
+      class="task-delete-confirm"
+      :class="deleteConfirm.side"
+      :style="{ top: deleteConfirm.top + 'px', left: deleteConfirm.left + 'px' }"
+      @mousedown.stop
+    >
+      <div class="task-delete-title">删除任务?</div>
+      <p class="task-delete-desc">删除后，这些任务将从你的所有设备中移除，且无法恢复。</p>
+      <div class="task-delete-actions">
+        <button type="button" class="task-delete-cancel" @click="closeDeleteConfirm">取消</button>
+        <button type="button" class="task-delete-ok" @click="confirmTaskDelete">确认</button>
+      </div>
     </div>
 
     <!-- 打开文件右键菜单：文档可「打开文件夹」；均可「复制名称」 -->
@@ -358,6 +382,7 @@ import sidebarToggleIcon from '../assets/images/sidebar-toggle.png'
 import userIcon from '../assets/images/avatar.png'
 import refreshIcon from '../assets/images/refresh.png'
 import renameEditIcon from '../assets/images/rename-edit.png'
+import deleteTaskIcon from '../assets/images/delete-task.png'
 import { openFileSelectionKey } from '../utils/selectedOpenFiles.js'
 import { getToolAlias } from '../utils/toolAlias.js'
 import { listPersistentOpenFileGroups, resolveOpenFileAppGroupKey, resolveOpenFileTypeIcon } from '../utils/openFileAppIcon.js'
@@ -380,7 +405,7 @@ const props = defineProps({
   error: { type: String, default: '' }
 })
 
-const emit = defineEmits(['toggle', 'new-task', 'select', 'select-open-file', 'load-more', 'refresh-open-files', 'rename'])
+const emit = defineEmits(['toggle', 'new-task', 'select', 'select-open-file', 'load-more', 'refresh-open-files', 'rename', 'delete'])
 
 const { sendMessage, onMessage } = useWebViewBridge()
 
@@ -495,6 +520,19 @@ const editingTitle = ref('')
 const editingOriginal = ref('')
 let taskRenameLock = false
 
+const deleteConfirm = ref({
+  visible: false,
+  id: null,
+  top: 0,
+  left: 0,
+  side: 'arrow-left'
+})
+
+const deleteIconMaskStyle = {
+  WebkitMaskImage: `url(${deleteTaskIcon})`,
+  maskImage: `url(${deleteTaskIcon})`
+}
+
 let createFailTipTimer = null
 const CREATE_FAIL_TIP_MS = 2500
 
@@ -560,6 +598,46 @@ function closeTaskMenu () {
   }
 }
 
+function closeDeleteConfirm () {
+  deleteConfirm.value = {
+    visible: false,
+    id: null,
+    top: 0,
+    left: 0,
+    side: 'arrow-left'
+  }
+}
+
+function openTaskDeleteConfirm (event) {
+  const id = taskMenu.value.id
+  const el = event.currentTarget
+  const rect = el && typeof el.getBoundingClientRect === 'function'
+    ? el.getBoundingClientRect()
+    : { top: taskMenu.value.top, left: taskMenu.value.left, right: taskMenu.value.left + 96, bottom: taskMenu.value.top + 32 }
+  closeTaskMenu()
+  if (id == null) return
+  const boxW = 280
+  const boxH = 148
+  let left = rect.right + 8
+  let top = rect.top - 8
+  let side = 'arrow-left'
+  if (left + boxW > window.innerWidth - 8) {
+    left = Math.max(8, rect.left - boxW - 8)
+    side = 'arrow-right'
+  }
+  if (top + boxH > window.innerHeight - 8) {
+    top = Math.max(8, window.innerHeight - boxH - 8)
+  }
+  deleteConfirm.value = { visible: true, id, top, left, side }
+}
+
+function confirmTaskDelete () {
+  const id = deleteConfirm.value.id
+  closeDeleteConfirm()
+  if (id == null) return
+  emit('delete', { id })
+}
+
 function onTaskItemClick (item) {
   if (isEditingTask(item)) return
   hideHoverTip()
@@ -572,8 +650,9 @@ function openTaskContextMenu (event, item) {
   hideHoverTip()
   closeFileContextMenu()
   closeCreateMenu()
+  closeDeleteConfirm()
   const menuW = 96
-  const menuH = 44
+  const menuH = 88
   let left = event.clientX
   let top = event.clientY
   if (left + menuW > window.innerWidth - 8) {
@@ -713,6 +792,7 @@ function closeSidebarPopovers () {
   closeFileContextMenu()
   closeCreateMenu()
   closeTaskMenu()
+  closeDeleteConfirm()
   hideCreateFailTip()
 }
 
@@ -816,6 +896,7 @@ function openFileContextMenu (event, item) {
   hideHoverTip()
   closeCreateMenu()
   closeTaskMenu()
+  closeDeleteConfirm()
   const path = (item?.fullPath || item?.full_path || '').trim()
   const browser = isBrowserOpenFile(item)
   const canOpenFolder = !browser
@@ -1117,6 +1198,8 @@ async function handleOpenContainingFolder () {
 }
 
 function onGlobalPointerDown (e) {
+  if (e.target?.closest?.('.task-delete-confirm')) return
+  if (deleteConfirm.value.visible) closeDeleteConfirm()
   if (editingId.value != null && !e.target?.closest?.('.task-title-input')) {
     commitTaskRename()
   }
@@ -1135,6 +1218,10 @@ function onGlobalPointerDown (e) {
 
 function onGlobalKeyDown (e) {
   if (e.key !== 'Escape') return
+  if (deleteConfirm.value.visible) {
+    closeDeleteConfirm()
+    return
+  }
   if (editingId.value != null) {
     commitTaskRename()
     return
@@ -1720,8 +1807,86 @@ button.section-header {
 }
 
 .task-rename-menu {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   width: max-content;
+}
+
+.task-rename-sep {
+  height: 1px;
+  margin: 4px 8px;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.task-delete-item {
+  color: #d64545;
+}
+
+.task-delete-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  display: block;
+  background-color: #d64545;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+.task-delete-confirm {
+  position: fixed;
+  z-index: 1200;
+  width: 280px;
+  box-sizing: border-box;
+  padding: 16px 16px 14px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+}
+
+.task-delete-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1f1e1c;
+  line-height: 1.3;
+}
+
+.task-delete-desc {
+  margin: 8px 0 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #6b6963;
+}
+
+.task-delete-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.task-delete-cancel,
+.task-delete-ok {
+  border-radius: 8px;
+  padding: 6px 16px;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.task-delete-cancel {
+  border: 1px solid #d9d9d9;
+  background: #fff;
+  color: #1f1e1c;
+}
+
+.task-delete-ok {
+  border: none;
+  background: #d64545;
+  color: #fff;
 }
 
 .task-rename-item {

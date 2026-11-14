@@ -49,6 +49,30 @@
         <img :src="renameEditIcon" alt="" class="history-rename-icon" aria-hidden="true" />
         重命名
       </button>
+      <div class="history-ctx-sep" aria-hidden="true"></div>
+      <button type="button" class="history-ctx-item history-delete-item" @click="openDeleteConfirm">
+        <span
+          class="history-delete-icon"
+          :style="deleteIconMaskStyle"
+          aria-hidden="true"
+        ></span>
+        删除
+      </button>
+    </div>
+  </Teleport>
+  <Teleport to="body">
+    <div
+      v-if="deleteConfirm.visible"
+      class="history-delete-confirm"
+      :style="{ top: deleteConfirm.top + 'px', left: deleteConfirm.left + 'px' }"
+      @mousedown.stop
+    >
+      <div class="history-delete-title">删除任务?</div>
+      <p class="history-delete-desc">删除后，这些任务将从你的所有设备中移除，且无法恢复。</p>
+      <div class="history-delete-actions">
+        <button type="button" class="history-delete-cancel" @click="closeDeleteConfirm">取消</button>
+        <button type="button" class="history-delete-ok" @click="confirmDelete">确认</button>
+      </div>
     </div>
   </Teleport>
 </template>
@@ -57,6 +81,7 @@
 import { ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { formatRelativeTime, prepareRenameTitle } from '../services/conversationsApi.js'
 import renameEditIcon from '../assets/images/rename-edit.png'
+import deleteTaskIcon from '../assets/images/delete-task.png'
 
 const props = defineProps({
   tasks: { type: Array, default: () => [] },
@@ -67,7 +92,7 @@ const props = defineProps({
   activeId: { type: [String, Number], default: null }
 })
 
-const emit = defineEmits(['select', 'close', 'load-more', 'rename'])
+const emit = defineEmits(['select', 'close', 'load-more', 'rename', 'delete'])
 
 const menu = ref({
   visible: false,
@@ -81,12 +106,56 @@ const editingTitle = ref('')
 const editingOriginal = ref('')
 let renameLock = false
 
+const deleteConfirm = ref({
+  visible: false,
+  id: null,
+  top: 0,
+  left: 0
+})
+
+const deleteIconMaskStyle = {
+  WebkitMaskImage: `url(${deleteTaskIcon})`,
+  maskImage: `url(${deleteTaskIcon})`
+}
+
 function isEditing (item) {
   return editingId.value != null && String(item?.id) === String(editingId.value)
 }
 
 function closeMenu () {
   menu.value = { visible: false, top: 0, left: 0, id: null, title: '' }
+}
+
+function closeDeleteConfirm () {
+  deleteConfirm.value = { visible: false, id: null, top: 0, left: 0 }
+}
+
+function openDeleteConfirm (event) {
+  const id = menu.value.id
+  const el = event.currentTarget
+  const rect = el && typeof el.getBoundingClientRect === 'function'
+    ? el.getBoundingClientRect()
+    : { top: menu.value.top, left: menu.value.left, right: menu.value.left + 96, bottom: menu.value.top + 32 }
+  closeMenu()
+  if (id == null) return
+  const boxW = 280
+  const boxH = 148
+  let left = rect.right + 8
+  let top = rect.top - 8
+  if (left + boxW > window.innerWidth - 8) {
+    left = Math.max(8, rect.left - boxW - 8)
+  }
+  if (top + boxH > window.innerHeight - 8) {
+    top = Math.max(8, window.innerHeight - boxH - 8)
+  }
+  deleteConfirm.value = { visible: true, id, top, left }
+}
+
+function confirmDelete () {
+  const id = deleteConfirm.value.id
+  closeDeleteConfirm()
+  if (id == null) return
+  emit('delete', { id })
 }
 
 function onItemClick (item) {
@@ -97,8 +166,9 @@ function onItemClick (item) {
 
 function openMenu (event, item) {
   if (item?.isDraft) return
+  closeDeleteConfirm()
   const menuW = 96
-  const menuH = 44
+  const menuH = 88
   let left = event.clientX
   let top = event.clientY
   if (left + menuW > window.innerWidth - 8) {
@@ -145,6 +215,8 @@ function commitRename () {
 }
 
 function onPointerDown (e) {
+  if (e.target?.closest?.('.history-delete-confirm')) return
+  if (deleteConfirm.value.visible) closeDeleteConfirm()
   if (e.target?.closest?.('.history-ctx-menu')) return
   if (editingId.value != null && !e.target?.closest?.('.history-title-input')) {
     commitRename()
@@ -154,6 +226,11 @@ function onPointerDown (e) {
 
 function onKeyDown (e) {
   if (e.key !== 'Escape') return
+  if (deleteConfirm.value.visible) {
+    e.stopPropagation()
+    closeDeleteConfirm()
+    return
+  }
   if (editingId.value != null) {
     e.stopPropagation()
     commitRename()
@@ -296,6 +373,8 @@ function onHistoryScroll (e) {
 .history-ctx-menu {
   position: fixed;
   z-index: 1100;
+  display: flex;
+  flex-direction: column;
   width: max-content;
   padding: 4px;
   border-radius: 8px;
@@ -331,6 +410,82 @@ function onHistoryScroll (e) {
 
 .history-ctx-item:hover {
   background: rgba(0, 0, 0, 0.06);
+}
+
+.history-ctx-sep {
+  height: 1px;
+  margin: 4px 8px;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.history-delete-item {
+  color: #d64545;
+}
+
+.history-delete-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  display: block;
+  background-color: #d64545;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+.history-delete-confirm {
+  position: fixed;
+  z-index: 1200;
+  width: 280px;
+  box-sizing: border-box;
+  padding: 16px 16px 14px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+}
+
+.history-delete-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1f1e1c;
+  line-height: 1.3;
+}
+
+.history-delete-desc {
+  margin: 8px 0 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #6b6963;
+}
+
+.history-delete-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.history-delete-cancel,
+.history-delete-ok {
+  border-radius: 8px;
+  padding: 6px 16px;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.history-delete-cancel {
+  border: 1px solid #d9d9d9;
+  background: #fff;
+  color: #1f1e1c;
+}
+
+.history-delete-ok {
+  border: none;
+  background: #d64545;
+  color: #fff;
 }
 
 .history-item:hover {

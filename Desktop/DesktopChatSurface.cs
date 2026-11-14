@@ -594,6 +594,7 @@ namespace EasyWriteClient.Desktop
                 }
             });
             _bridge.RegisterHandler("openContainingFolder", HandleOpenContainingFolderAsync);
+            _bridge.RegisterHandler("deleteSessionDirectory", HandleDeleteSessionDirectoryAsync);
             _bridge.RegisterHandler("createOpenFile", HandleCreateOpenFileAsync);
             _bridge.RegisterHandler("listUserCheckpoints", HandleListUserCheckpointsAsync);
             _bridge.RegisterHandler("restoreUserCheckpoint", HandleRestoreUserCheckpointAsync);
@@ -911,6 +912,65 @@ namespace EasyWriteClient.Desktop
             {
                 return new { success = false, message = ex.Message };
             }
+        }
+
+        /// <summary>删除本机会话工作区目录 sessions/{id}。目录不存在视为成功。不调用会新建目录的 GetSessionDirectory。</summary>
+        private Task<object> HandleDeleteSessionDirectoryAsync(object data)
+        {
+            try
+            {
+                var jo = data as JObject ?? (data != null ? JObject.FromObject(data) : null);
+                string raw = (jo?["conversationId"] ?? jo?["conversation_id"] ?? jo?["id"])?.ToString()?.Trim();
+                if (!IsDigitsOnlyConversationId(raw))
+                {
+                    return Task.FromResult<object>(new { success = false, message = "无效的会话" });
+                }
+
+                string root = UserService.Instance == null ? null : UserService.Instance.WorkspaceRootEffective;
+                if (string.IsNullOrWhiteSpace(root))
+                {
+                    return Task.FromResult<object>(new { success = false, message = "工作区未就绪" });
+                }
+
+                string sessionsRoot = Path.GetFullPath(Path.Combine(root, "sessions"));
+                string dir = Path.GetFullPath(Path.Combine(sessionsRoot, raw));
+                string prefix = sessionsRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                    + Path.DirectorySeparatorChar;
+                if (!dir.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Task.FromResult<object>(new { success = false, message = "无效的会话目录" });
+                }
+
+                if (Directory.Exists(dir))
+                {
+                    Directory.Delete(dir, true);
+                }
+
+                return Task.FromResult<object>(new { success = true });
+            }
+            catch (Exception ex)
+            {
+                return Task.FromResult<object>(new { success = false, message = ex.Message });
+            }
+        }
+
+        private static bool IsDigitsOnlyConversationId(string raw)
+        {
+            if (string.IsNullOrEmpty(raw) || raw == "0")
+            {
+                return false;
+            }
+
+            for (int i = 0; i < raw.Length; i++)
+            {
+                char c = raw[i];
+                if (c < '0' || c > '9')
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         /// <summary>在资源管理器中打开文件所在文件夹（并尽量选中该文件）。</summary>

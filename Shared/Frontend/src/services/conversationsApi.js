@@ -96,6 +96,34 @@ export async function renameConversation (id, title) {
 }
 
 /**
+ * 删除已落库会话。压缩摘要和服务端视觉图由后端清掉。
+ */
+export async function deleteConversation (id) {
+  const { headers, baseUrl } = await buildHeaders(true)
+  if (!headers.get('Authorization')) {
+    throw new Error('未登录')
+  }
+  const url = `${baseUrl.replace(/\/$/, '')}/conversations/delete`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ id: Number(id) })
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    let detail = ''
+    try {
+      const parsed = JSON.parse(text)
+      if (parsed && typeof parsed.detail === 'string') detail = parsed.detail
+    } catch {
+      detail = ''
+    }
+    throw new Error(detail || '删除失败')
+  }
+  return res.json()
+}
+
+/**
  * 后端会话时间多为 utcnow() 的 naive ISO（无时区后缀）。
  * 浏览器会把无后缀的 ISO 当成本地时间，中国区会固定偏早 8 小时 → 「刚提问却显示 8 小时前」。
  * 无时区时按 UTC 解析。
