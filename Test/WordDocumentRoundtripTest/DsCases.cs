@@ -1262,13 +1262,7 @@ namespace WordDocumentRoundtripTest
                     && Eq(spanA, "scope", "paragraph") && Eq(spanB, "scope", "paragraph"),
                     Dump(spanA) + " / " + Dump(spanB));
                 JObject h2 = One(s, id, Map("action", "apply", "target_codes", codeB, "structure", "heading_2"));
-                JObject listedH2 = Act(s, id, "list_spans");
-                JObject afterH2 = SpanByCode(Arr(listedH2, "spans"), codeB);
-                string contentH2 = Content(s, id);
-                Console.WriteLine("SPAN-H2 apply=" + Dump(h2));
-                Console.WriteLine("SPAN-H2 list=" + Dump(listedH2));
-                Console.WriteLine("SPAN-H2 codeB=" + codeB + " inContent=" + (contentH2.IndexOf(codeB, StringComparison.Ordinal) >= 0));
-                Console.WriteLine("SPAN-H2 content=" + Trim(contentH2));
+                JObject afterH2 = SpanByCode(Arr(Act(s, id, "list_spans"), "spans"), codeB);
                 Ok(run, "ds-more-span-h2",
                     OkFlag(h2) && afterH2 != null && Eq(afterH2, "structure", "heading_2") && Eq(afterH2, "scope", "paragraph"),
                     Dump(afterH2));
