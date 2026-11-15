@@ -13,13 +13,17 @@ namespace WordDocumentRoundtripTest
     /// <summary>样式工具。对照 docs/测试/word测试/样式工具。铺稿用 COM，列出和套用走 F_document_structure。</summary>
     internal static class DsCases
     {
-        public const int Target = 61;
+        public const int Target = 91;
 
         private static readonly string[] HeadingNames = { "标题 1", "heading 1", "Heading 1" };
         private static readonly string[] HeadingCharNames = { "标题 1 字符", "heading 1 Char", "Heading 1 Char" };
         private static readonly string[] BodyNames = { "正文", "Normal" };
         private static readonly string[] ListNames = { "列表段落", "List Paragraph" };
         private static readonly string[] LinkNames = { "超链接", "Hyperlink" };
+        private static readonly string[] Heading2Names = { "标题 2", "heading 2", "Heading 2" };
+        private static readonly string[] Heading9Names = { "标题 9", "heading 9", "Heading 9" };
+        private static readonly string[] TitleNames = { "标题", "Title" };
+        private static readonly string[] SubtitleNames = { "副标题", "Subtitle" };
 
         private static HashSet<string> Only;
 
@@ -52,6 +56,7 @@ namespace WordDocumentRoundtripTest
             RunSpans(run, s);
             RunApply(run, s);
             RunEdit(run, s);
+            RunMore(run, s);
         }
 
         private static bool Want(params string[] ids)
@@ -929,6 +934,332 @@ namespace WordDocumentRoundtripTest
             if (Want("ds-edit-body")) RunEditBody(run, s);
         }
 
+        private static void RunMore(TestRun run, WdSession s)
+        {
+            if (Want(
+                "ds-more-h3-outline", "ds-more-h9-outline", "ds-more-one-heading",
+                "ds-more-action-bad", "ds-more-emphasis-plain", "ds-more-list-stable"))
+            {
+                RunMoreCatalog(run, s);
+            }
+
+            if (Want(
+                "ds-more-missing-structure", "ds-more-missing-code", "ds-more-empty-items",
+                "ds-more-apply-second", "ds-more-apply-h2", "ds-more-apply-h9",
+                "ds-more-apply-title", "ds-more-apply-subtitle", "ds-more-apply-index",
+                "ds-more-apply-body-keeps", "ds-more-apply-text-keeps", "ds-more-apply-char-para",
+                "ds-more-items-two", "ds-more-apply-warn"))
+            {
+                RunMoreApply(run, s);
+            }
+
+            if (Want("ds-more-span-two", "ds-more-span-h2", "ds-more-span-after"))
+            {
+                RunMoreSpans(run, s);
+            }
+
+            if (Want(
+                "ds-more-edit-unknown", "ds-more-edit-no-structure", "ds-more-h1-not-h2",
+                "ds-more-create-para", "ds-more-create-none", "ds-more-create-struct", "ds-more-create-apply"))
+            {
+                RunMoreEdit(run, s);
+            }
+        }
+
+        private static void RunMoreCatalog(TestRun run, WdSession s)
+        {
+            string[] ids =
+            {
+                "ds-more-h3-outline", "ds-more-h9-outline", "ds-more-one-heading",
+                "ds-more-action-bad", "ds-more-emphasis-plain", "ds-more-list-stable"
+            };
+            string path, id;
+            if (!Open(s, "巩固目录。", out path, out id))
+            {
+                FailMany(run, "铺巩固目录稿失败", ids);
+                return;
+            }
+
+            try
+            {
+                JObject listed = Act(s, id, "list_styles");
+                JArray styles = Arr(listed, "styles");
+                JObject heading3 = Find(styles, "heading_3");
+                JObject heading9 = Find(styles, "heading_9");
+                int headingCount = 0;
+                foreach (JObject row in Each(styles))
+                {
+                    if (Eq(row, "structure", "heading_1"))
+                    {
+                        headingCount++;
+                    }
+                }
+
+                Ok(run, "ds-more-h3-outline",
+                    heading3 != null && Eq(Obj(heading3, "paragraph_format"), "outline_level", "wdOutlineLevel3"),
+                    Dump(heading3));
+                Ok(run, "ds-more-h9-outline",
+                    heading9 != null && Eq(Obj(heading9, "paragraph_format"), "outline_level", "wdOutlineLevel9"),
+                    Dump(heading9));
+                Ok(run, "ds-more-one-heading", headingCount == 1, "heading_1=" + headingCount);
+                JObject bad = Act(s, id, "list_foo");
+                Ok(run, "ds-more-action-bad", !OkFlag(bad) && Blob(bad, "action 须是"), Dump(bad));
+                JObject emphasis = Find(styles, "明显强调");
+                bool emphasisBuiltin = HostHasStyle(s, path, "明显强调", "Intense Emphasis");
+                Ok(run, "ds-more-emphasis-plain",
+                    emphasisBuiltin
+                        ? emphasis != null && Eq(emphasis, "support", "character") && Obj(emphasis, "paragraph_format") == null
+                        : emphasis == null,
+                    Dump(emphasis));
+                string support = Str(Find(styles, "heading_1"), "support");
+                JObject again = Act(s, id, "list_styles");
+                JArray second = Arr(again, "styles");
+                Ok(run, "ds-more-list-stable",
+                    support.Length > 0 && support == Str(Find(second, "heading_1"), "support") && styles.Count == second.Count,
+                    support + " / " + second.Count);
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunMoreApply(TestRun run, WdSession s)
+        {
+            string[] ids =
+            {
+                "ds-more-missing-structure", "ds-more-missing-code", "ds-more-empty-items",
+                "ds-more-apply-second", "ds-more-apply-h2", "ds-more-apply-h9",
+                "ds-more-apply-title", "ds-more-apply-subtitle", "ds-more-apply-index",
+                "ds-more-apply-body-keeps", "ds-more-apply-text-keeps", "ds-more-apply-char-para",
+                "ds-more-items-two", "ds-more-apply-warn"
+            };
+            string path, id;
+            if (!Open(s, "第一句甲。\r第二句乙。\r二级这句。\r九级这句。\r标题这句。\r副题这句。\r甲甲字。\r甲段。\r乙段。\r只套好字。\r整段链。\r丙句。\r丁句。", out path, out id))
+            {
+                FailMany(run, "铺巩固套用稿失败", ids);
+                return;
+            }
+
+            try
+            {
+                Materialize(s, path);
+                string body = Content(s, id);
+                string first = Sent(body, "第一句甲");
+                string second = Sent(body, "第二句乙");
+                string level2 = Sent(body, "二级这句");
+                string level9 = Sent(body, "九级这句");
+                string title = Sent(body, "标题这句");
+                string subtitle = Sent(body, "副题这句");
+                string repeat = Sent(body, "甲甲字");
+                string keepA = Sent(body, "甲段");
+                string slice = Sent(body, "只套好字");
+                string link = Sent(body, "整段链");
+                string itemC = Sent(body, "丙句");
+                string itemD = Sent(body, "丁句");
+                JObject missStructure = One(s, id, Map("action", "apply", "target_codes", first));
+                Ok(run, "ds-more-missing-structure",
+                    !OkFlag(missStructure) && Blob(missStructure, "structure") && !StyleHas(s, path, "第一句甲", HeadingNames),
+                    Dump(missStructure));
+                JObject missCode = One(s, id, Map("action", "apply", "structure", "heading_1"));
+                Ok(run, "ds-more-missing-code", !OkFlag(missCode) && Blob(missCode, "target_codes"), Dump(missCode));
+                JObject empty = Act(s, id, Map("action", "apply", "items", new List<Dictionary<string, object>>()));
+                Ok(run, "ds-more-empty-items", !OkFlag(empty) && Blob(empty, "没有套上"), Dump(empty));
+                JObject secondApply = One(s, id, Map("action", "apply", "target_codes", second, "structure", "heading_1"));
+                Ok(run, "ds-more-apply-second",
+                    OkFlag(secondApply) && StyleHas(s, path, "第二句乙", HeadingNames) && !StyleHas(s, path, "第一句甲", HeadingNames),
+                    Dump(secondApply));
+                JObject h2 = One(s, id, Map("action", "apply", "target_codes", level2, "structure", "heading_2"));
+                Ok(run, "ds-more-apply-h2",
+                    OkFlag(h2) && StyleHas(s, path, "二级这句", Heading2Names) && !StyleHas(s, path, "二级这句", HeadingNames),
+                    Dump(h2));
+                JObject h9 = One(s, id, Map("action", "apply", "target_codes", level9, "structure", "heading_9"));
+                Ok(run, "ds-more-apply-h9", OkFlag(h9) && StyleHas(s, path, "九级这句", Heading9Names), Dump(h9));
+                JObject titleApply = One(s, id, Map("action", "apply", "target_codes", title, "structure", "title"));
+                Ok(run, "ds-more-apply-title",
+                    OkFlag(titleApply) && StyleIs(s, path, "标题这句", TitleNames) && !StyleHas(s, path, "标题这句", HeadingNames),
+                    Dump(titleApply));
+                JObject subtitleApply = One(s, id, Map("action", "apply", "target_codes", subtitle, "structure", "subtitle"));
+                Ok(run, "ds-more-apply-subtitle",
+                    OkFlag(subtitleApply) && StyleIs(s, path, "副题这句", SubtitleNames) && !StyleHas(s, path, "副题这句", Heading2Names),
+                    Dump(subtitleApply));
+                JObject indexed = One(s, id, Map(
+                    "action", "apply", "target_codes", repeat, "structure", "超链接",
+                    "text", Map("value", "甲", "index", 1)));
+                Ok(run, "ds-more-apply-index",
+                    OkFlag(indexed) && SliceNthHas(s, path, "甲甲字", "甲", 1, LinkNames) && !SliceNthHas(s, path, "甲甲字", "甲", 2, LinkNames),
+                    Dump(indexed));
+                bool painted = PaintParagraph(s, path, "乙段。", HeadingNames);
+                JObject bodyApply = One(s, id, Map("action", "apply", "target_codes", keepA, "structure", "body"));
+                Ok(run, "ds-more-apply-body-keeps",
+                    painted && OkFlag(bodyApply) && StyleHas(s, path, "甲段", BodyNames) && StyleHas(s, path, "乙段", HeadingNames),
+                    Dump(bodyApply));
+                JObject textApply = One(s, id, Map(
+                    "action", "apply", "target_codes", slice, "structure", "heading_1", "text", "好"));
+                Ok(run, "ds-more-apply-text-keeps",
+                    OkFlag(textApply) && Blob(textApply, "段落格式没有发生作用")
+                    && StyleHas(s, path, "只套好字", BodyNames) && !StyleHas(s, path, "只套好字", HeadingNames),
+                    Dump(textApply));
+                JObject charApply = One(s, id, Map(
+                    "action", "apply", "target_codes", link, "structure", "超链接", "scope", "paragraph"));
+                Ok(run, "ds-more-apply-char-para",
+                    OkFlag(charApply) && SliceHas(s, path, "整段链", "整", LinkNames)
+                    && StyleHas(s, path, "整段链", BodyNames) && !StyleHas(s, path, "整段链", LinkNames),
+                    Dump(charApply));
+                JObject both = Act(s, id, Map(
+                    "action", "apply",
+                    "items", new List<Dictionary<string, object>>
+                    {
+                        Map("target_codes", itemC, "structure", "heading_1"),
+                        Map("target_codes", itemD, "structure", "heading_2")
+                    }));
+                Ok(run, "ds-more-items-two",
+                    OkFlag(both) && StyleHas(s, path, "丙句", HeadingNames) && StyleHas(s, path, "丁句", Heading2Names),
+                    Dump(both));
+                JObject warn = One(s, id, Map(
+                    "action", "apply", "target_codes", first, "structure", "heading_1",
+                    "paragraph_format", Map("space_before", 40)));
+                Ok(run, "ds-more-apply-warn",
+                    OkFlag(warn) && Blob(warn, "format_warnings") && StyleHas(s, path, "第一句甲", HeadingNames),
+                    Dump(warn));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunMoreSpans(TestRun run, WdSession s)
+        {
+            string[] ids = { "ds-more-span-two", "ds-more-span-h2", "ds-more-span-after" };
+            string path, id;
+            if (!Open(s, "甲句。\r乙句。", out path, out id))
+            {
+                FailMany(run, "铺巩固分截稿失败", ids);
+                return;
+            }
+
+            try
+            {
+                string body = Content(s, id);
+                string codeA = Sent(body, "甲句");
+                string codeB = Sent(body, "乙句");
+                JArray spans = Arr(Act(s, id, "list_spans"), "spans");
+                JObject spanA = SpanByCode(spans, codeA);
+                JObject spanB = SpanByCode(spans, codeB);
+                Ok(run, "ds-more-span-two",
+                    spanA != null && spanB != null && codeA != codeB
+                    && Eq(spanA, "structure", "body") && Eq(spanB, "structure", "body")
+                    && Eq(spanA, "scope", "paragraph") && Eq(spanB, "scope", "paragraph"),
+                    Dump(spanA) + " / " + Dump(spanB));
+                JObject h2 = One(s, id, Map("action", "apply", "target_codes", codeB, "structure", "heading_2"));
+                JObject afterH2 = SpanByCode(Arr(Act(s, id, "list_spans"), "spans"), codeB);
+                Ok(run, "ds-more-span-h2",
+                    OkFlag(h2) && afterH2 != null && Eq(afterH2, "structure", "heading_2") && Eq(afterH2, "scope", "paragraph"),
+                    Dump(afterH2));
+                JObject h1 = One(s, id, Map("action", "apply", "target_codes", codeA, "structure", "heading_1"));
+                JArray later = Arr(Act(s, id, "list_spans"), "spans");
+                JObject afterH1 = SpanByCode(later, codeA);
+                JObject stillH2 = SpanByCode(later, codeB);
+                Ok(run, "ds-more-span-after",
+                    OkFlag(h1) && afterH1 != null && Eq(afterH1, "structure", "heading_1")
+                    && stillH2 != null && Eq(stillH2, "structure", "heading_2"),
+                    Dump(afterH1) + " / " + Dump(stillH2));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunMoreEdit(TestRun run, WdSession s)
+        {
+            string[] ids = { "ds-more-edit-unknown", "ds-more-edit-no-structure", "ds-more-h1-not-h2" };
+            string path, id;
+            if (!Open(s, "改一不改二。", out path, out id))
+            {
+                FailMany(run, "铺巩固改稿失败", ids);
+                return;
+            }
+
+            try
+            {
+                JObject unknown = Act(s, id, Map("action", "customize", "structure", "没有这种样式", "text_format", Map("font_size", 16)));
+                Ok(run, "ds-more-edit-unknown", !OkFlag(unknown) && Blob(unknown, "没有样式"), Dump(unknown));
+                JObject missing = Act(s, id, Map("action", "customize", "text_format", Map("font_size", 16)));
+                Ok(run, "ds-more-edit-no-structure", !OkFlag(missing) && Blob(missing, "structure"), Dump(missing));
+                JObject edited = Act(s, id, Map("action", "customize", "structure", "heading_1", "text_format", Map("font_size", 19)));
+                JArray styles = Arr(Act(s, id, "list_styles"), "styles");
+                JObject heading1 = Find(styles, "heading_1");
+                JObject heading2 = Find(styles, "heading_2");
+                Ok(run, "ds-more-h1-not-h2",
+                    OkFlag(edited) && heading2 != null
+                    && Near(Obj(heading1, "text_format"), "font_size", 19, 0.6)
+                    && !Near(Obj(heading2, "text_format"), "font_size", 19, 0.6),
+                    Dump(heading1) + " / " + Dump(heading2));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+
+            string[] createIds = { "ds-more-create-para", "ds-more-create-none", "ds-more-create-struct", "ds-more-create-apply" };
+            if (!Want(createIds))
+            {
+                return;
+            }
+
+            if (!Open(s, "套上用。", out path, out id))
+            {
+                FailMany(run, "铺巩固新建稿失败", createIds);
+                return;
+            }
+
+            try
+            {
+                JObject withStructure = Act(s, id, Map(
+                    "action", "customize", "create", true, "name", "巩固坏", "structure", "heading_1",
+                    "paragraph_format", Map("left_indent", 12)));
+                JObject para = Act(s, id, Map(
+                    "action", "customize", "create", true, "name", "巩固段",
+                    "paragraph_format", Map("left_indent", 12)));
+                JObject none = Act(s, id, Map("action", "customize", "create", true, "name", "巩固空"));
+                JObject created = Act(s, id, Map(
+                    "action", "customize", "create", true, "name", "巩固用",
+                    "text_format", Map("font_size", 15)));
+                JArray styles = Arr(Act(s, id, "list_styles"), "styles");
+                JObject paraRow = Find(styles, "巩固段");
+                JObject noneRow = Find(styles, "巩固空");
+                JObject useRow = Find(styles, "巩固用");
+                Ok(run, "ds-more-create-struct",
+                    !OkFlag(withStructure) && Blob(withStructure, "structure") && Find(styles, "巩固坏") == null,
+                    Dump(withStructure));
+                Ok(run, "ds-more-create-para",
+                    OkFlag(para) && paraRow != null && Eq(paraRow, "support", "paragraph")
+                    && Obj(paraRow, "text_format") == null
+                    && Near(Obj(paraRow, "paragraph_format"), "left_indent", 12, 1.2)
+                    && Find(styles, "巩固段 字符") == null,
+                    Dump(paraRow));
+                Ok(run, "ds-more-create-none",
+                    OkFlag(none) && noneRow != null && Eq(noneRow, "support", "paragraph") && Find(styles, "巩固空 字符") == null,
+                    Dump(noneRow));
+                string body = Content(s, id);
+                string code = Sent(body, "套上用");
+                JObject applied = One(s, id, Map(
+                    "action", "apply", "target_codes", code, "structure", "巩固用", "text", "用"));
+                Ok(run, "ds-more-create-apply",
+                    OkFlag(created) && useRow != null && Eq(useRow, "support", "character")
+                    && Near(Obj(useRow, "text_format"), "font_size", 15, 0.6)
+                    && Obj(useRow, "paragraph_format") == null
+                    && OkFlag(applied) && SliceHas(s, path, "套上用", "用", new[] { "巩固用" }),
+                    Dump(useRow) + Dump(applied));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
         private static void RunEditHeading(TestRun run, WdSession s)
         {
             string path, id;
@@ -1731,6 +2062,29 @@ namespace WordDocumentRoundtripTest
             return ok && HasName(found, names);
         }
 
+        private static bool StyleIs(WdSession s, string path, string needle, string[] names)
+        {
+            string found = "";
+            bool ok = s.IsWps
+                ? s.TryWpsDoc(path, doc =>
+                {
+                    found = ParaStyleLate(doc, needle);
+                    return found.Length > 0;
+                })
+                : s.OnWordDoc(path, doc =>
+                {
+                    Word.Paragraph para = FindPara(doc, needle);
+                    if (para == null)
+                    {
+                        return false;
+                    }
+
+                    found = ParagraphStyleName(doc, para);
+                    return found.Length > 0;
+                });
+            return ok && NameIs(found, names);
+        }
+
         private static string ParagraphStyleName(Word.Document doc, Word.Paragraph para)
         {
             object style = para.get_Style();
@@ -1767,6 +2121,30 @@ namespace WordDocumentRoundtripTest
                 : s.OnWordDoc(path, doc =>
                 {
                     Word.Range range = Slice(doc, paraNeedle, slice);
+                    if (range == null)
+                    {
+                        return false;
+                    }
+
+                    found = StyleName(range);
+                    return true;
+                });
+            return ok && HasName(found, names);
+        }
+
+        private static bool SliceNthHas(WdSession s, string path, string paraNeedle, string slice, int nth, string[] names)
+        {
+            string found = "";
+            bool ok = s.IsWps
+                ? s.TryWpsDoc(path, doc =>
+                {
+                    object range = NthLate(doc, paraNeedle, slice, nth);
+                    found = StyleNameLate(doc, range);
+                    return range != null;
+                })
+                : s.OnWordDoc(path, doc =>
+                {
+                    Word.Range range = Nth(doc, paraNeedle, slice, nth);
                     if (range == null)
                     {
                         return false;
@@ -2525,6 +2903,24 @@ namespace WordDocumentRoundtripTest
             foreach (string name in names)
             {
                 if (found.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool NameIs(string found, string[] names)
+        {
+            if (string.IsNullOrEmpty(found))
+            {
+                return false;
+            }
+
+            foreach (string name in names)
+            {
+                if (string.Equals(found.Trim(), name, StringComparison.OrdinalIgnoreCase))
                 {
                     return true;
                 }
