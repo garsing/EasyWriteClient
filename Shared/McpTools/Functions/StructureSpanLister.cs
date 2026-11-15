@@ -3,11 +3,10 @@ using System.Collections.Generic;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
-using WordAddIn1.DocumentMapping;
 
 namespace WordAddIn1
 {
-    /// <summary>列出每一截：display 与 OOXML 字流对位，不取 Range。</summary>
+    /// <summary>列出每一截：OOXML 里数这串字是第几次，再到 display 里搜。不取 Range。</summary>
     public static class StructureSpanLister
     {
         private static readonly XNamespace W = OpenXmlPackage.W;
@@ -50,49 +49,50 @@ namespace WordAddIn1
                 }
             }
 
-            string ooxmlStory = BuildStory(body, byId, bodyStyle, out List<Piece> pieces);
-            string displayStory = DisplayStoryConvert.ToStory(display);
-            List<SentenceSlot> slots = SentenceSlots(display);
+            BuildStory(body, byId, bodyStyle, out List<Piece> pieces);
+            string displayChars = DisplayChars(display, out int[] origin);
+            List<SentenceSlot> slots = SentenceSlots(display, origin);
             var spans = new List<Dictionary<string, object>>();
             var errors = new List<string>();
-            bool aligned = string.Equals(ooxmlStory, displayStory, StringComparison.Ordinal);
 
             foreach (Piece piece in pieces)
             {
-                if (string.IsNullOrEmpty(piece.Text))
+                string shown = TrimMark(piece.Text);
+                if (shown.Length == 0 || piece.Ordinal < 1)
                 {
+                    if (piece.Text.Length > 0)
+                    {
+                        errors.Add("对不上「" + shown + "」。");
+                    }
+
                     continue;
                 }
 
-                int at = aligned ? piece.Start : NthIndex(displayStory, piece.Text, piece.Ordinal);
+                int at = NthIndex(displayChars, shown, piece.Ordinal);
                 if (at < 0)
                 {
-                    errors.Add("对不上「" + TrimMark(piece.Text) + "」。");
+                    errors.Add("对不上「" + shown + "」。");
                     continue;
                 }
 
-                SentenceSlot slot = SlotAt(slots, at);
-                if (slot == null)
+                SentenceSlot slot = SlotAt(slots, origin[at]);
+                if (slot == null || slot.StreamStart < 0)
                 {
-                    errors.Add("「" + TrimMark(piece.Text) + "」没有落在句子码里。");
+                    errors.Add("「" + shown + "」没有落在句子码里。");
                     continue;
                 }
 
-                StructureStyleRecord style = piece.Style;
-                string scope = piece.Scope;
-                string shown = piece.Text.TrimEnd('\r', '\a', '\n');
-                bool whole = scope == "paragraph"
-                    && at == slot.Start
-                    && at + piece.Text.Length >= slot.End - TrailingMarks(displayStory, slot);
+                string sentence = displayChars.Substring(slot.StreamStart, slot.StreamEnd - slot.StreamStart);
+                bool whole = piece.Scope == "paragraph" && TrimMark(sentence) == shown;
                 var row = new Dictionary<string, object>
                 {
                     ["target_codes"] = slot.Code,
-                    ["structure"] = style.Structure,
-                    ["scope"] = scope
+                    ["structure"] = piece.Style.Structure,
+                    ["scope"] = piece.Scope
                 };
-                if (!whole && shown.Length > 0)
+                if (!whole)
                 {
-                    int index = OccurrenceIn(displayStory, slot.Start, slot.End, shown, at);
+                    int index = OccurrenceIn(displayChars, slot.StreamStart, slot.StreamEnd, shown, at);
                     if (index > 1)
                     {
                         row["text"] = new Dictionary<string, object>
@@ -107,7 +107,7 @@ namespace WordAddIn1
                     }
                 }
 
-                foreach (KeyValuePair<string, object> pair in style.FormatsForScope(scope))
+                foreach (KeyValuePair<string, object> pair in piece.Style.FormatsForScope(piece.Scope))
                 {
                     row[pair.Key] = pair.Value;
                 }
@@ -125,31 +125,122 @@ namespace WordAddIn1
                 data["errors"] = errors;
             }
 
-            if (!aligned)
-            {
-                data["align_warning"] = "OOXML 字流与 display 字流长度不一致，已按出现次序对位。";
-            }
-
             return data;
         }
 
-        private static int TrailingMarks(string story, SentenceSlot slot)
+        private static string DisplayChars(string display, out int[] origin)
         {
-            int end = Math.Min(slot.End, story.Length);
-            int n = 0;
-            for (int i = end - 1; i >= slot.Start; i--)
+            var chars = new StringBuilder();
+            var map = new List<int>();
+            int i = 0;
+            while (i < display.Length)
             {
-                char c = story[i];
-                if (c == '\r' || c == '\a' || c == '\n')
+                if (StartsWith(display, i, "<c12/>"))
                 {
-                    n++;
+                    chars.Append('\f');
+                    map.Add(i);
+                    i += 6;
                     continue;
                 }
 
-                break;
+                if (display[i] == '^' && i + 1 < display.Length && display[i + 1] == 'b')
+                {
+                    chars.Append('\f');
+                    map.Add(i);
+                    i += 2;
+                    continue;
+                }
+
+                int skip = MarkupLength(display, i);
+                if (skip > 0)
+                {
+                    i += skip;
+                    continue;
+                }
+
+                chars.Append(display[i] == '\n' ? '\x0B' : display[i]);
+                map.Add(i);
+                i++;
             }
 
-            return n;
+            origin = map.ToArray();
+            return chars.ToString();
+        }
+
+        private static int MarkupLength(string display, int i)
+        {
+            if (display[i] == '[')
+            {
+                if (StartsWith(display, i, "[S_")
+                    || StartsWith(display, i, "[P_")
+                    || StartsWith(display, i, "[in_table=")
+                    || StartsWith(display, i, "[T_")
+                    || StartsWith(display, i, "[EMPTY]"))
+                {
+                    int end = display.IndexOf(']', i);
+                    return end < 0 ? display.Length - i : end - i + 1;
+                }
+            }
+
+            if (display[i] != '<')
+            {
+                return 0;
+            }
+
+            int chart = ElementLength(display, i, "<Chart", "</Chart");
+            if (chart > 0)
+            {
+                return chart;
+            }
+
+            string[] tags =
+            {
+                "<image", "<autonum", "<table", "</table", "<tr", "</tr", "<td", "</td", "<th", "</th"
+            };
+            foreach (string tag in tags)
+            {
+                int length = ElementLength(display, i, tag, null);
+                if (length > 0)
+                {
+                    return length;
+                }
+            }
+
+            return 0;
+        }
+
+        private static int ElementLength(string text, int i, string open, string close)
+        {
+            if (!StartsWith(text, i, open))
+            {
+                return 0;
+            }
+
+            int gt = text.IndexOf('>', i);
+            if (gt < 0)
+            {
+                return text.Length - i;
+            }
+
+            if (close == null || (gt > i && text[gt - 1] == '/'))
+            {
+                return gt - i + 1;
+            }
+
+            int end = text.IndexOf(close, gt + 1, StringComparison.OrdinalIgnoreCase);
+            if (end < 0)
+            {
+                return gt - i + 1;
+            }
+
+            int endGt = text.IndexOf('>', end);
+            return (endGt < 0 ? text.Length : endGt + 1) - i;
+        }
+
+        private static bool StartsWith(string text, int i, string value)
+        {
+            return i + value.Length <= text.Length
+                && string.Compare(text, i, value, 0, value.Length, StringComparison.OrdinalIgnoreCase) == 0;
         }
 
         private static string TrimMark(string text)
@@ -369,10 +460,10 @@ namespace WordAddIn1
                     return n;
                 }
 
-                at = found + 1;
+                at = found + needle.Length;
             }
 
-            return n;
+            return 0;
         }
 
         private static string RunText(XElement run)
@@ -456,7 +547,7 @@ namespace WordAddIn1
             return 1;
         }
 
-        private static List<SentenceSlot> SentenceSlots(string display)
+        private static List<SentenceSlot> SentenceSlots(string display, int[] origin)
         {
             var slots = new List<SentenceSlot>();
             MatchCollection starts = SentenceStart.Matches(display ?? "");
@@ -481,13 +572,36 @@ namespace WordAddIn1
                     continue;
                 }
 
-                int contentFrom = start.Index + start.Length;
                 slots.Add(new SentenceSlot
                 {
                     Code = code,
-                    Start = DisplayStoryConvert.StoryOffset(display, contentFrom),
-                    End = DisplayStoryConvert.StoryOffset(display, end.Index)
+                    Start = start.Index + start.Length,
+                    End = end.Index,
+                    StreamStart = -1,
+                    StreamEnd = -1
                 });
+            }
+
+            int slotIndex = 0;
+            for (int s = 0; s < origin.Length && slotIndex < slots.Count; s++)
+            {
+                int at = origin[s];
+                while (slotIndex < slots.Count && at >= slots[slotIndex].End)
+                {
+                    slotIndex++;
+                }
+
+                if (slotIndex >= slots.Count || at < slots[slotIndex].Start)
+                {
+                    continue;
+                }
+
+                if (slots[slotIndex].StreamStart < 0)
+                {
+                    slots[slotIndex].StreamStart = s;
+                }
+
+                slots[slotIndex].StreamEnd = s + 1;
             }
 
             return slots;
@@ -520,6 +634,8 @@ namespace WordAddIn1
             public string Code;
             public int Start;
             public int End;
+            public int StreamStart;
+            public int StreamEnd;
         }
     }
 }
