@@ -218,6 +218,7 @@ namespace WordAddIn1.DocumentMapping
                 }
 
                 string code = store.FindOrCreateSentence(groups[0].Concat, segMark).Item1;
+                TocFieldStamp.Carry(originalNames, code);
                 inoperable.Add(code);
                 content[code] = groups[0].Concat;
                 var d22Inner = new StringBuilder();
@@ -240,6 +241,7 @@ namespace WordAddIn1.DocumentMapping
                 }
 
                 string merged = store.FindOrCreateSentence(g.Concat, segMark).Item1;
+                TocFieldStamp.Carry(Slice(originalNames, g.Start, g.End), merged);
                 content[merged] = g.Concat;
                 var innerParts = new StringBuilder();
                 for (int k = g.Start; k <= g.End; k++)
@@ -295,6 +297,25 @@ namespace WordAddIn1.DocumentMapping
             }
 
             return null;
+        }
+
+        private static List<string> Slice(IReadOnlyList<string> names, int start, int end)
+        {
+            var slice = new List<string>();
+            if (names == null)
+            {
+                return slice;
+            }
+
+            for (int i = start; i <= end && i < names.Count; i++)
+            {
+                if (i >= 0)
+                {
+                    slice.Add(names[i]);
+                }
+            }
+
+            return slice;
         }
 
         /// <summary>

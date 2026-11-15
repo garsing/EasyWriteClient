@@ -22,6 +22,13 @@ namespace WordAddIn1
         // 图片计数器：key = 文档路径hash, value = 图片计数
         private static Dictionary<string, int> _imageCounters = new Dictionary<string, int>();
         private static int _placeholderImageCounter;
+        private static readonly List<TocFrame> _tocFrames = new List<TocFrame>();
+
+        private sealed class TocFrame
+        {
+            public bool Toc;
+            public bool Opened;
+        }
 
         // 单次 ReadWord 内的完整抽图上下文（按 XML 顺序逐 drawing 落盘）
         private static bool _readUseFullImages;
@@ -134,6 +141,8 @@ namespace WordAddIn1
                 _readOccupiedTableIds = new HashSet<string>(StringComparer.Ordinal);
                 _readTableEmitIndex = 0;
                 _placeholderImageCounter = 0;
+                _tocFrames.Clear();
+                TocFieldStamp.Collect(document);
 
                 // 先取 XML，用表骨架收 COM（含内表父格），再发号。避免 Range.Tables 漏内表。
                 sw.Restart();
@@ -243,6 +252,7 @@ namespace WordAddIn1
                 finally
                 {
                     _autonum = null;
+                    _tocFrames.Clear();
                     EndReadImageContext();
                 }
 
@@ -1479,6 +1489,69 @@ namespace WordAddIn1
             }
         }
 
+        private static void NoteFldChar(XElement el, StringBuilder textBuffer, List<string> orderLog)
+        {
+            string kind = (string)el.Attribute(el.Name.Namespace + "fldCharType") ?? "";
+            if (kind == "begin")
+            {
+                _tocFrames.Add(new TocFrame());
+                orderLog.Add("fld:begin");
+                return;
+            }
+
+            if (_tocFrames.Count == 0)
+            {
+                return;
+            }
+
+            TocFrame frame = _tocFrames[_tocFrames.Count - 1];
+            if (kind == "separate")
+            {
+                OpenTocResult(textBuffer);
+                orderLog.Add("fld:separate");
+                return;
+            }
+
+            if (kind == "end")
+            {
+                if (frame.Toc)
+                {
+                    if (!frame.Opened)
+                    {
+                        textBuffer.Append(TocFieldStamp.Edge);
+                    }
+
+                    textBuffer.Append(TocFieldStamp.Edge);
+                    orderLog.Add("fld:toc-end");
+                }
+
+                _tocFrames.RemoveAt(_tocFrames.Count - 1);
+            }
+        }
+
+        private static void NoteInstr(string text)
+        {
+            if (_tocFrames.Count == 0 || !TocFieldStamp.IsTocInstruction(text))
+            {
+                return;
+            }
+
+            _tocFrames[_tocFrames.Count - 1].Toc = true;
+        }
+
+        private static void OpenTocResult(StringBuilder textBuffer)
+        {
+            for (int i = 0; i < _tocFrames.Count; i++)
+            {
+                TocFrame frame = _tocFrames[i];
+                if (frame.Toc && !frame.Opened)
+                {
+                    textBuffer.Append(TocFieldStamp.Edge);
+                    frame.Opened = true;
+                }
+            }
+        }
+
         private static void ProcessParagraphNodesInOrder(
             IEnumerable<XNode> nodes,
             XNamespace w,
@@ -1494,11 +1567,24 @@ namespace WordAddIn1
                     continue;
                 }
 
+                if (el.Name == w + "fldChar")
+                {
+                    NoteFldChar(el, textBuffer, orderLog);
+                    continue;
+                }
+
+                if (el.Name == w + "instrText")
+                {
+                    NoteInstr(el.Value);
+                    continue;
+                }
+
                 if (el.Name == w + "t")
                 {
                     string val = el.Value ?? "";
                     if (val.Length > 0)
                     {
+                        OpenTocResult(textBuffer);
                         textBuffer.Append(FormFeedText.EscapeInXmlText(
                             System.Security.SecurityElement.Escape(val)));
                         orderLog.Add($"t({val.Length})");
@@ -1507,21 +1593,25 @@ namespace WordAddIn1
                 else if (el.Name == w + "footnoteReference")
                 {
                     // 与 Word Find 特殊码一致，便于后续按映射串定位
+                    OpenTocResult(textBuffer);
                     textBuffer.Append("^f");
                     orderLog.Add("footnoteReference");
                 }
                 else if (el.Name == w + "endnoteReference")
                 {
+                    OpenTocResult(textBuffer);
                     textBuffer.Append("^e");
                     orderLog.Add("endnoteReference");
                 }
                 else if (el.Name == w + "tab")
                 {
+                    OpenTocResult(textBuffer);
                     textBuffer.Append("\t");
                     orderLog.Add("tab");
                 }
                 else if (el.Name == w + "br")
                 {
+                    OpenTocResult(textBuffer);
                     if (IsPageBreakBr(el, w))
                     {
                         textBuffer.Append('\f');

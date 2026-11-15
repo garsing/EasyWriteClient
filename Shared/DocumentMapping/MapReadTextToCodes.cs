@@ -20,6 +20,7 @@ namespace WordAddIn1.DocumentMapping
         public static MapReadTextResult MapChunks(IReadOnlyList<string> chunks, IMappingStore store)
         {
             store.BeginMappingPass();
+            TocFieldStamp.ResetPairing();
             var mapped = new MapReadTextResult();
             int chunkCount = chunks == null ? 0 : chunks.Count;
             var totalSw = Stopwatch.StartNew();
@@ -192,7 +193,7 @@ namespace WordAddIn1.DocumentMapping
                     }
                 }
 
-                mapped.ChunkDisplayContents.Add(display);
+                mapped.ChunkDisplayContents.Add(TocFieldStamp.CollapseDisplay(display));
                 var flat = new List<string>();
                 foreach (List<string> seg in segs)
                 {
@@ -239,6 +240,7 @@ namespace WordAddIn1.DocumentMapping
 
             // Path S：对完整 seg 并行分句（保留段末 \r，不走去 \r 后的 block.Text）
             int sentenceOffset = 0;
+            var sentenceTexts = new List<string>();
             foreach (string sentenceContent in SentenceSplitter.SplitTextBySentencesForDocument(segText))
             {
                 if (sentenceContent == null)
@@ -246,7 +248,8 @@ namespace WordAddIn1.DocumentMapping
                     continue;
                 }
 
-                string storedSentence = AutonumConvert.StripTags(sentenceContent);
+                sentenceTexts.Add(sentenceContent);
+                string storedSentence = AutonumConvert.StripTags(sentenceContent).Replace(TocFieldStamp.Edge.ToString(), "");
                 var sPair = store.FindOrCreateSentence(storedSentence, segMark);
                 string sName = sPair.Item1;
                 RememberDisplayInner(store, sName, sentenceContent, storedSentence);
@@ -262,7 +265,19 @@ namespace WordAddIn1.DocumentMapping
                 }
             }
 
-            int storyLen = AutonumConvert.StripTags(segText).Length;
+            TocFieldStamp.MarkSeg(segText, result.SentenceNames, sentenceTexts);
+            IReadOnlyDictionary<string, List<string>> byParagraph = store.GetParagraphToSentences();
+            foreach (string paragraphName in result.ParagraphNames)
+            {
+                if (byParagraph != null
+                    && byParagraph.TryGetValue(paragraphName, out List<string> linked)
+                    && linked != null)
+                {
+                    TocFieldStamp.MarkCoveredParagraph(paragraphName, linked);
+                }
+            }
+
+            int storyLen = AutonumConvert.StripTags(segText.Replace(TocFieldStamp.Edge.ToString(), "")).Length;
             if (EasyWriteDiagnostics.IsEnabled(DebugCategory.DocumentMapping)
                 && (paragraphOffset != storyLen || sentenceOffset != storyLen))
             {

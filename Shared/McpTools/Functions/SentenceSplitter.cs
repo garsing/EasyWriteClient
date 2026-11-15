@@ -94,6 +94,18 @@ namespace WordAddIn1
                     continue;
                 }
 
+                if (text[i] == TocFieldStamp.Edge)
+                {
+                    if (i > start)
+                    {
+                        sentences.Add(text.Substring(start, i - start));
+                    }
+
+                    start = i + 1;
+                    i = start;
+                    continue;
+                }
+
                 bool foundSplit = false;
                 int sentenceEnd = 0;
 
@@ -248,9 +260,10 @@ namespace WordAddIn1
                 }
             }
 
-            // 【关键验证】确保所有句子拼接后完全等于原文（不增不减）
+            // 切句标记只作边界，不进入句子。其余字拼接后必须等于原文去掉标记。
             string reconstructed = string.Join("", sentences);
-            if (reconstructed != text)
+            string expected = text.Replace(TocFieldStamp.Edge.ToString(), "");
+            if (reconstructed != expected)
             {
                 // 如果重构的文本与原文不一致，返回原文本作为单个句子
                 // 这不应该发生，但如果发生，至少保证不丢失原文

@@ -11,6 +11,10 @@ namespace WordAddIn1.DocumentMapping
     /// </summary>
     public static class DisplayStoryConvert
     {
+        private static readonly Regex TocLine = new Regex(
+            @"\[目录域 ewC_[A-Za-z0-9]{8,32}\]",
+            RegexOptions.Compiled);
+
         private static readonly Regex CodeStart = new Regex(
             @"\[(?:P|S)_[^\]]+?(?:-start| start)[^\]]*\]", RegexOptions.Compiled);
         private static readonly Regex CodeEnd = new Regex(
@@ -54,7 +58,9 @@ namespace WordAddIn1.DocumentMapping
                 return "";
             }
 
-            string s = CodeStart.Replace(display, "");
+            string s = display.Replace(WordAddIn1.TocFieldStamp.Edge.ToString(), "");
+            s = TocLine.Replace(s, "");
+            s = CodeStart.Replace(s, "");
             s = CodeEnd.Replace(s, "");
             s = WordAddIn1.EmptyCellCode.StripMarkers(s);
             s = InTable.Replace(s, "");

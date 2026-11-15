@@ -57,6 +57,7 @@ namespace WordDocumentRoundtripTest
             RunApply(run, s);
             RunEdit(run, s);
             RunMore(run, s);
+            RunToc(run, s);
         }
 
         private static bool Want(params string[] ids)
@@ -427,6 +428,114 @@ namespace WordDocumentRoundtripTest
                     painted && one != null && Eq(one, "structure", "超链接") && Eq(one, "scope", "text")
                     && Obj(one, "text_format") != null && Obj(one, "paragraph_format") == null,
                     painted ? Dump(one) : "铺超链接失败");
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunToc(TestRun run, WdSession s)
+        {
+            if (Only == null)
+            {
+                return;
+            }
+
+            if (!Want(
+                "ds-toc-token",
+                "ds-toc-reuse",
+                "ds-toc-notoc",
+                "ds-toc-spans",
+                "ds-toc-reject",
+                "ds-toc-style"))
+            {
+                return;
+            }
+
+            string path, id;
+            if (!Open(s, "第一章标题\r你好啊。", out path, out id))
+            {
+                FailMany(
+                    run,
+                    "铺目录稿失败",
+                    "ds-toc-token",
+                    "ds-toc-reuse",
+                    "ds-toc-notoc",
+                    "ds-toc-spans",
+                    "ds-toc-reject",
+                    "ds-toc-style");
+                return;
+            }
+
+            try
+            {
+                bool painted = PaintParagraph(s, path, "第一章标题", HeadingNames);
+                bool field = AddToc(s, path);
+                bool updated = UpdateFields(s, path);
+                bool planted = PlantTocBookmark(s, path);
+                string body = Content(s, id);
+                Match token = Regex.Match(body ?? "", @"\[目录域 (ewC_[A-Za-z0-9]{8,32})\]");
+                string name = token.Success ? token.Groups[1].Value : "";
+                bool bodyKept = (body ?? "").IndexOf("你好啊", StringComparison.Ordinal) >= 0;
+                bool noEdge = (body ?? "").IndexOf(TocFieldStamp.Edge) < 0;
+                bool glued = SentenceHolds(body, "你好啊", "\t");
+                Ok(run, "ds-toc-token",
+                    painted && field && updated && token.Success && bodyKept && noEdge && !glued,
+                    "painted=" + painted + " field=" + field + " updated=" + updated + " body=" + body);
+
+                string again = Content(s, id);
+                Match token2 = Regex.Match(again ?? "", @"\[目录域 (ewC_[A-Za-z0-9]{8,32})\]");
+                int marks = CountBookmarks(s, path, name);
+                Ok(run, "ds-toc-reuse",
+                    token.Success && token2.Success && token2.Groups[1].Value == name && marks == 1,
+                    "first=" + name + " second=" + (token2.Success ? token2.Groups[1].Value : "") + " marks=" + marks);
+
+                bool stillThere = BookmarkExists(s, path, "_Toc245561084");
+                Ok(run, "ds-toc-notoc",
+                    planted && stillThere && token.Success
+                    && name.StartsWith("ewC_", StringComparison.Ordinal)
+                    && !string.Equals(name, "_Toc245561084", StringComparison.Ordinal),
+                    "name=" + name + " still=" + stillThere + " plant=" + PlantNote);
+
+                JArray spans = Arr(Act(s, id, "list_spans"), "spans");
+                string bodyCode = Sent(body, "你好啊");
+                bool leaked = SpanHasTab(spans);
+                Ok(run, "ds-toc-spans",
+                    bodyCode.StartsWith("S_", StringComparison.Ordinal) && SpanByCode(spans, bodyCode) != null && !leaked,
+                    "code=" + bodyCode + " leaked=" + leaked + " " + Dump(spans));
+
+                string paras = ParagraphContent(s, id);
+                string paraCode = TocParagraph(paras);
+                bool rejected = false;
+                string rejectDetail = "para=" + paraCode;
+                if (paraCode.Length > 0)
+                {
+                    ToolResult bad = s.ApplyParagraphFormat(new Dictionary<string, object>
+                    {
+                        ["channel_id"] = id,
+                        ["target_paragraph_codes"] = paraCode,
+                        ["para_format"] = new Dictionary<string, object> { ["alignment"] = "center" }
+                    });
+                    string err = bad == null ? "" : (bad.Error ?? "");
+                    rejected = bad != null && !bad.Success && err.IndexOf("目录域里面的编码", StringComparison.Ordinal) >= 0;
+                    rejectDetail = err;
+                }
+
+                if (!s.IsWps)
+                {
+                    string sentenceErr = RejectInteriorSentence(s, path);
+                    rejected = rejected || sentenceErr.IndexOf("目录域里面的编码", StringComparison.Ordinal) >= 0;
+                    rejectDetail = rejectDetail + " | " + sentenceErr;
+                }
+
+                Ok(run, "ds-toc-reject", rejected, rejectDetail);
+
+                Materialize(s, path);
+                JArray styles = Arr(Act(s, id, "list_styles"), "styles");
+                Ok(run, "ds-toc-style",
+                    Find(styles, "目录 1") != null || Find(styles, "TOC 1") != null,
+                    Dump(styles));
             }
             finally
             {
@@ -1999,6 +2108,226 @@ namespace WordDocumentRoundtripTest
                     para.Format.SpaceBefore = before;
                     return true;
                 });
+        }
+
+        private static string ParagraphContent(WdSession s, string id)
+        {
+            ToolResult got = s.GetContent(id, "paragraph");
+            return got != null && got.Success ? WdSession.Str(got, "document_content") : "";
+        }
+
+        private static bool SentenceHolds(string body, string text, string extra)
+        {
+            string code = Sent(body, text);
+            if (!code.StartsWith("S_", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            int at = (body ?? "").IndexOf(text, StringComparison.Ordinal);
+            int mark = at < 0 ? -1 : (body ?? "").LastIndexOf("[S_", at, StringComparison.Ordinal);
+            if (mark < 0)
+            {
+                return false;
+            }
+
+            int end = (body ?? "").IndexOf("[S_" + code.Substring(2) + "-end]", mark, StringComparison.Ordinal);
+            if (end < 0)
+            {
+                return false;
+            }
+
+            return (body ?? "").Substring(mark, end - mark).IndexOf(extra, StringComparison.Ordinal) >= 0;
+        }
+
+        private static string TocParagraph(string display)
+        {
+            if (string.IsNullOrEmpty(display))
+            {
+                return "";
+            }
+
+            foreach (Match m in Regex.Matches(display, @"\[(P_[0-9A-Za-z]{5}(?:_\d+)?) start\]([\s\S]*?)\[\1 end\]"))
+            {
+                string inner = m.Groups[2].Value ?? "";
+                if (inner.IndexOf('\t') >= 0 && inner.IndexOf("你好啊", StringComparison.Ordinal) < 0)
+                {
+                    return m.Groups[1].Value;
+                }
+            }
+
+            return "";
+        }
+
+        private static bool SpanHasTab(JArray spans)
+        {
+            foreach (JObject span in Each(spans))
+            {
+                string text = TextValue(span) ?? "";
+                if (text.IndexOf('\t') >= 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool UpdateFields(WdSession s, string path)
+        {
+            return s.IsWps
+                ? s.TryWpsDoc(path, doc =>
+                {
+                    object fields = WdSession.ComGet(doc, "Fields");
+                    WdSession.ComCall(fields, "Update");
+                    return true;
+                })
+                : s.OnWordDoc(path, doc =>
+                {
+                    doc.Fields.Update();
+                    return true;
+                });
+        }
+
+        private static int CountBookmarks(WdSession s, string path, string name)
+        {
+            int count = 0;
+            bool ok = s.IsWps
+                ? s.TryWpsDoc(path, doc =>
+                {
+                    count = CountNamedLate(doc, name);
+                    return true;
+                })
+                : s.OnWordDoc(path, doc =>
+                {
+                    foreach (Word.Bookmark bookmark in doc.Bookmarks)
+                    {
+                        if (string.Equals(bookmark.Name, name, StringComparison.Ordinal))
+                        {
+                            count++;
+                        }
+                    }
+
+                    return true;
+                });
+            return ok ? count : -1;
+        }
+
+        private static int CountNamedLate(object doc, string name)
+        {
+            int count = 0;
+            object bookmarks = WdSession.ComGet(doc, "Bookmarks");
+            if (bookmarks == null)
+            {
+                return 0;
+            }
+
+            foreach (object bookmark in (System.Collections.IEnumerable)bookmarks)
+            {
+                string found = Convert.ToString(WdSession.ComGet(bookmark, "Name"));
+                if (string.Equals(found, name, StringComparison.Ordinal))
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        private static string PlantNote;
+
+        private static bool PlantTocBookmark(WdSession s, string path)
+        {
+            PlantNote = "";
+            return s.IsWps
+                ? s.TryWpsDoc(path, doc =>
+                {
+                    try
+                    {
+                        object range = WdSession.ComGet(doc, "Content");
+                        WdSession.ComCall(range, "Collapse", 1);
+                        object bookmarks = WdSession.ComGet(doc, "Bookmarks");
+                        WdSession.ComCall(bookmarks, "Add", "_Toc245561084", range);
+                        return true;
+                    }
+                    catch (Exception ex)
+                    {
+                        PlantNote = ex.Message;
+                        return false;
+                    }
+                })
+                : s.OnWordDoc(path, doc =>
+                {
+                    try
+                    {
+                        Word.Range range = doc.Content.Duplicate;
+                        range.Collapse(Word.WdCollapseDirection.wdCollapseStart);
+                        object anchor = range;
+                        doc.Bookmarks.Add("_Toc245561084", ref anchor);
+                        return true;
+                    }
+                    catch (Exception ex)
+                    {
+                        PlantNote = ex.Message;
+                        return false;
+                    }
+                });
+        }
+
+        private static bool BookmarkExists(WdSession s, string path, string name)
+        {
+            bool found = false;
+            bool ok = s.IsWps
+                ? s.TryWpsDoc(path, doc =>
+                {
+                    object bookmarks = WdSession.ComGet(doc, "Bookmarks");
+                    object exists = WdSession.ComCall(bookmarks, "Exists", name);
+                    found = exists != null && Convert.ToBoolean(exists);
+                    return true;
+                })
+                : s.OnWordDoc(path, doc =>
+                {
+                    found = doc.Bookmarks.Exists(name);
+                    return true;
+                });
+            return ok && found;
+        }
+
+        private static string RejectInteriorSentence(WdSession s, string path)
+        {
+            string error = "";
+            bool ok = s.OnWordDoc(path, doc =>
+            {
+                try
+                {
+                    WordDocumentExtractor.ProcessDocument(doc);
+                }
+                catch (Exception ex)
+                {
+                    error = ex.GetType().Name + ": " + ex.Message;
+                    return true;
+                }
+
+                string code = TocFieldStamp.FirstInteriorSentence();
+                if (string.IsNullOrEmpty(code))
+                {
+                    error = "没有域内句子码";
+                    return true;
+                }
+
+                Dictionary<string, object> result = StructureStyleApplier.Apply(
+                    doc,
+                    new Dictionary<string, object>
+                    {
+                        ["structure"] = "标题 1",
+                        ["target_codes"] = code
+                    },
+                    new List<StructureStyleRecord>(),
+                    true);
+                error = result != null && result.ContainsKey("error") ? Convert.ToString(result["error"]) : "";
+                return true;
+            });
+            return ok ? error : "没打开稿";
         }
 
         private static bool AddToc(WdSession s, string path)

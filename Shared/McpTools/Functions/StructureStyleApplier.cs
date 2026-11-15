@@ -115,6 +115,12 @@ namespace WordAddIn1
                 return plan;
             }
 
+            if (TocFieldStamp.IsInterior(code))
+            {
+                plan.Finished = Fail(TocFieldStamp.InteriorMessage);
+                return plan;
+            }
+
             string sibling = TextSpanArg.RejectSiblingIndex(item);
             if (sibling != null)
             {

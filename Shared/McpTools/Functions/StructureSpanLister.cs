@@ -174,6 +174,7 @@ namespace WordAddIn1
             {
                 if (StartsWith(display, i, "[S_")
                     || StartsWith(display, i, "[P_")
+                    || StartsWith(display, i, "[目录域 ")
                     || StartsWith(display, i, "[in_table=")
                     || StartsWith(display, i, "[T_")
                     || StartsWith(display, i, "[EMPTY]"))
@@ -332,8 +333,7 @@ namespace WordAddIn1
 
                 if (child.Name == W + "p")
                 {
-                    bool toc = inToc || IsTocParagraph(child);
-                    AppendParagraph(child, byId, bodyStyle, fields, story, pieces, toc);
+                    AppendParagraph(child, byId, bodyStyle, fields, story, pieces);
                     continue;
                 }
 
@@ -352,12 +352,6 @@ namespace WordAddIn1
                     }
                 }
             }
-        }
-
-        private static bool IsTocParagraph(XElement paragraph)
-        {
-            string style = (string)paragraph.Element(W + "pPr")?.Element(W + "pStyle")?.Attribute(W + "val");
-            return style != null && (style.StartsWith("TOC", StringComparison.OrdinalIgnoreCase) || style == "TOC");
         }
 
         private static void NoteField(XElement run, List<bool> fields)
@@ -410,8 +404,7 @@ namespace WordAddIn1
             StructureStyleRecord bodyStyle,
             List<bool> fields,
             StringBuilder story,
-            List<Piece> pieces,
-            bool toc)
+            List<Piece> pieces)
         {
             string pStyle = (string)paragraph.Element(W + "pPr")?.Element(W + "pStyle")?.Attribute(W + "val");
             StructureStyleRecord paragraphStyle = null;
@@ -447,7 +440,7 @@ namespace WordAddIn1
 
                 int start = story.Length;
                 story.Append(text);
-                if (toc || InsideTocField(fields) || runStyle == null)
+                if (InsideTocField(fields) || runStyle == null)
                 {
                     continue;
                 }

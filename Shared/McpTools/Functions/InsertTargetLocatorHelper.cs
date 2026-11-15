@@ -1217,6 +1217,11 @@ namespace WordAddIn1
                 {
                     return StoryUniqEncode.FailBeforeWriteMessage;
                 }
+
+                if (TocFieldStamp.IsInterior(anchor?.Codes))
+                {
+                    return TocFieldStamp.InteriorMessage;
+                }
             }
 
             return null;
