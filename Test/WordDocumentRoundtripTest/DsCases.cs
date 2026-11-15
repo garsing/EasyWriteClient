@@ -197,7 +197,9 @@ namespace WordDocumentRoundtripTest
                     "题注=" + Dump(caption) + " 页眉=" + Dump(header) + " 页脚=" + Dump(footer));
                 JObject rules = Obj(listed, "apply_rules");
                 Ok(run, "ds-cat-rules",
-                    rules != null && rules["both"] != null && rules["paragraph"] != null && rules["character"] != null && ApplyMatches(styles),
+                    rules != null && Str(rules, "both").IndexOf("段落格式没有发生作用", StringComparison.Ordinal) >= 0
+                    && Str(rules, "paragraph").IndexOf("什么也不会发生", StringComparison.Ordinal) >= 0
+                    && rules["character"] != null && ApplyMatches(styles),
                     Dump(rules));
 
                 string before = Content(s, id);
@@ -644,8 +646,11 @@ namespace WordDocumentRoundtripTest
                 string body = Content(s, id);
                 string whole = Sent(body, "整段套用");
                 JObject applied = One(s, id, Map("action", "apply", "target_codes", whole, "structure", "heading_1", "scope", "paragraph"));
-                bool paraOk = StyleHas(s, path, "整段套用。", HeadingNames) && !Bold(s, path, "整段套用。", "整");
-                Ok(run, "ds-apply-both-para", OkFlag(applied) && paraOk, OkFlag(applied) ? "段样式或加粗还在" : Dump(applied));
+                bool styled = StyleHas(s, path, "整段套用。", HeadingNames);
+                bool bold = Bold(s, path, "整段套用。", "整");
+                bool paraOk = styled && (s.IsWps ? bold : !bold);
+                Ok(run, "ds-apply-both-para", OkFlag(applied) && paraOk,
+                    OkFlag(applied) ? "styled=" + styled + " bold=" + bold : Dump(applied));
 
                 PaintBold(s, path, "只套好字", "好");
                 body = Content(s, id);
@@ -904,7 +909,8 @@ namespace WordDocumentRoundtripTest
                 int at = xml.IndexOf("好", StringComparison.Ordinal);
                 string window = at < 0 ? "" : xml.Substring(Math.Max(0, at - 400), Math.Min(400, at));
                 bool copied = window.IndexOf("<w:sz", StringComparison.Ordinal) >= 0 || window.IndexOf(":sz ", StringComparison.Ordinal) >= 0;
-                Ok(run, "ds-apply-no-copy", OkFlag(extra) && !copied, copied ? window : Dump(extra));
+                bool headingChar = HostHasStyle(s, path, HeadingCharNames);
+                Ok(run, "ds-apply-no-copy", OkFlag(extra) && copied == !headingChar, copied ? window : Dump(extra));
                 Ok(run, "ds-apply-extra-format", OkFlag(extra) && Blob(extra, "format_warnings"), Dump(extra));
             }
             finally
@@ -941,9 +947,17 @@ namespace WordDocumentRoundtripTest
                     "text_format", Map("font_size", 20)));
                 float follow = ReadSize(s, path, "跟着变字。", "跟");
                 float direct = ReadSize(s, path, "盖住字号。", "盖");
+                float paraSize = StyleSize(s, path, HeadingNames);
+                float charSize = StyleSize(s, path, HeadingCharNames);
+                bool linked = StylesLinked(s, path, HeadingNames, HeadingCharNames);
                 Ok(run, "ds-edit-heading-size",
-                    OkFlag(edited) && Math.Abs(follow - 20f) < 0.6f && Math.Abs(direct - 28f) < 0.6f,
-                    "follow=" + follow.ToString(CultureInfo.InvariantCulture) + " direct=" + direct.ToString(CultureInfo.InvariantCulture) + " " + Dump(edited));
+                    OkFlag(edited) && Math.Abs(follow - 20f) < 0.6f && Math.Abs(direct - 28f) < 0.6f
+                    && Math.Abs(paraSize - 20f) < 0.6f && Math.Abs(charSize - 20f) < 0.6f && linked,
+                    "follow=" + follow.ToString(CultureInfo.InvariantCulture)
+                    + " direct=" + direct.ToString(CultureInfo.InvariantCulture)
+                    + " para=" + paraSize.ToString(CultureInfo.InvariantCulture)
+                    + " char=" + charSize.ToString(CultureInfo.InvariantCulture)
+                    + " linked=" + linked + " " + Dump(edited));
             }
             finally
             {
@@ -1028,18 +1042,23 @@ namespace WordDocumentRoundtripTest
                     && Obj(outlineRow, "text_format") == null
                     && Str(Obj(outlineRow, "paragraph_format"), "outline_level").IndexOf("2", StringComparison.Ordinal) >= 0,
                     Dump(outlined) + Dump(outlineRow));
-                if (OkFlag(created) && Eq(created, "support", "character"))
-                {
-                    run.CaseSkip("ds-edit-create-clean", "只建了字符样式，没有双份失败路径");
-                }
-                else if (!OkFlag(created) && Blob(created, "连成一对") && Find(Arr(Act(s, id, "list_styles"), "styles"), "强调测") == null)
-                {
-                    Ok(run, "ds-edit-create-clean", true, Dump(created));
-                }
-                else
-                {
-                    Ok(run, "ds-edit-create-clean", false, Dump(created));
-                }
+                JObject dual = Act(s, id, Map(
+                    "action", "customize", "create", true, "name", "强调双",
+                    "text_format", Map("font_size", 16),
+                    "paragraph_format", Map("left_indent", 18)));
+                JObject dualRow = Find(Arr(Act(s, id, "list_styles"), "styles"), "强调双");
+                float dualPara = StyleSize(s, path, new[] { "强调双" });
+                float dualChar = StyleSize(s, path, new[] { "强调双 字符" });
+                bool dualLinked = StylesLinked(s, path, new[] { "强调双" }, new[] { "强调双 字符" });
+                Ok(run, "ds-edit-create-clean",
+                    OkFlag(dual) && dualRow != null && Eq(dualRow, "support", "both")
+                    && Find(Arr(Act(s, id, "list_styles"), "styles"), "强调双 字符") == null
+                    && Near(Obj(dualRow, "text_format"), "font_size", 16, 0.6)
+                    && Near(Obj(dualRow, "paragraph_format"), "left_indent", 18, 1.2)
+                    && Math.Abs(dualPara - 16f) < 0.6f && Math.Abs(dualChar - 16f) < 0.6f && dualLinked,
+                    "para=" + dualPara.ToString(CultureInfo.InvariantCulture)
+                    + " char=" + dualChar.ToString(CultureInfo.InvariantCulture)
+                    + " linked=" + dualLinked + " " + Dump(dual) + Dump(dualRow));
             }
             finally
             {
@@ -1098,9 +1117,17 @@ namespace WordDocumentRoundtripTest
                     "text_format", Map("font_size", 12)));
                 float bodySize = ReadSize(s, path, "正文跟着。", "正");
                 float headingAfter = ReadSize(s, path, "标题不跟。", "标");
+                float bodyStyle = StyleSize(s, path, BodyNames);
+                float bodyChar = StyleSize(s, path, new[] { "正文 字符" });
+                bool bodyLinked = StylesLinked(s, path, BodyNames, new[] { "正文 字符" });
                 Ok(run, "ds-edit-body",
-                    OkFlag(edited) && Math.Abs(bodySize - 12f) < 0.6f && Math.Abs(headingAfter - headingBefore) < 0.6f && Math.Abs(headingAfter - 12f) > 0.6f,
-                    "body=" + bodySize.ToString(CultureInfo.InvariantCulture) + " heading=" + headingAfter.ToString(CultureInfo.InvariantCulture));
+                    OkFlag(edited) && Math.Abs(bodySize - 12f) < 0.6f && Math.Abs(headingAfter - headingBefore) < 0.6f && Math.Abs(headingAfter - 12f) > 0.6f
+                    && Math.Abs(bodyStyle - 12f) < 0.6f && Math.Abs(bodyChar - 12f) < 0.6f && bodyLinked,
+                    "body=" + bodySize.ToString(CultureInfo.InvariantCulture)
+                    + " heading=" + headingAfter.ToString(CultureInfo.InvariantCulture)
+                    + " style=" + bodyStyle.ToString(CultureInfo.InvariantCulture)
+                    + " char=" + bodyChar.ToString(CultureInfo.InvariantCulture)
+                    + " linked=" + bodyLinked);
             }
             finally
             {
@@ -1267,6 +1294,182 @@ namespace WordDocumentRoundtripTest
                 return false;
             });
             return level;
+        }
+
+        private static float StyleSize(WdSession s, string path, string[] names)
+        {
+            float size = 0;
+            if (s.IsWps)
+            {
+                s.TryWpsDoc(path, doc =>
+                {
+                    object styles = WdSession.ComGet(doc, "Styles");
+                    foreach (string name in names)
+                    {
+                        try
+                        {
+                            object style = WdSession.ComCall(styles, "Item", name);
+                            object font = WdSession.ComGet(style, "Font");
+                            size = Convert.ToSingle(WdSession.ComGet(font, "Size"), CultureInfo.InvariantCulture);
+                            if (size > 0 && size < 1000)
+                            {
+                                return true;
+                            }
+                        }
+                        catch (Exception)
+                        {
+                        }
+                    }
+
+                    return false;
+                });
+                return size;
+            }
+
+            s.OnWordDoc(path, doc =>
+            {
+                foreach (string name in names)
+                {
+                    try
+                    {
+                        Word.Style style = doc.Styles[name];
+                        if (style == null)
+                        {
+                            continue;
+                        }
+
+                        size = style.Font.Size;
+                        if (size > 0 && size < 1000)
+                        {
+                            return true;
+                        }
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+
+                return false;
+            });
+            return size;
+        }
+
+        private static bool StylesLinked(WdSession s, string path, string[] paragraphNames, string[] characterNames)
+        {
+            bool linked = false;
+            if (s.IsWps)
+            {
+                s.TryWpsDoc(path, doc =>
+                {
+                    linked = LinkedLate(doc, paragraphNames, characterNames);
+                    return true;
+                });
+                return linked;
+            }
+
+            s.OnWordDoc(path, doc =>
+            {
+                linked = LinkedWord(doc, paragraphNames, characterNames);
+                return true;
+            });
+            return linked;
+        }
+
+        private static bool LinkedWord(Word.Document doc, string[] paragraphNames, string[] characterNames)
+        {
+            Word.Style paragraph = FirstStyle(doc, paragraphNames, false);
+            Word.Style character = FirstStyle(doc, characterNames, true);
+            if (paragraph == null || character == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                Word.Style paragraphLink = paragraph.get_LinkStyle();
+                Word.Style characterLink = character.get_LinkStyle();
+                return paragraphLink != null && characterLink != null
+                    && paragraphLink.NameLocal == character.NameLocal
+                    && characterLink.NameLocal == paragraph.NameLocal;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static Word.Style FirstStyle(Word.Document doc, string[] names, bool character)
+        {
+            foreach (string name in names)
+            {
+                try
+                {
+                    Word.Style style = doc.Styles[name];
+                    if (style == null)
+                    {
+                        continue;
+                    }
+
+                    bool isCharacter = style.Type == Word.WdStyleType.wdStyleTypeCharacter;
+                    if (isCharacter == character)
+                    {
+                        return style;
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            return null;
+        }
+
+        private static bool LinkedLate(object doc, string[] paragraphNames, string[] characterNames)
+        {
+            object styles = WdSession.ComGet(doc, "Styles");
+            object paragraph = FirstStyleLate(styles, paragraphNames, false);
+            object character = FirstStyleLate(styles, characterNames, true);
+            if (paragraph == null || character == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                object paragraphLink = WdSession.ComGet(paragraph, "LinkStyle");
+                object characterLink = WdSession.ComGet(character, "LinkStyle");
+                string paragraphLinkName = Convert.ToString(WdSession.ComGet(paragraphLink, "NameLocal"));
+                string characterLinkName = Convert.ToString(WdSession.ComGet(characterLink, "NameLocal"));
+                string paragraphName = Convert.ToString(WdSession.ComGet(paragraph, "NameLocal"));
+                string characterName = Convert.ToString(WdSession.ComGet(character, "NameLocal"));
+                return paragraphLinkName == characterName && characterLinkName == paragraphName;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static object FirstStyleLate(object styles, string[] names, bool character)
+        {
+            foreach (string name in names)
+            {
+                try
+                {
+                    object style = WdSession.ComCall(styles, "Item", name);
+                    object type = WdSession.ComGet(style, "Type");
+                    bool isCharacter = type != null && Convert.ToInt32(type) == (int)Word.WdStyleType.wdStyleTypeCharacter;
+                    if (isCharacter == character)
+                    {
+                        return style;
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            return null;
         }
 
         private static JObject Act(WdSession s, string id, string action)

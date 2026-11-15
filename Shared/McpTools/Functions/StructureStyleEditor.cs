@@ -138,6 +138,15 @@ namespace WordAddIn1
                     {
                         WriteParagraph(paragraphStyle, paragraph);
                     }
+
+                    if (wantText)
+                    {
+                        string relinkError = Relink(paragraphStyle, characterStyle);
+                        if (relinkError != null)
+                        {
+                            throw new InvalidOperationException(relinkError);
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -254,6 +263,15 @@ namespace WordAddIn1
                 {
                     WriteParagraph(paragraphStyle, paragraph);
                 }
+
+                if (text != null)
+                {
+                    string relinkError = Relink(paragraphStyle, characterStyle);
+                    if (relinkError != null)
+                    {
+                        throw new InvalidOperationException(relinkError);
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -321,6 +339,26 @@ namespace WordAddIn1
 
             HideCharacter(characterStyle);
             return null;
+        }
+
+        private static string Relink(Word.Style paragraphStyle, Word.Style characterStyle)
+        {
+            if (paragraphStyle == null || characterStyle == null)
+            {
+                return "字符样式没能连上，已撤掉这次写入。";
+            }
+
+            try
+            {
+                object link = characterStyle;
+                paragraphStyle.set_LinkStyle(ref link);
+            }
+            catch (Exception)
+            {
+                // 下面再核对。写正文字体时，Word 会把链接指回正文自己。
+            }
+
+            return Linked(paragraphStyle, characterStyle) ? null : "字符样式没能连上，已撤掉这次写入。";
         }
 
         private static Word.Style FindCharacter(Word.Document doc, Word.Style paragraphStyle)
