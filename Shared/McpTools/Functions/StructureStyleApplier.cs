@@ -7,78 +7,41 @@ namespace WordAddIn1
     /// <summary>套用。先清这一侧的直接格式，再写样式。</summary>
     public static class StructureStyleApplier
     {
+        /// <summary>这次套用不会改文档时，返回那次回包。会改文档时返回 null，调用方再补样式表。</summary>
+        public static Dictionary<string, object> FinishWithoutWrite(
+            Word.Document doc,
+            Dictionary<string, object> item,
+            IList<StructureStyleRecord> styles,
+            bool disallowBackendApi)
+        {
+            ApplyPlan plan = Plan(doc, item, styles, disallowBackendApi);
+            return plan.WillWrite ? null : plan.Finished;
+        }
+
         public static Dictionary<string, object> Apply(
             Word.Document doc,
             Dictionary<string, object> item,
             IList<StructureStyleRecord> styles,
             bool disallowBackendApi)
         {
-            string structure = Arg(item, "structure");
-            if (string.IsNullOrWhiteSpace(structure))
+            ApplyPlan plan = Plan(doc, item, styles, disallowBackendApi);
+            if (!plan.WillWrite)
             {
-                return Fail("缺少 structure。");
+                return plan.Finished;
             }
 
-            StructureStyleRecord style = StructureStyleCatalog.Find(styles, structure);
+            StructureStyleRecord style = plan.Style;
             if (style == null)
             {
-                return Fail("没有样式 " + structure + "。");
+                return Fail("没有样式 " + Arg(item, "structure") + "。");
             }
 
-            string code = Arg(item, "target_codes");
-            if (string.IsNullOrWhiteSpace(code) || code.IndexOf(',') >= 0)
-            {
-                return Fail("target_codes 须是一个句子码。");
-            }
-
-            string sibling = TextSpanArg.RejectSiblingIndex(item);
-            if (sibling != null)
-            {
-                return Fail(sibling);
-            }
-
-            var warnings = new List<string>();
-            if (item != null && (item.ContainsKey("text_format") || item.ContainsKey("paragraph_format")))
-            {
-                warnings.Add("套用忽略 text_format 和 paragraph_format，按样式定义套。");
-            }
-
-            TextSpan span = null;
-            if (item != null && item.ContainsKey("text"))
-            {
-                if (!TextSpanArg.TryRead(item, out span, out string parseError))
-                {
-                    return Fail(parseError ?? "text 无法解析。");
-                }
-            }
-
-            string scope = Arg(item, "scope");
-            if (string.IsNullOrEmpty(scope))
-            {
-                scope = span == null ? "paragraph" : "text";
-            }
-
-            InsertTargetLocatorHelper.ResolveRangeResult located = InsertTargetLocatorHelper.TryResolveCodeSpan(
-                doc,
-                new[] { code.Trim() },
-                null,
-                InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
-                false,
-                disallowBackendApi,
-                span);
-            if (located == null || !located.Success || located.Range == null)
-            {
-                return Fail(located == null ? "定位失败。" : located.Error);
-            }
-
-            if (style.Support == "paragraph" && scope == "text")
-            {
-                return Done(code, style, scope, warnings, ParagraphSkippedNote);
-            }
-
+            string code = plan.Code;
+            string scope = plan.Scope;
+            List<string> warnings = plan.Warnings;
             try
             {
-                Word.Range range = located.Range;
+                Word.Range range = plan.Range;
                 Word.Paragraph paragraph = range.Paragraphs[1];
                 if (style.Support == "both" && scope == "paragraph")
                 {
@@ -121,6 +84,178 @@ namespace WordAddIn1
 
             string note = scope == "text" && style.Support == "both" ? CharacterApplyNote : null;
             return Done(code, style, scope, warnings, note);
+        }
+
+        private sealed class ApplyPlan
+        {
+            public bool WillWrite;
+            public Dictionary<string, object> Finished;
+            public StructureStyleRecord Style;
+            public string Code;
+            public string Scope;
+            public List<string> Warnings;
+            public Word.Range Range;
+        }
+
+        private static ApplyPlan Plan(
+            Word.Document doc,
+            Dictionary<string, object> item,
+            IList<StructureStyleRecord> styles,
+            bool disallowBackendApi)
+        {
+            var plan = new ApplyPlan();
+            string structure = Arg(item, "structure");
+            if (string.IsNullOrWhiteSpace(structure))
+            {
+                plan.Finished = Fail("缺少 structure。");
+                return plan;
+            }
+
+            StructureStyleRecord style = StructureStyleCatalog.Find(styles, structure);
+            bool onHost = style != null || HostHasStyle(doc, structure);
+            if (!onHost)
+            {
+                plan.Finished = Fail("没有样式 " + structure + "。");
+                return plan;
+            }
+
+            string code = Arg(item, "target_codes");
+            if (string.IsNullOrWhiteSpace(code) || code.IndexOf(',') >= 0)
+            {
+                plan.Finished = Fail("target_codes 须是一个句子码。");
+                return plan;
+            }
+
+            string sibling = TextSpanArg.RejectSiblingIndex(item);
+            if (sibling != null)
+            {
+                plan.Finished = Fail(sibling);
+                return plan;
+            }
+
+            var warnings = new List<string>();
+            if (item != null && (item.ContainsKey("text_format") || item.ContainsKey("paragraph_format")))
+            {
+                warnings.Add("套用忽略 text_format 和 paragraph_format，按样式定义套。");
+            }
+
+            TextSpan span = null;
+            if (item != null && item.ContainsKey("text"))
+            {
+                if (!TextSpanArg.TryRead(item, out span, out string parseError))
+                {
+                    plan.Finished = Fail(parseError ?? "text 无法解析。");
+                    return plan;
+                }
+            }
+
+            string scope = Arg(item, "scope");
+            if (string.IsNullOrEmpty(scope))
+            {
+                scope = span == null ? "paragraph" : "text";
+            }
+
+            InsertTargetLocatorHelper.ResolveRangeResult located = InsertTargetLocatorHelper.TryResolveCodeSpan(
+                doc,
+                new[] { code.Trim() },
+                null,
+                InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
+                false,
+                disallowBackendApi,
+                span);
+            if (located == null || !located.Success || located.Range == null)
+            {
+                plan.Finished = Fail(located == null ? "定位失败。" : located.Error);
+                return plan;
+            }
+
+            if (style != null && style.Support == "paragraph" && scope == "text")
+            {
+                plan.Finished = Done(code, style, scope, warnings, ParagraphSkippedNote);
+                return plan;
+            }
+
+            if (style == null)
+            {
+                plan.WillWrite = true;
+                return plan;
+            }
+
+            plan.WillWrite = true;
+            plan.Style = style;
+            plan.Code = code;
+            plan.Scope = scope;
+            plan.Warnings = warnings;
+            plan.Range = located.Range;
+            return plan;
+        }
+
+        private static bool HostHasStyle(Word.Document doc, string structure)
+        {
+            if (doc == null || string.IsNullOrWhiteSpace(structure))
+            {
+                return false;
+            }
+
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string name in HostNames(structure.Trim()))
+            {
+                foreach (string equivalent in StructureStyleCatalog.EquivalentNames(name))
+                {
+                    if (!string.IsNullOrEmpty(equivalent))
+                    {
+                        names.Add(equivalent);
+                    }
+                }
+            }
+
+            foreach (Word.Style style in doc.Styles)
+            {
+                try
+                {
+                    string local = style.NameLocal;
+                    if (!string.IsNullOrEmpty(local) && names.Contains(local))
+                    {
+                        return true;
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            return false;
+        }
+
+        private static IEnumerable<string> HostNames(string structure)
+        {
+            yield return structure;
+            if (structure.Length == 9
+                && structure.StartsWith("heading_", StringComparison.OrdinalIgnoreCase)
+                && structure[8] >= '1'
+                && structure[8] <= '9')
+            {
+                string level = structure.Substring(8);
+                yield return "标题 " + level;
+                yield return "heading " + level;
+                yield break;
+            }
+
+            if (string.Equals(structure, "body", StringComparison.OrdinalIgnoreCase))
+            {
+                yield return "正文";
+                yield return "Normal";
+            }
+            else if (string.Equals(structure, "title", StringComparison.OrdinalIgnoreCase))
+            {
+                yield return "标题";
+                yield return "Title";
+            }
+            else if (string.Equals(structure, "subtitle", StringComparison.OrdinalIgnoreCase))
+            {
+                yield return "副标题";
+                yield return "Subtitle";
+            }
         }
 
         private const string CharacterApplyNote = "由于是字符套用，所以段落格式没有发生作用。";

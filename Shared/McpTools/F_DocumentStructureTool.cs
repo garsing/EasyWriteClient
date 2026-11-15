@@ -53,7 +53,8 @@ namespace WordAddIn1
             bool disallowBackendApi)
         {
             OpenXmlPackage full = OpenXmlPackage.LoadFull(doc);
-            if (WpsChartExtract.IsWpsDocument(doc)
+            bool wps = WpsChartExtract.IsWpsDocument(doc);
+            if (wps && action != "apply"
                 && StructureStyleLibrary.Ensure(doc, full.FindPartRoot("styles.xml", OpenXmlPackage.W + "styles")))
             {
                 full = OpenXmlPackage.LoadFull(doc);
@@ -120,6 +121,17 @@ namespace WordAddIn1
                     };
                 }
 
+                if (wps && !ApplyWillWrite(doc, args, styles, disallowBackendApi))
+                {
+                    return ApplyResults(FinishAll(doc, args, styles, disallowBackendApi));
+                }
+
+                if (wps && StructureStyleLibrary.Ensure(doc, full.FindPartRoot("styles.xml", OpenXmlPackage.W + "styles")))
+                {
+                    full = OpenXmlPackage.LoadFull(doc);
+                    styles = StructureStyleCatalog.Read(full.FindPartRoot("styles.xml", OpenXmlPackage.W + "styles"));
+                }
+
                 var results = new List<Dictionary<string, object>>();
                 int done = 0;
                 foreach (Dictionary<string, object> item in Items(args))
@@ -181,6 +193,57 @@ namespace WordAddIn1
             }
 
             return string.Join("", parts);
+        }
+
+        private static bool ApplyWillWrite(
+            Word.Document doc,
+            Dictionary<string, object> args,
+            IList<StructureStyleRecord> styles,
+            bool disallowBackendApi)
+        {
+            foreach (Dictionary<string, object> item in Items(args))
+            {
+                if (StructureStyleApplier.FinishWithoutWrite(doc, item, styles, disallowBackendApi) == null)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static List<Dictionary<string, object>> FinishAll(
+            Word.Document doc,
+            Dictionary<string, object> args,
+            IList<StructureStyleRecord> styles,
+            bool disallowBackendApi)
+        {
+            var results = new List<Dictionary<string, object>>();
+            foreach (Dictionary<string, object> item in Items(args))
+            {
+                results.Add(StructureStyleApplier.Apply(doc, item, styles, disallowBackendApi));
+            }
+
+            return results;
+        }
+
+        private static ToolResult ApplyResults(List<Dictionary<string, object>> results)
+        {
+            int done = 0;
+            foreach (Dictionary<string, object> one in results)
+            {
+                if (one.ContainsKey("ok") && one["ok"] is bool bit && bit)
+                {
+                    done++;
+                }
+            }
+
+            return new ToolResult
+            {
+                Success = done > 0,
+                Data = new Dictionary<string, object> { ["applied"] = results },
+                Error = done > 0 ? null : "没有套上。"
+            };
         }
 
         private static IEnumerable<Dictionary<string, object>> Items(Dictionary<string, object> args)
