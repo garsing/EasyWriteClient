@@ -50,6 +50,32 @@ namespace WordAddIn1
             return Parse(raw);
         }
 
+        /// <summary>整包，含 styles.xml。现有 <see cref="Load"/> 仍只读正文。</summary>
+        public static OpenXmlPackage LoadFull(Word.Document document)
+        {
+            if (document == null)
+            {
+                throw new InvalidOperationException("文档为空，无法导出 WordOpenXML");
+            }
+
+            string raw;
+            try
+            {
+                raw = document.WordOpenXML;
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException("导出 WordOpenXML 失败: " + ex.Message, ex);
+            }
+
+            if (string.IsNullOrEmpty(raw))
+            {
+                throw new InvalidOperationException("WordOpenXML 为空");
+            }
+
+            return Parse(raw);
+        }
+
         public static OpenXmlPackage Parse(string raw)
         {
             if (string.IsNullOrEmpty(raw))

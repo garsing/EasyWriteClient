@@ -120,6 +120,7 @@ namespace WordAddIn1
                 { "document.getFormatContext", "F_get_format_context" },
                 { "document.applyDocumentFormat", "F_apply_document_format" },
                 { "document.applyParagraphFormat", "F_apply_paragraph_format" },
+                { "document.documentStructure", "F_document_structure" },
                 { "document.getFormatDisplay", "F_get_format_display" },
                 { "document.getTableFormatDisplay", "F_get_table_format_display" },
                 // { "test.wordDocumentExtractor", "F_test_word_document_extractor" },
