@@ -52,8 +52,18 @@ namespace WordAddIn1
             Dictionary<string, object> args,
             bool disallowBackendApi)
         {
-            OpenXmlPackage package = OpenXmlPackage.LoadFull(doc);
-            XElement stylesRoot = package.FindPartRoot("styles.xml", OpenXmlPackage.W + "styles");
+            OpenXmlPackage full = OpenXmlPackage.LoadFull(doc);
+            OpenXmlPackage content = null;
+            try
+            {
+                content = OpenXmlPackage.Load(doc);
+            }
+            catch (Exception)
+            {
+            }
+
+            XElement stylesRoot = full.FindPartRoot("styles.xml", OpenXmlPackage.W + "styles");
+            XElement body = content != null && content.Body != null ? content.Body : full.Body;
             List<StructureStyleRecord> styles = StructureStyleCatalog.Read(stylesRoot);
 
             if (action == "list_styles")
@@ -77,7 +87,7 @@ namespace WordAddIn1
 
             if (action == "list_spans")
             {
-                Dictionary<string, object> listed = StructureSpanLister.List(ReadDisplay(), package.Body, styles);
+                Dictionary<string, object> listed = StructureSpanLister.List(ReadDisplay(), body, styles);
                 bool ok = listed.ContainsKey("ok") && listed["ok"] is bool bit && bit;
                 return new ToolResult
                 {

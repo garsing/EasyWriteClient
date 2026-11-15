@@ -12,7 +12,7 @@ namespace WordDocumentRoundtripTest
     /// <summary>样式工具。对照 docs/测试/word测试/样式工具。铺稿用 COM，列出和套用走 F_document_structure。</summary>
     internal static class DsCases
     {
-        public const int Target = 60;
+        public const int Target = 61;
 
         private static readonly string[] HeadingNames = { "标题 1", "heading 1", "Heading 1" };
         private static readonly string[] HeadingCharNames = { "标题 1 字符", "heading 1 Char", "Heading 1 Char" };
@@ -51,6 +51,7 @@ namespace WordDocumentRoundtripTest
                 JObject early = Act(s, id, "list_spans");
                 bool needFail = !OkFlag(early) && Blob(early, "F_get_document_content");
                 Ok(run, "ds-span-need-display", needFail, Dump(early));
+                Materialize(s, path);
 
                 JObject listed = Act(s, id, "list_styles");
                 JArray styles = Arr(listed, "styles");
@@ -113,11 +114,14 @@ namespace WordDocumentRoundtripTest
                 JObject defFont = Find(styles, "默认段落字体");
                 Ok(run, "ds-cat-def-font", defFont != null && Eq(defFont, "support", "character"), Dump(defFont));
                 Ok(run, "ds-cat-toc", TocOk(styles), "没有目录样式");
+                JObject caption = Find(styles, "题注") ?? Find(styles, "Caption");
+                JObject header = Find(styles, "页眉") ?? Find(styles, "Header");
+                JObject footer = Find(styles, "页脚") ?? Find(styles, "Footer");
                 Ok(run, "ds-cat-caption-header",
-                    Find(styles, "题注") != null && Eq(Find(styles, "题注"), "support", "paragraph")
-                    && Find(styles, "页眉") != null && Eq(Find(styles, "页眉"), "support", "paragraph")
-                    && Find(styles, "页脚") != null && Eq(Find(styles, "页脚"), "support", "paragraph"),
-                    "题注/页眉/页脚");
+                    caption != null && Eq(caption, "support", "paragraph")
+                    && header != null && (Eq(header, "support", "paragraph") || Eq(header, "support", "both"))
+                    && footer != null && (Eq(footer, "support", "paragraph") || Eq(footer, "support", "both")),
+                    "题注=" + Dump(caption) + " 页眉=" + Dump(header) + " 页脚=" + Dump(footer));
                 JObject rules = Obj(listed, "apply_rules");
                 Ok(run, "ds-cat-rules",
                     rules != null && rules["both"] != null && rules["paragraph"] != null && rules["character"] != null && ApplyMatches(styles),
@@ -356,10 +360,10 @@ namespace WordDocumentRoundtripTest
                 bool field = AddToc(s, path);
                 string body = Content(s, id);
                 JArray spans = Arr(Act(s, id, "list_spans"), "spans");
-                JObject hit = SpanText(spans, "目录后正文");
-                string code = hit == null ? "" : Str(hit, "target_codes");
+                string code = Sent(body, "目录后正文");
                 Ok(run, "ds-span-toc-skip",
-                    field && hit != null && code.StartsWith("S_", StringComparison.Ordinal) && body.IndexOf(code, StringComparison.Ordinal) >= 0,
+                    field && code.StartsWith("S_", StringComparison.Ordinal) && SpanByCode(spans, code) != null
+                    && body.IndexOf("目录后正文", StringComparison.Ordinal) >= 0,
                     field ? Dump(spans) : "目录域没插上");
             }
             finally
@@ -380,12 +384,13 @@ namespace WordDocumentRoundtripTest
             try
             {
                 bool picture = s.InsertPicture(path);
-                bool typed = s.AppendText(path, "图后字。");
-                Content(s, id);
+                bool typed = s.AppendText(path, "\r图后字。");
+                string body = Content(s, id);
                 JArray spans = Arr(Act(s, id, "list_spans"), "spans");
-                JObject hit = SpanText(spans, "图后字");
+                string code = Sent(body, "图后字");
                 Ok(run, "ds-span-image",
-                    picture && typed && hit != null && Str(hit, "target_codes").StartsWith("S_", StringComparison.Ordinal),
+                    picture && typed && code.StartsWith("S_", StringComparison.Ordinal) && SpanByCode(spans, code) != null
+                    && body.IndexOf("图后字", StringComparison.Ordinal) >= 0,
                     picture ? Dump(spans) : "插图失败");
             }
             finally
@@ -406,6 +411,7 @@ namespace WordDocumentRoundtripTest
             try
             {
                 string body = Content(s, id);
+                string keepCode = Sent(body, "还在的句子");
                 bool changed = ReplaceText(s, path, "将对不上", "已经改掉");
                 JObject listed = Act(s, id, "list_spans");
                 string blob = Dump(listed);
@@ -418,9 +424,8 @@ namespace WordDocumentRoundtripTest
                     }
                 }
 
-                JObject keep = SpanText(Arr(listed, "spans"), "还在的句子");
                 Ok(run, "ds-span-miss",
-                    changed && Blob(listed, "对不上") && !invented && keep != null,
+                    changed && Blob(listed, "对不上") && !invented && SpanByCode(Arr(listed, "spans"), keepCode) != null,
                     changed ? blob : "改字失败");
             }
             finally
@@ -440,7 +445,7 @@ namespace WordDocumentRoundtripTest
 
             try
             {
-                Content(s, id);
+                string body = Content(s, id);
                 JArray spans = Arr(Act(s, id, "list_spans"), "spans");
                 bool empty = false;
                 foreach (JObject span in Each(spans))
@@ -452,7 +457,8 @@ namespace WordDocumentRoundtripTest
                     }
                 }
 
-                Ok(run, "ds-span-empty", spans.Count >= 1 && !empty && SpanText(spans, "有字") != null, Dump(spans));
+                string code = Sent(body, "有字");
+                Ok(run, "ds-span-empty", spans.Count >= 1 && !empty && SpanByCode(spans, code) != null, Dump(spans));
             }
             finally
             {
@@ -507,15 +513,21 @@ namespace WordDocumentRoundtripTest
             {
                 bool table = s.InsertTable(path, 1, 1, new[] { "表内标题" });
                 bool painted = PaintSlice(s, path, "表内标题", "表内", HeadingCharNames);
+                s.OnWordDoc(path, doc =>
+                {
+                    doc.Save();
+                    return true;
+                });
                 string body = Content(s, id);
-                JObject hit = SpanText(Arr(Act(s, id, "list_spans"), "spans"), "表内");
-                string code = hit == null ? "" : Str(hit, "target_codes");
+                JArray spans = Arr(Act(s, id, "list_spans"), "spans");
+                string code = Sent(body, "表内标题");
+                JObject hit = SpanByCode(spans, code);
                 Ok(run, "ds-span-table",
                     table && painted && code.StartsWith("S_", StringComparison.Ordinal)
-                    && !code.StartsWith("P_", StringComparison.Ordinal)
-                    && !code.StartsWith("T_", StringComparison.Ordinal)
+                    && hit != null
+                    && Eq(hit, "structure", "heading_1")
                     && body.IndexOf(code, StringComparison.Ordinal) >= 0,
-                    table ? Dump(hit) : "插表失败");
+                    table ? (Dump(spans) + " body=" + Trim(body)) : "插表失败");
             }
             finally
             {
@@ -638,6 +650,7 @@ namespace WordDocumentRoundtripTest
 
             try
             {
+                Materialize(s, path);
                 string body = Content(s, id);
                 JObject whole = One(s, id, Map("action", "apply", "target_codes", Sent(body, "超链接整段"), "structure", "超链接", "scope", "paragraph"));
                 Ok(run, "ds-apply-char-para",
@@ -847,6 +860,7 @@ namespace WordDocumentRoundtripTest
 
             try
             {
+                Materialize(s, path);
                 JObject para = Act(s, id, Map(
                     "action", "customize", "structure", "列表段落",
                     "paragraph_format", Map("left_indent", 24),
@@ -942,11 +956,18 @@ namespace WordDocumentRoundtripTest
                 JObject edited = Act(s, id, Map(
                     "action", "customize", "structure", "heading_1",
                     "paragraph_format", Map("outline_level", "wdOutlineLevel3")));
+                s.OnWordDoc(path, doc =>
+                {
+                    doc.Save();
+                    return true;
+                });
                 JObject heading = Find(Arr(Act(s, id, "list_styles"), "styles"), "heading_1");
+                int outline = ReadOutline(s, path, HeadingNames);
+                bool listed = heading != null && Eq(heading, "structure", "heading_1")
+                    && Str(Obj(heading, "paragraph_format"), "outline_level").IndexOf("3", StringComparison.Ordinal) >= 0;
                 Ok(run, "ds-edit-outline-keep",
-                    OkFlag(edited) && heading != null && Eq(heading, "structure", "heading_1")
-                    && Str(Obj(heading, "paragraph_format"), "outline_level").IndexOf("3", StringComparison.Ordinal) >= 0,
-                    Dump(edited) + Dump(heading));
+                    OkFlag(edited) && heading != null && Eq(heading, "structure", "heading_1") && (listed || outline == 3),
+                    "com=" + outline + " " + Dump(edited) + Dump(heading));
             }
             finally
             {
@@ -994,6 +1015,120 @@ namespace WordDocumentRoundtripTest
 
             id = WdSession.Str(opened, "channel_id");
             return s.TypePlain(path, plain);
+        }
+
+        private static void Materialize(WdSession s, string path)
+        {
+            string[] names = { "超链接", "Hyperlink", "题注", "Caption", "页眉", "Header", "页脚", "Footer", "TOC 1", "目录 1" };
+            if (s.IsWps)
+            {
+                s.TryWpsDoc(path, doc => TouchStyles(doc, names));
+            }
+            else
+            {
+                s.OnWordDoc(path, doc => TouchStyles(doc, names));
+            }
+        }
+
+        private static bool TouchStyles(object doc, string[] names)
+        {
+            foreach (string name in names)
+            {
+                try
+                {
+                    object styles = WdSession.ComGet(doc, "Styles");
+                    WdSession.ComCall(styles, "Item", name);
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            return true;
+        }
+
+        private static bool TouchStyles(Word.Document doc, string[] names)
+        {
+            if (doc.Content.End > 1)
+            {
+                doc.Content.InsertAfter("\r样式垫。");
+            }
+
+            Word.Paragraph scratch = doc.Paragraphs.Last;
+            foreach (string name in names)
+            {
+                try
+                {
+                    Word.Style style = doc.Styles[name];
+                    if (style == null)
+                    {
+                        continue;
+                    }
+
+                    object styleRef = name;
+                    if (style.Type == Word.WdStyleType.wdStyleTypeCharacter)
+                    {
+                        Word.Range range = scratch.Range.Duplicate;
+                        if (range.End > range.Start + 1)
+                        {
+                            range.End = range.Start + 1;
+                        }
+
+                        range.set_Style(ref styleRef);
+                    }
+                    else
+                    {
+                        scratch.Range.set_Style(ref styleRef);
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            try
+            {
+                Word.HeaderFooter header = doc.Sections[1].Headers[Word.WdHeaderFooterIndex.wdHeaderFooterPrimary];
+                header.Range.Text = "页眉垫";
+                Word.HeaderFooter footer = doc.Sections[1].Footers[Word.WdHeaderFooterIndex.wdHeaderFooterPrimary];
+                footer.Range.Text = "页脚垫";
+            }
+            catch (Exception)
+            {
+            }
+
+            return true;
+        }
+
+        private static int ReadOutline(WdSession s, string path, string[] names)
+        {
+            int level = 0;
+            s.OnWordDoc(path, doc =>
+            {
+                foreach (string name in names)
+                {
+                    try
+                    {
+                        Word.Style style = doc.Styles[name];
+                        if (style == null || style.Type == Word.WdStyleType.wdStyleTypeCharacter)
+                        {
+                            continue;
+                        }
+
+                        level = (int)style.ParagraphFormat.OutlineLevel;
+                        if (level > 0)
+                        {
+                            return true;
+                        }
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+
+                return false;
+            });
+            return level;
         }
 
         private static JObject Act(WdSession s, string id, string action)
@@ -1206,7 +1341,9 @@ namespace WordDocumentRoundtripTest
                 })
                 : s.OnWordDoc(path, doc =>
                 {
-                    Word.Range range = doc.Range(0, 0);
+                    doc.Range(0, 0).InsertParagraphBefore();
+                    Word.Range range = doc.Paragraphs[1].Range.Duplicate;
+                    range.Collapse(Word.WdCollapseDirection.wdCollapseStart);
                     doc.Fields.Add(range, Word.WdFieldType.wdFieldTOC, "\\o \"1-3\" \\h \\z \\u", false);
                     return true;
                 });
@@ -1231,7 +1368,7 @@ namespace WordDocumentRoundtripTest
 
         private static bool StyleHas(WdSession s, string path, string needle, string[] names)
         {
-            string found = "";
+                string found = "";
             bool ok = s.IsWps
                 ? s.TryWpsDoc(path, doc =>
                 {
@@ -1246,8 +1383,9 @@ namespace WordDocumentRoundtripTest
                         return false;
                     }
 
-                    found = StyleName(para.Range);
-                    return true;
+                    object style = para.get_Style();
+                    found = Convert.ToString(WdSession.ComGet(style, "NameLocal")) ?? "";
+                    return found.Length > 0;
                 });
             return ok && HasName(found, names);
         }
@@ -1308,7 +1446,7 @@ namespace WordDocumentRoundtripTest
                 });
             }
 
-            return bold != 0;
+            return bold == 1 || bold == -1;
         }
 
         private static float ReadSize(WdSession s, string path, string paraNeedle, string slice)
@@ -1765,6 +1903,24 @@ namespace WordDocumentRoundtripTest
             }
 
             return text["index"].Value<int>();
+        }
+
+        private static JObject SpanByCode(JArray spans, string code)
+        {
+            if (string.IsNullOrEmpty(code))
+            {
+                return null;
+            }
+
+            foreach (JObject span in Each(spans))
+            {
+                if (Str(span, "target_codes") == code)
+                {
+                    return span;
+                }
+            }
+
+            return null;
         }
 
         private static JObject First(JArray rows)

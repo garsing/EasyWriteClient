@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Xml.Linq;
+using Newtonsoft.Json.Linq;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
@@ -88,10 +89,21 @@ namespace WordAddIn1
 
             try
             {
-                Word.Style paragraphStyle = Find(doc, record.StyleName);
                 Word.Style characterStyle = record.Support == "character"
-                    ? paragraphStyle
-                    : Find(doc, record.CharacterStyleName);
+                    ? null
+                    : Resolve(doc, record, true);
+                Word.Style paragraphStyle = record.Support == "character"
+                    ? Resolve(doc, record, true)
+                    : Resolve(doc, record, false);
+                if (record.Support == "character")
+                {
+                    characterStyle = paragraphStyle;
+                }
+
+                if (paragraphStyle == null)
+                {
+                    return Fail("文档里找不到样式 " + record.Structure + "。");
+                }
                 if (record.Support != "paragraph" && text != null)
                 {
                     WriteFont(paragraphStyle, text);
@@ -136,7 +148,24 @@ namespace WordAddIn1
             try
             {
                 paragraphStyle = doc.Styles.Add(name, Word.WdStyleType.wdStyleTypeParagraph);
-                characterStyle = doc.Styles.Add(characterName, Word.WdStyleType.wdStyleTypeCharacter);
+                characterStyle = Find(doc, characterName);
+                if (characterStyle == null)
+                {
+                    try
+                    {
+                        characterStyle = doc.Styles.Add(characterName, Word.WdStyleType.wdStyleTypeCharacter);
+                    }
+                    catch (Exception)
+                    {
+                        characterStyle = Find(doc, characterName);
+                    }
+                }
+
+                if (characterStyle == null)
+                {
+                    SafeDelete(paragraphStyle);
+                    return Fail("没能建出成对的字符样式。");
+                }
                 try
                 {
                     object normal = "正文";
@@ -394,6 +423,51 @@ namespace WordAddIn1
             return value.ToString().Trim();
         }
 
+        private static Word.Style Resolve(Word.Document doc, StructureStyleRecord record, bool character)
+        {
+            if (record == null)
+            {
+                return null;
+            }
+
+            var names = new List<string>();
+            if (character)
+            {
+                AddName(names, record.CharacterStyleName);
+            }
+
+            AddName(names, record.StyleName);
+            foreach (string name in StructureStyleCatalog.LookupNames(record))
+            {
+                AddName(names, name);
+            }
+
+            foreach (string name in names)
+            {
+                Word.Style style = Find(doc, name);
+                if (style == null)
+                {
+                    continue;
+                }
+
+                bool characterStyle = style.Type == Word.WdStyleType.wdStyleTypeCharacter;
+                if (character ? characterStyle : !characterStyle)
+                {
+                    return style;
+                }
+            }
+
+            return null;
+        }
+
+        private static void AddName(List<string> names, string name)
+        {
+            if (!string.IsNullOrWhiteSpace(name) && !names.Contains(name))
+            {
+                names.Add(name);
+            }
+        }
+
         private static Dictionary<string, object> AsDict(Dictionary<string, object> args, string key)
         {
             if (args == null || !args.TryGetValue(key, out object value) || value == null)
@@ -404,6 +478,16 @@ namespace WordAddIn1
             if (value is Dictionary<string, object> dict)
             {
                 return dict;
+            }
+
+            if (value is JObject jo)
+            {
+                return jo.ToObject<Dictionary<string, object>>();
+            }
+
+            if (value is JToken token && token.Type == JTokenType.Object)
+            {
+                return token.ToObject<Dictionary<string, object>>();
             }
 
             return null;
