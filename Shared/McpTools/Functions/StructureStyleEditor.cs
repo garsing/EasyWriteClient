@@ -7,7 +7,7 @@ using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
-    /// <summary>改样式定义，或新建一对双支持样式。</summary>
+    /// <summary>改样式定义，或新建样式。写了文字格式才同时写段落样式和链接字符样式。</summary>
     public static class StructureStyleEditor
     {
         public static string ValidateCreate(bool create, string name, ICollection<string> existing)
@@ -61,7 +61,7 @@ namespace WordAddIn1
                     return Fail(known);
                 }
 
-                return CreatePair(doc, name.Trim(), text, paragraph);
+                return Create(doc, name.Trim(), text, paragraph);
             }
 
             if (string.IsNullOrWhiteSpace(structure))
@@ -73,12 +73,6 @@ namespace WordAddIn1
             if (record == null)
             {
                 return Fail("没有样式 " + structure + "。");
-            }
-
-            if (record.Support == "paragraph" && text != null && text.Count > 0)
-            {
-                warnings.Add("该样式只支持段落格式，已忽略 text_format。");
-                text = null;
             }
 
             if (record.Support == "character" && paragraph != null && paragraph.Count > 0)
@@ -112,18 +106,62 @@ namespace WordAddIn1
                     return Fail("Word 中系统内置的标题 1 到标题 9 不允许改大纲层级。");
                 }
 
-                if (record.Support != "paragraph" && text != null)
+                bool wantText = text != null && text.Count > 0 && record.Support != "character";
+                bool createdCharacter = false;
+                if (wantText)
                 {
-                    WriteFont(paragraphStyle, text);
-                    if (characterStyle != null && !object.ReferenceEquals(characterStyle, paragraphStyle))
+                    string ensureError = EnsureCharacter(doc, paragraphStyle, out characterStyle, out createdCharacter);
+                    if (ensureError != null)
                     {
-                        WriteFont(characterStyle, text);
+                        return Fail(ensureError);
                     }
                 }
 
-                if (record.Support != "character" && paragraph != null)
+                FontSnap paragraphFont = wantText ? FontSnap.Capture(paragraphStyle, text) : null;
+                FontSnap characterFont = wantText ? FontSnap.Capture(characterStyle, text) : null;
+                ParagraphSnap paragraphSnap = record.Support != "character" && paragraph != null
+                    ? ParagraphSnap.Capture(paragraphStyle, paragraph)
+                    : null;
+                try
                 {
-                    WriteParagraph(paragraphStyle, paragraph);
+                    if (wantText)
+                    {
+                        WriteFont(paragraphStyle, text);
+                        WriteFont(characterStyle, text);
+                    }
+                    else if (text != null && record.Support == "character")
+                    {
+                        WriteFont(paragraphStyle, text);
+                    }
+
+                    if (record.Support != "character" && paragraph != null)
+                    {
+                        WriteParagraph(paragraphStyle, paragraph);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (paragraphFont != null)
+                    {
+                        paragraphFont.Restore(paragraphStyle);
+                    }
+
+                    if (characterFont != null)
+                    {
+                        characterFont.Restore(characterStyle);
+                    }
+
+                    if (paragraphSnap != null)
+                    {
+                        paragraphSnap.Restore(paragraphStyle);
+                    }
+
+                    if (createdCharacter)
+                    {
+                        SafeDelete(characterStyle);
+                    }
+
+                    return Fail(ex.Message);
                 }
             }
             catch (Exception ex)
@@ -144,49 +182,70 @@ namespace WordAddIn1
             return ok;
         }
 
-        private static Dictionary<string, object> CreatePair(
+        private static Dictionary<string, object> Create(
             Word.Document doc,
             string name,
             Dictionary<string, object> text,
             Dictionary<string, object> paragraph)
         {
-            string characterName = name + " 字符";
+            bool wantText = text != null && text.Count > 0;
+            bool wantParagraph = paragraph != null && paragraph.Count > 0;
+            if (wantText && !wantParagraph)
+            {
+                return CreateCharacter(doc, name, text);
+            }
+
+            return CreateParagraph(doc, name, wantText ? text : null, paragraph);
+        }
+
+        private static Dictionary<string, object> CreateCharacter(
+            Word.Document doc,
+            string name,
+            Dictionary<string, object> text)
+        {
+            Word.Style style = null;
+            try
+            {
+                style = doc.Styles.Add(name, Word.WdStyleType.wdStyleTypeCharacter);
+                WriteFont(style, text);
+                HideCharacter(style);
+            }
+            catch (Exception ex)
+            {
+                SafeDelete(style);
+                return Fail(ex.Message);
+            }
+
+            return new Dictionary<string, object>
+            {
+                ["ok"] = true,
+                ["structure"] = name,
+                ["support"] = "character"
+            };
+        }
+
+        private static Dictionary<string, object> CreateParagraph(
+            Word.Document doc,
+            string name,
+            Dictionary<string, object> text,
+            Dictionary<string, object> paragraph)
+        {
             Word.Style paragraphStyle = null;
             Word.Style characterStyle = null;
+            bool createdCharacter = false;
             try
             {
                 paragraphStyle = doc.Styles.Add(name, Word.WdStyleType.wdStyleTypeParagraph);
-                characterStyle = Find(doc, characterName);
-                if (characterStyle == null)
-                {
-                    try
-                    {
-                        characterStyle = doc.Styles.Add(characterName, Word.WdStyleType.wdStyleTypeCharacter);
-                    }
-                    catch (Exception)
-                    {
-                        characterStyle = Find(doc, characterName);
-                    }
-                }
-
-                if (characterStyle == null)
-                {
-                    SafeDelete(paragraphStyle);
-                    return Fail("没能建出成对的字符样式。");
-                }
-                try
-                {
-                    object normal = "正文";
-                    paragraphStyle.set_BaseStyle(ref normal);
-                }
-                catch (Exception)
-                {
-                    object normal = "Normal";
-                    paragraphStyle.set_BaseStyle(ref normal);
-                }
-
+                TryBaseStyle(paragraphStyle);
                 if (text != null)
                 {
+                    string ensureError = EnsureCharacter(doc, paragraphStyle, out characterStyle, out createdCharacter);
+                    if (ensureError != null)
+                    {
+                        SafeDelete(paragraphStyle);
+                        return Fail(ensureError);
+                    }
+
                     WriteFont(paragraphStyle, text);
                     WriteFont(characterStyle, text);
                 }
@@ -195,27 +254,14 @@ namespace WordAddIn1
                 {
                     WriteParagraph(paragraphStyle, paragraph);
                 }
-
-                try
-                {
-                    object link = characterStyle;
-                    paragraphStyle.set_LinkStyle(ref link);
-                }
-                catch (Exception)
-                {
-                    // 下面用 OOXML 核对；连不上就删掉。
-                }
-
-                if (!LinksMatch(doc, name, characterName))
-                {
-                    SafeDelete(characterStyle);
-                    SafeDelete(paragraphStyle);
-                    return Fail("新建样式没能连成一对，已删除。");
-                }
             }
             catch (Exception ex)
             {
-                SafeDelete(characterStyle);
+                if (createdCharacter)
+                {
+                    SafeDelete(characterStyle);
+                }
+
                 SafeDelete(paragraphStyle);
                 return Fail(ex.Message);
             }
@@ -224,8 +270,361 @@ namespace WordAddIn1
             {
                 ["ok"] = true,
                 ["structure"] = name,
-                ["support"] = "both"
+                ["support"] = text != null ? "both" : "paragraph"
             };
+        }
+
+        private static string EnsureCharacter(Word.Document doc, Word.Style paragraphStyle, out Word.Style characterStyle, out bool created)
+        {
+            characterStyle = FindCharacter(doc, paragraphStyle);
+            created = false;
+            if (characterStyle == null)
+            {
+                string characterName = paragraphStyle.NameLocal + " 字符";
+                try
+                {
+                    characterStyle = doc.Styles.Add(characterName, Word.WdStyleType.wdStyleTypeCharacter);
+                    created = true;
+                }
+                catch (Exception)
+                {
+                    characterStyle = Find(doc, characterName);
+                }
+            }
+
+            if (characterStyle == null)
+            {
+                return "没能建出字符样式。";
+            }
+
+            try
+            {
+                object link = characterStyle;
+                paragraphStyle.set_LinkStyle(ref link);
+            }
+            catch (Exception)
+            {
+                // 下面核对；连不上就回滚。
+            }
+
+            if (!Linked(paragraphStyle, characterStyle))
+            {
+                if (created)
+                {
+                    SafeDelete(characterStyle);
+                    characterStyle = null;
+                    created = false;
+                }
+
+                return "字符样式没能连上，已撤掉这次写入。";
+            }
+
+            HideCharacter(characterStyle);
+            return null;
+        }
+
+        private static Word.Style FindCharacter(Word.Document doc, Word.Style paragraphStyle)
+        {
+            string local = paragraphStyle.NameLocal;
+            Word.Style found = Find(doc, local + " 字符");
+            if (found != null && found.Type == Word.WdStyleType.wdStyleTypeCharacter)
+            {
+                return found;
+            }
+
+            found = Find(doc, local + " Char");
+            if (found != null && found.Type == Word.WdStyleType.wdStyleTypeCharacter)
+            {
+                return found;
+            }
+
+            try
+            {
+                Word.Style link = paragraphStyle.get_LinkStyle();
+                if (link != null && link.Type == Word.WdStyleType.wdStyleTypeCharacter)
+                {
+                    return link;
+                }
+            }
+            catch (Exception)
+            {
+                // 还没有链接。
+            }
+
+            return null;
+        }
+
+        private static bool Linked(Word.Style paragraphStyle, Word.Style characterStyle)
+        {
+            try
+            {
+                Word.Style paragraphLink = paragraphStyle.get_LinkStyle();
+                Word.Style characterLink = characterStyle.get_LinkStyle();
+                return paragraphLink != null
+                    && characterLink != null
+                    && paragraphLink.NameLocal == characterStyle.NameLocal
+                    && characterLink.NameLocal == paragraphStyle.NameLocal;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        private static void HideCharacter(Word.Style style)
+        {
+            if (style == null)
+            {
+                return;
+            }
+
+            try
+            {
+                style.GetType().InvokeMember(
+                    "Visibility",
+                    System.Reflection.BindingFlags.SetProperty,
+                    null,
+                    style,
+                    new object[] { 1 });
+            }
+            catch (Exception)
+            {
+                // 宿主不认隐藏时，样式仍在，快速样式里不一定收起。
+            }
+
+            try
+            {
+                style.QuickStyle = false;
+            }
+            catch (Exception)
+            {
+                // 没有快速样式开关就跳过。
+            }
+        }
+
+        private static void DropAutoCharacter(Word.Document doc, Word.Style paragraphStyle)
+        {
+            Word.Style characterStyle = FindCharacter(doc, paragraphStyle);
+            if (characterStyle == null)
+            {
+                return;
+            }
+
+            try
+            {
+                object missing = Type.Missing;
+                paragraphStyle.set_LinkStyle(ref missing);
+            }
+            catch (Exception)
+            {
+                // 断开失败也继续删自动带出来的字符样式。
+            }
+
+            SafeDelete(characterStyle);
+        }
+
+        private static void TryBaseStyle(Word.Style paragraphStyle)
+        {
+            try
+            {
+                object normal = "正文";
+                paragraphStyle.set_BaseStyle(ref normal);
+            }
+            catch (Exception)
+            {
+                try
+                {
+                    object normal = "Normal";
+                    paragraphStyle.set_BaseStyle(ref normal);
+                }
+                catch (Exception)
+                {
+                    // 基于正文失败时，样式仍按新建的段落样式留下。
+                }
+            }
+        }
+
+        private sealed class FontSnap
+        {
+            private bool hasSize;
+            private float size;
+            private bool hasBold;
+            private int bold;
+            private bool hasItalic;
+            private int italic;
+            private bool hasUnderline;
+            private Word.WdUnderline underline;
+            private bool hasColor;
+            private Word.WdColor color;
+            private bool hasName;
+            private string name;
+            private string nameFarEast;
+
+            public static FontSnap Capture(Word.Style style, Dictionary<string, object> text)
+            {
+                var snap = new FontSnap();
+                if (style == null || text == null)
+                {
+                    return snap;
+                }
+
+                Word.Font font = style.Font;
+                if (text.ContainsKey("font_size"))
+                {
+                    snap.hasSize = true;
+                    snap.size = font.Size;
+                }
+
+                if (text.ContainsKey("is_bold"))
+                {
+                    snap.hasBold = true;
+                    snap.bold = font.Bold;
+                }
+
+                if (text.ContainsKey("is_italic"))
+                {
+                    snap.hasItalic = true;
+                    snap.italic = font.Italic;
+                }
+
+                if (text.ContainsKey("has_underline"))
+                {
+                    snap.hasUnderline = true;
+                    snap.underline = font.Underline;
+                }
+
+                if (text.ContainsKey("font_color"))
+                {
+                    snap.hasColor = true;
+                    snap.color = font.Color;
+                }
+
+                if (text.ContainsKey("font_name"))
+                {
+                    snap.hasName = true;
+                    snap.name = font.Name;
+                    snap.nameFarEast = font.NameFarEast;
+                }
+
+                return snap;
+            }
+
+            public void Restore(Word.Style style)
+            {
+                if (style == null)
+                {
+                    return;
+                }
+
+                Word.Font font = style.Font;
+                if (hasSize)
+                {
+                    font.Size = size;
+                }
+
+                if (hasBold)
+                {
+                    font.Bold = bold;
+                }
+
+                if (hasItalic)
+                {
+                    font.Italic = italic;
+                }
+
+                if (hasUnderline)
+                {
+                    font.Underline = underline;
+                }
+
+                if (hasColor)
+                {
+                    font.Color = color;
+                }
+
+                if (hasName)
+                {
+                    font.Name = name;
+                    font.NameFarEast = nameFarEast;
+                }
+            }
+        }
+
+        private sealed class ParagraphSnap
+        {
+            private bool hasBefore;
+            private float before;
+            private bool hasAfter;
+            private float after;
+            private bool hasLeft;
+            private float left;
+            private bool hasOutline;
+            private Word.WdOutlineLevel outline;
+
+            public static ParagraphSnap Capture(Word.Style style, Dictionary<string, object> paragraph)
+            {
+                var snap = new ParagraphSnap();
+                if (style == null || paragraph == null)
+                {
+                    return snap;
+                }
+
+                Word.ParagraphFormat format = style.ParagraphFormat;
+                if (paragraph.ContainsKey("space_before"))
+                {
+                    snap.hasBefore = true;
+                    snap.before = format.SpaceBefore;
+                }
+
+                if (paragraph.ContainsKey("space_after"))
+                {
+                    snap.hasAfter = true;
+                    snap.after = format.SpaceAfter;
+                }
+
+                if (paragraph.ContainsKey("left_indent"))
+                {
+                    snap.hasLeft = true;
+                    snap.left = format.LeftIndent;
+                }
+
+                if (paragraph.ContainsKey("outline_level"))
+                {
+                    snap.hasOutline = true;
+                    snap.outline = format.OutlineLevel;
+                }
+
+                return snap;
+            }
+
+            public void Restore(Word.Style style)
+            {
+                if (style == null)
+                {
+                    return;
+                }
+
+                Word.ParagraphFormat format = style.ParagraphFormat;
+                if (hasBefore)
+                {
+                    format.SpaceBefore = before;
+                }
+
+                if (hasAfter)
+                {
+                    format.SpaceAfter = after;
+                }
+
+                if (hasLeft)
+                {
+                    format.LeftIndent = left;
+                }
+
+                if (hasOutline)
+                {
+                    format.OutlineLevel = outline;
+                }
+            }
         }
 
         private static bool LinksMatch(Word.Document doc, string paragraphName, string characterName)

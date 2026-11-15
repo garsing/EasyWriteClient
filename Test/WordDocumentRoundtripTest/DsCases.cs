@@ -972,8 +972,9 @@ namespace WordDocumentRoundtripTest
                 JObject list = Find(Arr(styles, "styles"), "列表段落");
                 Ok(run, "ds-edit-para-side",
                     listBuiltin
-                        ? Blob(para, "format_warnings") && list != null && Eq(list, "support", "paragraph")
-                            && Near(Obj(list, "paragraph_format"), "left_indent", 24, 1.2) && Obj(list, "text_format") == null
+                        ? OkFlag(para) && list != null && Eq(list, "support", "both")
+                            && Near(Obj(list, "paragraph_format"), "left_indent", 24, 1.2)
+                            && Near(Obj(list, "text_format"), "font_size", 9, 0.6)
                         : !OkFlag(para) && Blob(para, "没有样式") && list == null,
                     Dump(para) + Dump(list));
                 JObject character = Act(s, id, Map(
@@ -1013,28 +1014,27 @@ namespace WordDocumentRoundtripTest
                     "action", "customize", "create", true, "name", "强调测",
                     "text_format", Map("font_size", 16)));
                 JObject row = Find(Arr(Act(s, id, "list_styles"), "styles"), "强调测");
-                string xml = FullXml(s, path);
-                bool linked = xml.IndexOf("强调测", StringComparison.Ordinal) >= 0
-                    && xml.IndexOf("强调测 字符", StringComparison.Ordinal) >= 0
-                    && Eq(row, "support", "both");
-                bool sizeOnly = row != null && Near(Obj(row, "text_format"), "font_size", 16, 0.6)
-                    && (Obj(row, "paragraph_format") == null || Str(Obj(row, "paragraph_format"), "outline_level").Length == 0);
-                Ok(run, "ds-edit-create-keys", OkFlag(created) && linked && sizeOnly, Dump(created) + Dump(row));
+                bool sizeOnly = row != null && Eq(row, "support", "character")
+                    && Near(Obj(row, "text_format"), "font_size", 16, 0.6)
+                    && Obj(row, "paragraph_format") == null;
+                Ok(run, "ds-edit-create-keys", OkFlag(created) && sizeOnly, Dump(created) + Dump(row));
                 JObject outlined = Act(s, id, Map(
                     "action", "customize", "create", true, "name", "强调纲",
                     "paragraph_format", Map("outline_level", "wdOutlineLevel2")));
                 JObject outlineRow = Find(Arr(Act(s, id, "list_styles"), "styles"), "强调纲");
                 Ok(run, "ds-edit-create-outline",
                     OkFlag(outlined) && outlineRow != null && Eq(outlineRow, "structure", "强调纲")
+                    && Eq(outlineRow, "support", "paragraph")
+                    && Obj(outlineRow, "text_format") == null
                     && Str(Obj(outlineRow, "paragraph_format"), "outline_level").IndexOf("2", StringComparison.Ordinal) >= 0,
                     Dump(outlined) + Dump(outlineRow));
-                if (!OkFlag(created) && Blob(created, "连成一对") && Find(Arr(Act(s, id, "list_styles"), "styles"), "强调测") == null)
+                if (OkFlag(created) && Eq(created, "support", "character"))
+                {
+                    run.CaseSkip("ds-edit-create-clean", "只建了字符样式，没有双份失败路径");
+                }
+                else if (!OkFlag(created) && Blob(created, "连成一对") && Find(Arr(Act(s, id, "list_styles"), "styles"), "强调测") == null)
                 {
                     Ok(run, "ds-edit-create-clean", true, Dump(created));
-                }
-                else if (linked)
-                {
-                    run.CaseSkip("ds-edit-create-clean", "这次新建已经连成对，失败路径没出现");
                 }
                 else
                 {
