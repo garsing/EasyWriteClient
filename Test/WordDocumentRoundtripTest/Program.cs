@@ -870,7 +870,7 @@ namespace WordDocumentRoundtripTest
                 WdSession.SweepBeforeRun(host);
                 try
                 {
-                    DsCases.Run(styleRun, host);
+                    DsCases.Run(styleRun, host, caseFilter);
                 }
                 finally
                 {

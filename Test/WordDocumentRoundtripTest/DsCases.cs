@@ -20,13 +20,55 @@ namespace WordDocumentRoundtripTest
         private static readonly string[] ListNames = { "列表段落", "List Paragraph" };
         private static readonly string[] LinkNames = { "超链接", "Hyperlink" };
 
-        public static void Run(TestRun run, string host)
+        private static HashSet<string> Only;
+
+        public static void Run(TestRun run, string host, string filter)
         {
+            Only = null;
+            if (!string.IsNullOrWhiteSpace(filter)
+                && !filter.Equals("ds", StringComparison.OrdinalIgnoreCase)
+                && !filter.Equals("ds-", StringComparison.OrdinalIgnoreCase))
+            {
+                var picked = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (string part in filter.Split(','))
+                {
+                    string id = part.Trim();
+                    if (id.Length > 0)
+                    {
+                        picked.Add(id);
+                    }
+                }
+
+                if (picked.Count > 0)
+                {
+                    Only = picked;
+                    run.TotalTarget = picked.Count;
+                }
+            }
+
             var s = new WdSession(host);
             RunCatalog(run, s);
             RunSpans(run, s);
             RunApply(run, s);
             RunEdit(run, s);
+        }
+
+        private static bool Want(params string[] ids)
+        {
+            if (Only == null)
+            {
+                return true;
+            }
+
+            foreach (string id in ids)
+            {
+                if (Only.Contains(id))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static void RunCatalog(TestRun run, WdSession s)
@@ -39,6 +81,10 @@ namespace WordDocumentRoundtripTest
                 "ds-cat-heading-unused", "ds-cat-quote", "ds-cat-emphasis", "ds-cat-def-font",
                 "ds-cat-toc", "ds-cat-caption-header", "ds-cat-rules", "ds-cat-display-intact"
             };
+            if (!Want(ids))
+            {
+                return;
+            }
             string path, id;
             if (!Open(s, "样式目录甲。", out path, out id))
             {
@@ -62,12 +108,16 @@ namespace WordDocumentRoundtripTest
                     Dump(heading));
                 JObject hText = Obj(heading, "text_format");
                 JObject hPara = Obj(heading, "paragraph_format");
-                Ok(run, "ds-cat-heading-format",
-                    heading != null && hText != null && hText["font_size"] != null && hText["font_color"] != null
-                    && hText["is_bold"] == null
-                    && Eq(hPara, "outline_level", "wdOutlineLevel1")
-                    && (hPara["space_before"] != null || hPara["space_after"] != null),
-                    Dump(heading));
+                bool headingFormat = s.IsWps
+                    ? heading != null && hText != null && Near(hText, "font_size", 22, 0.6) && Flag(hText, "is_bold")
+                        && hText["font_color"] == null
+                        && Eq(hPara, "outline_level", "wdOutlineLevel1")
+                        && hPara["space_before"] != null && hPara["space_after"] != null
+                    : heading != null && hText != null && hText["font_size"] != null && hText["font_color"] != null
+                        && hText["is_bold"] == null
+                        && Eq(hPara, "outline_level", "wdOutlineLevel1")
+                        && (hPara["space_before"] != null || hPara["space_after"] != null);
+                Ok(run, "ds-cat-heading-format", headingFormat, Dump(heading));
                 Ok(run, "ds-cat-body-defaults",
                     body != null && Eq(body, "support", "both")
                     && (Near(Obj(body, "text_format"), "font_size", 11, 0.6) || Near(Obj(body, "text_format"), "font_size", 10.5, 0.6))
@@ -78,22 +128,28 @@ namespace WordDocumentRoundtripTest
                     body != null && Obj(body, "text_format") != null && Obj(body, "text_format")["font_size"] != null,
                     Dump(body));
                 JObject list = Find(styles, "列表段落");
+                bool listBuiltin = HostHasStyle(s, path, ListNames);
                 Ok(run, "ds-cat-list-para",
-                    list != null && Eq(list, "support", "paragraph") && Near(Obj(list, "paragraph_format"), "left_indent", 36, 1.2) && Obj(list, "text_format") == null,
+                    listBuiltin
+                        ? list != null && Eq(list, "support", "paragraph") && Near(Obj(list, "paragraph_format"), "left_indent", 36, 1.2) && Obj(list, "text_format") == null
+                        : list == null,
                     Dump(list));
                 JObject link = Find(styles, "超链接");
                 string color = Str(Obj(link, "text_format"), "font_color");
+                string linkColor = s.IsWps ? "0000FF" : "467886";
                 Ok(run, "ds-cat-hyperlink",
-                    link != null && Eq(link, "support", "character") && color.IndexOf("467886", StringComparison.OrdinalIgnoreCase) >= 0
+                    link != null && Eq(link, "support", "character") && color.IndexOf(linkColor, StringComparison.OrdinalIgnoreCase) >= 0
                     && Flag(Obj(link, "text_format"), "has_underline") && Obj(link, "paragraph_format") == null,
                     Dump(link));
                 JObject title = Find(styles, "title");
                 Ok(run, "ds-cat-title", title != null && Eq(title, "support", "both"), Dump(title));
                 JObject subtitle = Find(styles, "subtitle");
                 string subOutline = Str(Obj(subtitle, "paragraph_format"), "outline_level");
-                Ok(run, "ds-cat-subtitle",
-                    subtitle != null && !Eq(subtitle, "structure", "heading_2") && (subOutline.Length == 0 || subOutline.IndexOf("2", StringComparison.Ordinal) < 0),
-                    Dump(subtitle));
+                bool subtitleOk = subtitle != null && !Eq(subtitle, "structure", "heading_2")
+                    && (s.IsWps
+                        ? Eq(subtitle, "structure", "subtitle") && subOutline.IndexOf("2", StringComparison.Ordinal) >= 0
+                        : subOutline.Length == 0 || subOutline.IndexOf("2", StringComparison.Ordinal) < 0);
+                Ok(run, "ds-cat-subtitle", subtitleOk, Dump(subtitle));
                 bool unused = true;
                 for (int n = 2; n <= 9; n++)
                 {
@@ -106,11 +162,19 @@ namespace WordDocumentRoundtripTest
                 Ok(run, "ds-cat-heading-unused", unused, "缺标题 2～9");
                 JObject quote = Find(styles, "引用");
                 JObject intense = Find(styles, "明显引用");
+                bool quoteBuiltin = HostHasStyle(s, path, "引用", "Quote") && HostHasStyle(s, path, "明显引用", "Intense Quote");
                 Ok(run, "ds-cat-quote",
-                    quote != null && Eq(quote, "support", "both") && intense != null && Eq(intense, "support", "both"),
+                    quoteBuiltin
+                        ? quote != null && Eq(quote, "support", "both") && intense != null && Eq(intense, "support", "both")
+                        : quote == null && intense == null,
                     Dump(quote) + " / " + Dump(intense));
                 JObject emphasis = Find(styles, "明显强调");
-                Ok(run, "ds-cat-emphasis", emphasis != null && Eq(emphasis, "support", "character") && Eq(emphasis, "origin", "builtin"), Dump(emphasis));
+                bool emphasisBuiltin = HostHasStyle(s, path, "明显强调", "Intense Emphasis");
+                Ok(run, "ds-cat-emphasis",
+                    emphasisBuiltin
+                        ? emphasis != null && Eq(emphasis, "support", "character") && Eq(emphasis, "origin", "builtin")
+                        : emphasis == null,
+                    Dump(emphasis));
                 JObject defFont = Find(styles, "默认段落字体");
                 Ok(run, "ds-cat-def-font", defFont != null && Eq(defFont, "support", "character"), Dump(defFont));
                 Ok(run, "ds-cat-toc", TocOk(styles), "没有目录样式");
@@ -142,19 +206,19 @@ namespace WordDocumentRoundtripTest
 
         private static void RunSpans(TestRun run, WdSession s)
         {
-            RunSpanPair(run, s);
-            RunSpanWhole(run, s);
-            RunSpanColor(run, s);
-            RunSpanMerge(run, s);
-            RunSpanRepeat(run, s);
-            RunSpanList(run, s);
-            RunSpanLink(run, s);
-            RunSpanToc(run, s);
-            RunSpanImage(run, s);
-            RunSpanMiss(run, s);
-            RunSpanEmpty(run, s);
-            RunSpanCustom(run, s);
-            RunSpanTable(run, s);
+            if (Want("ds-span-heading-text", "ds-span-body-rest", "ds-span-two")) RunSpanPair(run, s);
+            if (Want("ds-span-whole-omit")) RunSpanWhole(run, s);
+            if (Want("ds-span-direct-color")) RunSpanColor(run, s);
+            if (Want("ds-span-merge")) RunSpanMerge(run, s);
+            if (Want("ds-span-repeat")) RunSpanRepeat(run, s);
+            if (Want("ds-span-list-scope")) RunSpanList(run, s);
+            if (Want("ds-span-link-scope")) RunSpanLink(run, s);
+            if (Want("ds-span-toc-skip")) RunSpanToc(run, s);
+            if (Want("ds-span-image")) RunSpanImage(run, s);
+            if (Want("ds-span-miss")) RunSpanMiss(run, s);
+            if (Want("ds-span-empty")) RunSpanEmpty(run, s);
+            if (Want("ds-span-custom-name")) RunSpanCustom(run, s);
+            if (Want("ds-span-table")) RunSpanTable(run, s);
         }
 
         private static void RunSpanPair(TestRun run, WdSession s)
@@ -168,24 +232,25 @@ namespace WordDocumentRoundtripTest
 
             try
             {
-                bool painted = PaintSlice(s, path, "你好啊哈哈哈哈", "你好啊", HeadingCharNames);
+                bool headingChar = HostHasStyle(s, path, HeadingCharNames);
+                bool painted = headingChar && PaintSlice(s, path, "你好啊哈哈哈哈", "你好啊", HeadingCharNames);
                 string body = Content(s, id);
                 JObject listed = Act(s, id, "list_spans");
                 JArray spans = Arr(listed, "spans");
                 JObject head = SpanText(spans, "你好啊");
                 JObject rest = SpanText(spans, "哈哈哈哈");
                 Ok(run, "ds-span-heading-text",
-                    painted && head != null && Eq(head, "structure", "heading_1") && Eq(head, "scope", "text")
-                    && Obj(head, "text_format") != null && Obj(head, "paragraph_format") == null,
+                    !headingChar || (painted && head != null && Eq(head, "structure", "heading_1") && Eq(head, "scope", "text")
+                    && Obj(head, "text_format") != null && Obj(head, "paragraph_format") == null),
                     painted ? Dump(head) : "铺标题 1 字符失败");
                 Ok(run, "ds-span-body-rest",
-                    rest != null && Eq(rest, "structure", "body") && Eq(rest, "scope", "paragraph")
-                    && Obj(rest, "text_format") != null && Obj(rest, "paragraph_format") != null,
+                    !headingChar || (rest != null && Eq(rest, "structure", "body") && Eq(rest, "scope", "paragraph")
+                    && Obj(rest, "text_format") != null && Obj(rest, "paragraph_format") != null),
                     Dump(rest));
                 Ok(run, "ds-span-two",
-                    head != null && rest != null && Str(head, "target_codes") == Str(rest, "target_codes")
+                    !headingChar || (head != null && rest != null && Str(head, "target_codes") == Str(rest, "target_codes")
                     && Str(head, "target_codes").StartsWith("S_", StringComparison.Ordinal)
-                    && body.IndexOf(Str(head, "target_codes"), StringComparison.Ordinal) >= 0,
+                    && body.IndexOf(Str(head, "target_codes"), StringComparison.Ordinal) >= 0),
                     Dump(head) + " / " + Dump(rest));
             }
             finally
@@ -252,12 +317,15 @@ namespace WordDocumentRoundtripTest
 
             try
             {
-                bool a = PaintSlice(s, path, "甲乙丙丁", "甲乙", HeadingCharNames);
-                bool b = PaintSlice(s, path, "甲乙丙丁", "丙丁", HeadingCharNames);
+                bool headingChar = HostHasStyle(s, path, HeadingCharNames);
+                bool a = headingChar && PaintSlice(s, path, "甲乙丙丁", "甲乙", HeadingCharNames);
+                bool b = headingChar && PaintSlice(s, path, "甲乙丙丁", "丙丁", HeadingCharNames);
                 Content(s, id);
                 JArray spans = Arr(Act(s, id, "list_spans"), "spans");
                 JObject merged = SpanText(spans, "甲乙丙丁");
-                Ok(run, "ds-span-merge", a && b && merged != null && Eq(merged, "structure", "heading_1") && spans.Count == 1, Dump(spans));
+                Ok(run, "ds-span-merge",
+                    !headingChar || (a && b && merged != null && Eq(merged, "structure", "heading_1") && spans.Count == 1),
+                    Dump(spans));
             }
             finally
             {
@@ -307,12 +375,15 @@ namespace WordDocumentRoundtripTest
 
             try
             {
-                bool painted = PaintParagraph(s, path, "列表整段。", ListNames);
+                bool listBuiltin = HostHasStyle(s, path, ListNames);
+                bool painted = listBuiltin && PaintParagraph(s, path, "列表整段。", ListNames);
                 Content(s, id);
                 JObject one = First(Arr(Act(s, id, "list_spans"), "spans"));
                 Ok(run, "ds-span-list-scope",
-                    painted && one != null && Eq(one, "scope", "paragraph") && Obj(one, "text_format") == null
-                    && Near(Obj(one, "paragraph_format"), "left_indent", 36, 1.2),
+                    listBuiltin
+                        ? painted && one != null && Eq(one, "scope", "paragraph") && Obj(one, "text_format") == null
+                            && Near(Obj(one, "paragraph_format"), "left_indent", 36, 1.2)
+                        : !painted,
                     painted ? Dump(one) : "铺列表段落失败");
             }
             finally
@@ -512,7 +583,8 @@ namespace WordDocumentRoundtripTest
             try
             {
                 bool table = s.InsertTable(path, 1, 1, new[] { "表内标题" });
-                bool painted = PaintSlice(s, path, "表内标题", "表内", HeadingCharNames);
+                bool headingChar = HostHasStyle(s, path, HeadingCharNames);
+                bool painted = headingChar && PaintSlice(s, path, "表内标题", "表内", HeadingCharNames);
                 s.OnWordDoc(path, doc =>
                 {
                     doc.Save();
@@ -523,10 +595,10 @@ namespace WordDocumentRoundtripTest
                 string code = Sent(body, "表内标题");
                 JObject hit = SpanByCode(spans, code);
                 Ok(run, "ds-span-table",
-                    table && painted && code.StartsWith("S_", StringComparison.Ordinal)
+                    !headingChar || (table && painted && code.StartsWith("S_", StringComparison.Ordinal)
                     && hit != null
                     && Eq(hit, "structure", "heading_1")
-                    && body.IndexOf(code, StringComparison.Ordinal) >= 0,
+                    && body.IndexOf(code, StringComparison.Ordinal) >= 0),
                     table ? (Dump(spans) + " body=" + Trim(body)) : "插表失败");
             }
             finally
@@ -537,14 +609,14 @@ namespace WordDocumentRoundtripTest
 
         private static void RunApply(TestRun run, WdSession s)
         {
-            RunApplyClear(run, s);
-            RunApplyBody(run, s);
-            RunApplyList(run, s);
-            RunApplyLink(run, s);
-            RunApplyMiss(run, s);
-            RunApplyItems(run, s);
-            RunApplyScope(run, s);
-            RunApplyCopy(run, s);
+            if (Want("ds-apply-both-para", "ds-apply-both-text")) RunApplyClear(run, s);
+            if (Want("ds-apply-body-text", "ds-apply-body-para")) RunApplyBody(run, s);
+            if (Want("ds-apply-para-whole", "ds-apply-para-text")) RunApplyList(run, s);
+            if (Want("ds-apply-char-para", "ds-apply-char-text")) RunApplyLink(run, s);
+            if (Want("ds-apply-miss-text", "ds-apply-miss-index", "ds-apply-unknown", "ds-apply-one-code")) RunApplyMiss(run, s);
+            if (Want("ds-apply-items-partial")) RunApplyItems(run, s);
+            if (Want("ds-apply-scope-text", "ds-apply-scope-para", "ds-apply-para-ignores-scope", "ds-apply-alias")) RunApplyScope(run, s);
+            if (Want("ds-apply-no-copy", "ds-apply-extra-format")) RunApplyCopy(run, s);
         }
 
         private static void RunApplyClear(TestRun run, WdSession s)
@@ -619,18 +691,23 @@ namespace WordDocumentRoundtripTest
 
             try
             {
+                bool listBuiltin = HostHasStyle(s, path, ListNames);
                 PaintSlice(s, path, "列表整段套。", "整段", HeadingCharNames);
                 string body = Content(s, id);
                 JObject whole = One(s, id, Map("action", "apply", "target_codes", Sent(body, "列表整段套"), "structure", "列表段落", "scope", "paragraph"));
                 Ok(run, "ds-apply-para-whole",
-                    OkFlag(whole) && StyleHas(s, path, "列表整段套。", ListNames) && SliceHas(s, path, "列表整段套。", "整段", HeadingCharNames),
+                    listBuiltin
+                        ? OkFlag(whole) && StyleHas(s, path, "列表整段套。", ListNames) && SliceHas(s, path, "列表整段套。", "整段", HeadingCharNames)
+                        : !OkFlag(whole) && Blob(whole, "没有样式"),
                     Dump(whole));
 
                 PaintSlice(s, path, "列表几个字", "几", HeadingCharNames);
                 body = Content(s, id);
                 JObject part = One(s, id, Map("action", "apply", "target_codes", Sent(body, "列表几个字"), "structure", "列表段落", "scope", "text", "text", "几"));
                 Ok(run, "ds-apply-para-text",
-                    OkFlag(part) && StyleHas(s, path, "列表几个字", ListNames) && SliceHas(s, path, "列表几个字", "几", HeadingCharNames),
+                    listBuiltin
+                        ? OkFlag(part) && StyleHas(s, path, "列表几个字", ListNames) && SliceHas(s, path, "列表几个字", "几", HeadingCharNames)
+                        : !OkFlag(part) && Blob(part, "没有样式"),
                     Dump(part));
             }
             finally
@@ -750,7 +827,12 @@ namespace WordDocumentRoundtripTest
                 Ok(run, "ds-apply-scope-para", OkFlag(para) && StyleHas(s, path, "省略整段。", HeadingNames), Dump(para));
                 body = Content(s, id);
                 JObject ignore = One(s, id, Map("action", "apply", "target_codes", Sent(body, "段落忽略范围"), "structure", "列表段落", "scope", "text", "text", "忽略"));
-                Ok(run, "ds-apply-para-ignores-scope", OkFlag(ignore) && StyleHas(s, path, "段落忽略范围", ListNames), Dump(ignore));
+                bool listBuiltin = HostHasStyle(s, path, ListNames);
+                Ok(run, "ds-apply-para-ignores-scope",
+                    listBuiltin
+                        ? OkFlag(ignore) && StyleHas(s, path, "段落忽略范围", ListNames)
+                        : !OkFlag(ignore) && Blob(ignore, "没有样式"),
+                    Dump(ignore));
             }
             finally
             {
@@ -813,11 +895,11 @@ namespace WordDocumentRoundtripTest
 
         private static void RunEdit(TestRun run, WdSession s)
         {
-            RunEditHeading(run, s);
-            RunEditSides(run, s);
-            RunEditCreate(run, s);
-            RunEditOutline(run, s);
-            RunEditBody(run, s);
+            if (Want("ds-edit-heading-size")) RunEditHeading(run, s);
+            if (Want("ds-edit-para-side", "ds-edit-char-side")) RunEditSides(run, s);
+            if (Want("ds-edit-create-noname", "ds-edit-create-dup", "ds-edit-create-keys", "ds-edit-create-outline", "ds-edit-create-clean")) RunEditCreate(run, s);
+            if (Want("ds-edit-outline-keep")) RunEditOutline(run, s);
+            if (Want("ds-edit-body")) RunEditBody(run, s);
         }
 
         private static void RunEditHeading(TestRun run, WdSession s)
@@ -861,6 +943,7 @@ namespace WordDocumentRoundtripTest
             try
             {
                 Materialize(s, path);
+                bool listBuiltin = HostHasStyle(s, path, ListNames);
                 JObject para = Act(s, id, Map(
                     "action", "customize", "structure", "列表段落",
                     "paragraph_format", Map("left_indent", 24),
@@ -868,8 +951,10 @@ namespace WordDocumentRoundtripTest
                 JObject styles = Act(s, id, "list_styles");
                 JObject list = Find(Arr(styles, "styles"), "列表段落");
                 Ok(run, "ds-edit-para-side",
-                    Blob(para, "format_warnings") && list != null && Eq(list, "support", "paragraph")
-                    && Near(Obj(list, "paragraph_format"), "left_indent", 24, 1.2) && Obj(list, "text_format") == null,
+                    listBuiltin
+                        ? Blob(para, "format_warnings") && list != null && Eq(list, "support", "paragraph")
+                            && Near(Obj(list, "paragraph_format"), "left_indent", 24, 1.2) && Obj(list, "text_format") == null
+                        : !OkFlag(para) && Blob(para, "没有样式") && list == null,
                     Dump(para) + Dump(list));
                 JObject character = Act(s, id, Map(
                     "action", "customize", "structure", "超链接",
@@ -2094,8 +2179,65 @@ namespace WordDocumentRoundtripTest
             return text.Length <= 180 ? text : text.Substring(0, 180);
         }
 
+        private static bool HostHasStyle(WdSession s, string path, params string[] names)
+        {
+            bool found = false;
+            if (s.IsWps)
+            {
+                s.TryWpsDoc(path, doc =>
+                {
+                    object styles = WdSession.ComGet(doc, "Styles");
+                    foreach (string name in names)
+                    {
+                        try
+                        {
+                            object style = WdSession.ComCall(styles, "Item", name);
+                            if (style != null)
+                            {
+                                found = true;
+                                return true;
+                            }
+                        }
+                        catch (Exception)
+                        {
+                        }
+                    }
+
+                    return false;
+                });
+                return found;
+            }
+
+            s.OnWordDoc(path, doc =>
+            {
+                foreach (string name in names)
+                {
+                    try
+                    {
+                        Word.Style style = doc.Styles[name];
+                        if (style != null)
+                        {
+                            found = true;
+                            return true;
+                        }
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+
+                return false;
+            });
+            return found;
+        }
+
         private static void Ok(TestRun run, string id, bool pass, string detail)
         {
+            if (Only != null && !Only.Contains(id))
+            {
+                return;
+            }
+
             if (pass)
             {
                 run.CaseOk(id);
@@ -2110,6 +2252,11 @@ namespace WordDocumentRoundtripTest
         {
             foreach (string id in ids)
             {
+                if (Only != null && !Only.Contains(id))
+                {
+                    continue;
+                }
+
                 run.CaseFail(id, reason);
             }
         }
