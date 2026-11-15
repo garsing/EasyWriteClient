@@ -1383,11 +1383,33 @@ namespace WordDocumentRoundtripTest
                         return false;
                     }
 
-                    object style = para.get_Style();
-                    found = Convert.ToString(WdSession.ComGet(style, "NameLocal")) ?? "";
+                    found = ParagraphStyleName(doc, para);
                     return found.Length > 0;
                 });
             return ok && HasName(found, names);
+        }
+
+        private static string ParagraphStyleName(Word.Document doc, Word.Paragraph para)
+        {
+            object style = para.get_Style();
+            Word.Style typed = style as Word.Style;
+            if (typed == null && style != null)
+            {
+                int code;
+                if (int.TryParse(Convert.ToString(style, CultureInfo.InvariantCulture), NumberStyles.Integer, CultureInfo.InvariantCulture, out code))
+                {
+                    try
+                    {
+                        typed = doc.Styles[(Word.WdBuiltinStyle)code];
+                    }
+                    catch (Exception)
+                    {
+                        typed = null;
+                    }
+                }
+            }
+
+            return typed == null ? "" : (typed.NameLocal ?? "");
         }
 
         private static bool SliceHas(WdSession s, string path, string paraNeedle, string slice, string[] names)
@@ -1662,7 +1684,29 @@ namespace WordDocumentRoundtripTest
                 return "";
             }
 
-            return Convert.ToString(StyleOf(WdSession.ComGet(para, "Range"))) ?? "";
+            object style = WdSession.ComGet(para, "Style");
+            string name = Convert.ToString(WdSession.ComGet(style, "NameLocal")) ?? "";
+            if (name.Length > 0)
+            {
+                return name;
+            }
+
+            int code;
+            if (!int.TryParse(Convert.ToString(style, CultureInfo.InvariantCulture), NumberStyles.Integer, CultureInfo.InvariantCulture, out code))
+            {
+                return "";
+            }
+
+            try
+            {
+                object styles = WdSession.ComGet(doc, "Styles");
+                object resolved = WdSession.ComCall(styles, "Item", code);
+                return Convert.ToString(WdSession.ComGet(resolved, "NameLocal")) ?? "";
+            }
+            catch (Exception)
+            {
+                return "";
+            }
         }
 
         private static object FindParaLate(object doc, string needle)

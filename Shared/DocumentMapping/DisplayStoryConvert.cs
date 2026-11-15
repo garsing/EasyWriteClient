@@ -41,6 +41,28 @@ namespace WordAddIn1.DocumentMapping
             return ToMarks(display).Replace("^b", "\f");
         }
 
+        /// <summary>
+        /// 句子码在 display 里的位置，换成整篇 ToStory 后的偏移。
+        /// 不能只转换码前的前缀：码在表内时前缀还没遇到 &lt;/table&gt;，表不会被化成 \r\a。
+        /// </summary>
+        public static int StoryOffset(string display, int displayIndex)
+        {
+            if (string.IsNullOrEmpty(display) || displayIndex <= 0)
+            {
+                return 0;
+            }
+
+            if (displayIndex > display.Length)
+            {
+                displayIndex = display.Length;
+            }
+
+            string pinned = display.Substring(0, displayIndex) + "\uE000" + display.Substring(displayIndex);
+            string story = ToStory(pinned);
+            int at = story.IndexOf('\uE000');
+            return at < 0 ? story.Length : at;
+        }
+
         public static string ToStory(string display, Func<string, string> storyByCode)
         {
             string rewritten = AutonumConvert.ReplaceCodeInners(display, storyByCode);

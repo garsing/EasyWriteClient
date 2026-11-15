@@ -331,10 +331,15 @@ namespace WordAddIn1
 
             if (paragraph.TryGetValue("outline_level", out object level) && level != null)
             {
-                format.OutlineLevel = (Word.WdOutlineLevel)Enum.Parse(
+                Word.WdOutlineLevel expected = (Word.WdOutlineLevel)Enum.Parse(
                     typeof(Word.WdOutlineLevel),
                     level.ToString(),
                     true);
+                format.OutlineLevel = expected;
+                if (format.OutlineLevel != expected)
+                {
+                    throw new InvalidOperationException("这个样式的大纲级别写不进去。");
+                }
             }
         }
 

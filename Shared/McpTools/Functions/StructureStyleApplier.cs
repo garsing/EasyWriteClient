@@ -84,7 +84,7 @@ namespace WordAddIn1
                 {
                     ResetFont(ParagraphText(paragraph));
                     paragraph.Format.Reset();
-                    SetStyle(paragraph.Range, Names(style, false));
+                    SetStyle(doc, paragraph.Range, Names(style, false), false);
                 }
                 else if (style.Support == "both" && style.Structure == "body")
                 {
@@ -93,18 +93,18 @@ namespace WordAddIn1
                 else if (style.Support == "both")
                 {
                     range.Font.Reset();
-                    SetStyle(range, Names(style, true));
+                    SetStyle(doc, range, Names(style, true), true);
                 }
                 else if (style.Support == "paragraph")
                 {
                     paragraph.Format.Reset();
-                    SetStyle(paragraph.Range, Names(style, false));
+                    SetStyle(doc, paragraph.Range, Names(style, false), false);
                 }
                 else
                 {
                     Word.Range target = scope == "paragraph" ? ParagraphText(paragraph) : range;
                     target.Font.Reset();
-                    SetStyle(target, Names(style, true));
+                    SetStyle(doc, target, Names(style, true), true);
                 }
             }
             catch (Exception ex)
@@ -143,7 +143,7 @@ namespace WordAddIn1
             range.Font.Reset();
         }
 
-        private static void SetStyle(Word.Range range, IList<string> names)
+        private static void SetStyle(Word.Document doc, Word.Range range, IList<string> names, bool character)
         {
             Exception last = null;
             foreach (string name in names)
@@ -153,9 +153,21 @@ namespace WordAddIn1
                     continue;
                 }
 
+                Word.Style found = FindStyle(doc, name);
+                if (found == null)
+                {
+                    continue;
+                }
+
+                bool isCharacter = found.Type == Word.WdStyleType.wdStyleTypeCharacter;
+                if (isCharacter != character)
+                {
+                    continue;
+                }
+
                 try
                 {
-                    object styleRef = name;
+                    object styleRef = found;
                     range.set_Style(ref styleRef);
                     return;
                 }
@@ -165,7 +177,19 @@ namespace WordAddIn1
                 }
             }
 
-            throw last ?? new InvalidOperationException("样式名为空。");
+            throw last ?? new InvalidOperationException("文档里找不到对应的样式。");
+        }
+
+        private static Word.Style FindStyle(Word.Document doc, string name)
+        {
+            try
+            {
+                return doc.Styles[name];
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
 
         private static IList<string> Names(StructureStyleRecord style, bool character)

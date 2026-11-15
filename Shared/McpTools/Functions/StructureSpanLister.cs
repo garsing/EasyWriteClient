@@ -485,8 +485,8 @@ namespace WordAddIn1
                 slots.Add(new SentenceSlot
                 {
                     Code = code,
-                    Start = DisplayStoryConvert.ToStory(display.Substring(0, contentFrom)).Length,
-                    End = DisplayStoryConvert.ToStory(display.Substring(0, end.Index)).Length
+                    Start = DisplayStoryConvert.StoryOffset(display, contentFrom),
+                    End = DisplayStoryConvert.StoryOffset(display, end.Index)
                 });
             }
 
