@@ -285,8 +285,11 @@ namespace WordAddIn1
                 string n = row.Structure.Substring("heading_".Length);
                 yield return "标题 " + n;
                 yield return "heading " + n;
-                yield return "标题 " + n + " 字符";
-                yield return "heading " + n + " Char";
+                if (!string.IsNullOrEmpty(row.CharacterStyleName))
+                {
+                    yield return "标题 " + n + " 字符";
+                    yield return "heading " + n + " Char";
+                }
             }
         }
 
@@ -304,7 +307,7 @@ namespace WordAddIn1
                 CharacterStyleId = linked == null ? null : linked.Id,
                 CharacterStyleName = linked == null ? null : linked.Name
             };
-            if (linked == null && !body && builtin == null)
+            if (linked == null && !body)
             {
                 record.Support = "paragraph";
             }

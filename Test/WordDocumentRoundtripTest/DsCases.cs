@@ -103,14 +103,14 @@ namespace WordDocumentRoundtripTest
                 JArray styles = Arr(listed, "styles");
                 JObject heading = Find(styles, "heading_1");
                 JObject body = Find(styles, "body");
-                Ok(run, "ds-cat-heading-pair",
-                    heading != null && Eq(heading, "support", "both") && Eq(heading, "origin", "builtin") && Find(styles, "heading 1 Char") == null && Find(styles, "标题 1 字符") == null,
-                    Dump(heading));
+                bool headingPair = heading != null && Eq(heading, "origin", "builtin")
+                    && Find(styles, "heading 1 Char") == null && Find(styles, "标题 1 字符") == null
+                    && Eq(heading, "support", s.IsWps ? "paragraph" : "both");
+                Ok(run, "ds-cat-heading-pair", headingPair, Dump(heading));
                 JObject hText = Obj(heading, "text_format");
                 JObject hPara = Obj(heading, "paragraph_format");
                 bool headingFormat = s.IsWps
-                    ? heading != null && hText != null && Near(hText, "font_size", 22, 0.6) && Flag(hText, "is_bold")
-                        && hText["font_color"] == null
+                    ? heading != null && hText == null
                         && Eq(hPara, "outline_level", "wdOutlineLevel1")
                         && hPara["space_before"] != null && hPara["space_after"] != null
                     : heading != null && hText != null && hText["font_size"] != null && hText["font_color"] != null
@@ -142,7 +142,9 @@ namespace WordDocumentRoundtripTest
                     && Flag(Obj(link, "text_format"), "has_underline") && Obj(link, "paragraph_format") == null,
                     Dump(link));
                 JObject title = Find(styles, "title");
-                Ok(run, "ds-cat-title", title != null && Eq(title, "support", "both"), Dump(title));
+                Ok(run, "ds-cat-title",
+                    title != null && Eq(title, "support", s.IsWps ? "paragraph" : "both"),
+                    Dump(title));
                 JObject subtitle = Find(styles, "subtitle");
                 string subOutline = Str(Obj(subtitle, "paragraph_format"), "outline_level");
                 bool subtitleOk = subtitle != null && !Eq(subtitle, "structure", "heading_2")
@@ -643,7 +645,10 @@ namespace WordDocumentRoundtripTest
                 string part = Sent(body, "只套好字");
                 JObject textApply = One(s, id, Map(
                     "action", "apply", "target_codes", part, "structure", "heading_1", "text", "好"));
-                bool textOk = !Bold(s, path, "只套好字", "好") && !StyleHas(s, path, "只套好字", HeadingNames) && SliceHas(s, path, "只套好字", "好", HeadingCharNames);
+                bool headingChar = HostHasStyle(s, path, HeadingCharNames);
+                bool textOk = headingChar
+                    ? !Bold(s, path, "只套好字", "好") && !StyleHas(s, path, "只套好字", HeadingNames) && SliceHas(s, path, "只套好字", "好", HeadingCharNames)
+                    : Eq(textApply, "scope", "paragraph") && StyleHas(s, path, "只套好字", HeadingNames);
                 Ok(run, "ds-apply-both-text", OkFlag(textApply) && textOk, Dump(textApply));
             }
             finally
@@ -819,8 +824,11 @@ namespace WordDocumentRoundtripTest
             {
                 string body = Content(s, id);
                 JObject text = One(s, id, Map("action", "apply", "target_codes", Sent(body, "省略范围好"), "structure", "heading_1", "text", "好"));
+                bool headingChar = HostHasStyle(s, path, HeadingCharNames);
                 Ok(run, "ds-apply-scope-text",
-                    OkFlag(text) && !StyleHas(s, path, "省略范围好。", HeadingNames) && SliceHas(s, path, "省略范围好。", "好", HeadingCharNames),
+                    headingChar
+                        ? OkFlag(text) && !StyleHas(s, path, "省略范围好。", HeadingNames) && SliceHas(s, path, "省略范围好。", "好", HeadingCharNames)
+                        : OkFlag(text) && Eq(text, "scope", "paragraph") && StyleHas(s, path, "省略范围好。", HeadingNames),
                     Dump(text));
                 body = Content(s, id);
                 JObject para = One(s, id, Map("action", "apply", "target_codes", Sent(body, "省略整段"), "structure", "heading_1"));
