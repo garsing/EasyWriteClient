@@ -963,10 +963,10 @@ namespace WordDocumentRoundtripTest
                 });
                 JObject heading = Find(Arr(Act(s, id, "list_styles"), "styles"), "heading_1");
                 int outline = ReadOutline(s, path, HeadingNames);
-                bool listed = heading != null && Eq(heading, "structure", "heading_1")
-                    && Str(Obj(heading, "paragraph_format"), "outline_level").IndexOf("3", StringComparison.Ordinal) >= 0;
+                bool kept = heading != null && Eq(heading, "structure", "heading_1")
+                    && Eq(Obj(heading, "paragraph_format"), "outline_level", "wdOutlineLevel1");
                 Ok(run, "ds-edit-outline-keep",
-                    OkFlag(edited) && heading != null && Eq(heading, "structure", "heading_1") && (listed || outline == 3),
+                    !OkFlag(edited) && Blob(edited, "不允许改大纲层级") && kept && outline == 1,
                     "com=" + outline + " " + Dump(edited) + Dump(heading));
             }
             finally

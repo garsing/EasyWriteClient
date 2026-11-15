@@ -104,6 +104,15 @@ namespace WordAddIn1
                 {
                     return Fail("文档里找不到样式 " + record.Structure + "。");
                 }
+
+                if (paragraph != null
+                    && paragraph.ContainsKey("outline_level")
+                    && IsFixedHeading(record.Structure)
+                    && !WpsChartExtract.IsWpsDocument(doc))
+                {
+                    return Fail("Word 中系统内置的标题 1 到标题 9 不允许改大纲层级。");
+                }
+
                 if (record.Support != "paragraph" && text != null)
                 {
                     WriteFont(paragraphStyle, text);
@@ -304,6 +313,21 @@ namespace WordAddIn1
                     ? Word.WdUnderline.wdUnderlineSingle
                     : Word.WdUnderline.wdUnderlineNone;
             }
+        }
+
+        private static bool IsFixedHeading(string structure)
+        {
+            if (string.IsNullOrEmpty(structure) || !structure.StartsWith("heading_", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            int level;
+            string n = structure.Substring("heading_".Length);
+            return int.TryParse(n, NumberStyles.Integer, CultureInfo.InvariantCulture, out level)
+                && level >= 1
+                && level <= 9
+                && n == level.ToString(CultureInfo.InvariantCulture);
         }
 
         private static void WriteParagraph(Word.Style style, Dictionary<string, object> paragraph)
