@@ -107,8 +107,7 @@ namespace WordAddIn1
 
                 if (paragraph != null
                     && paragraph.ContainsKey("outline_level")
-                    && IsFixedHeading(record.Structure)
-                    && !WpsChartExtract.IsWpsDocument(doc))
+                    && IsFixedHeading(record.Structure))
                 {
                     return Fail("Word 中系统内置的标题 1 到标题 9 不允许改大纲层级。");
                 }

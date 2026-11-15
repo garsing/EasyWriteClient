@@ -63,6 +63,10 @@ namespace WordAddIn1
             }
 
             XElement stylesRoot = full.FindPartRoot("styles.xml", OpenXmlPackage.W + "styles");
+            if (WpsChartExtract.IsWpsDocument(doc))
+            {
+                stylesRoot = StructureStyleLibrary.Ensure(doc, stylesRoot);
+            }
             XElement body = content != null && content.Body != null ? content.Body : full.Body;
             List<StructureStyleRecord> styles = StructureStyleCatalog.Read(stylesRoot);
 

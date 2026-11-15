@@ -1103,6 +1103,39 @@ namespace WordDocumentRoundtripTest
         private static int ReadOutline(WdSession s, string path, string[] names)
         {
             int level = 0;
+            if (s.IsWps)
+            {
+                s.TryWpsDoc(path, doc =>
+                {
+                    object styles = WdSession.ComGet(doc, "Styles");
+                    foreach (string name in names)
+                    {
+                        try
+                        {
+                            object style = WdSession.ComCall(styles, "Item", name);
+                            object type = WdSession.ComGet(style, "Type");
+                            if (type != null && Convert.ToInt32(type) == (int)Word.WdStyleType.wdStyleTypeCharacter)
+                            {
+                                continue;
+                            }
+
+                            object format = WdSession.ComGet(style, "ParagraphFormat");
+                            level = Convert.ToInt32(WdSession.ComGet(format, "OutlineLevel"));
+                            if (level > 0)
+                            {
+                                return true;
+                            }
+                        }
+                        catch (Exception)
+                        {
+                        }
+                    }
+
+                    return false;
+                });
+                return level;
+            }
+
             s.OnWordDoc(path, doc =>
             {
                 foreach (string name in names)

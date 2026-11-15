@@ -387,6 +387,38 @@ namespace WordAddIn1
             return Aliases.TryGetValue(name, out alias) ? alias : null;
         }
 
+        /// <summary>同一支样式的中英文名。styles.xml 用英文，样式库用中文。</summary>
+        internal static IEnumerable<string> EquivalentNames(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                yield break;
+            }
+
+            yield return name;
+            string alias = Alias(name);
+            if (!string.IsNullOrEmpty(alias))
+            {
+                yield return alias;
+            }
+
+            Match heading = Regex.Match(
+                name,
+                @"^(标题|heading)\s+(\d+)(\s*字符|\s+Char)?$",
+                RegexOptions.IgnoreCase);
+            if (!heading.Success)
+            {
+                yield break;
+            }
+
+            string index = heading.Groups[2].Value;
+            bool character = heading.Groups[3].Success;
+            bool chinese = heading.Groups[1].Value.StartsWith("标", StringComparison.Ordinal);
+            yield return chinese
+                ? (character ? "heading " + index + " Char" : "heading " + index)
+                : (character ? "标题 " + index + " 字符" : "标题 " + index);
+        }
+
         private static Dictionary<string, object> ReadText(XElement rPr)
         {
             var format = new Dictionary<string, object>();
