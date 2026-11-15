@@ -53,21 +53,14 @@ namespace WordAddIn1
             bool disallowBackendApi)
         {
             OpenXmlPackage full = OpenXmlPackage.LoadFull(doc);
-            OpenXmlPackage content = null;
-            try
+            if (WpsChartExtract.IsWpsDocument(doc)
+                && StructureStyleLibrary.Ensure(doc, full.FindPartRoot("styles.xml", OpenXmlPackage.W + "styles")))
             {
-                content = OpenXmlPackage.Load(doc);
-            }
-            catch (Exception)
-            {
+                full = OpenXmlPackage.LoadFull(doc);
             }
 
             XElement stylesRoot = full.FindPartRoot("styles.xml", OpenXmlPackage.W + "styles");
-            if (WpsChartExtract.IsWpsDocument(doc))
-            {
-                stylesRoot = StructureStyleLibrary.Ensure(doc, stylesRoot);
-            }
-            XElement body = content != null && content.Body != null ? content.Body : full.Body;
+            XElement body = full.Body;
             List<StructureStyleRecord> styles = StructureStyleCatalog.Read(stylesRoot);
 
             if (action == "list_styles")

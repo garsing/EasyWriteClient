@@ -10,11 +10,12 @@ namespace WordAddIn1
     /// </summary>
     internal static class StructureStyleLibrary
     {
-        public static XElement Ensure(Word.Document doc, XElement stylesRoot)
+        /// <summary>把还没写进样式表的内置样式 materialize。返回是否改过文档。调用方改完后再导出一次，正文和目录都用那一次。</summary>
+        public static bool Ensure(Word.Document doc, XElement stylesRoot)
         {
             if (doc == null)
             {
-                return stylesRoot;
+                return false;
             }
 
             var present = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -88,14 +89,7 @@ namespace WordAddIn1
                 }
             }
 
-            if (!changed)
-            {
-                return stylesRoot;
-            }
-
-            OpenXmlPackage full = OpenXmlPackage.LoadFull(doc);
-            XElement next = full.FindPartRoot("styles.xml", OpenXmlPackage.W + "styles");
-            return next ?? stylesRoot;
+            return changed;
         }
 
         private static void Collect(XElement stylesRoot, HashSet<string> present)
