@@ -49,7 +49,8 @@ namespace WordAddIn1
                 }
             }
 
-            BuildStory(body, byId, bodyStyle, out List<Piece> pieces);
+            var fields = new List<bool>();
+            BuildStory(body, byId, bodyStyle, fields, out List<Piece> pieces);
             string displayChars = DisplayChars(display, out int[] origin);
             List<SentenceSlot> slots = SentenceSlots(display, origin);
             var spans = new List<Dictionary<string, object>>();
@@ -287,11 +288,12 @@ namespace WordAddIn1
             XElement body,
             Dictionary<string, StructureStyleRecord> byId,
             StructureStyleRecord bodyStyle,
+            List<bool> fields,
             out List<Piece> pieces)
         {
             pieces = new List<Piece>();
             var story = new StringBuilder();
-            Walk(body, byId, bodyStyle, story, pieces, false);
+            Walk(body, byId, bodyStyle, fields, story, pieces, false);
             string built = story.ToString();
             foreach (Piece piece in pieces)
             {
@@ -305,6 +307,7 @@ namespace WordAddIn1
             XElement node,
             Dictionary<string, StructureStyleRecord> byId,
             StructureStyleRecord bodyStyle,
+            List<bool> fields,
             StringBuilder story,
             List<Piece> pieces,
             bool inToc)
@@ -316,7 +319,7 @@ namespace WordAddIn1
                     XElement choice = child.Element(Mc + "Choice");
                     if (choice != null)
                     {
-                        Walk(choice, byId, bodyStyle, story, pieces, inToc);
+                        Walk(choice, byId, bodyStyle, fields, story, pieces, inToc);
                     }
 
                     continue;
@@ -330,19 +333,19 @@ namespace WordAddIn1
                 if (child.Name == W + "p")
                 {
                     bool toc = inToc || IsTocParagraph(child);
-                    AppendParagraph(child, byId, bodyStyle, story, pieces, toc);
+                    AppendParagraph(child, byId, bodyStyle, fields, story, pieces, toc);
                     continue;
                 }
 
                 if (child.Name == W + "tbl" || child.Name == W + "sdt" || child.Name == W + "sdtContent" || child.Name == W + "customXml")
                 {
-                    Walk(child, byId, bodyStyle, story, pieces, inToc);
+                    Walk(child, byId, bodyStyle, fields, story, pieces, inToc);
                     continue;
                 }
 
                 if (child.Name == W + "tr" || child.Name == W + "tc")
                 {
-                    Walk(child, byId, bodyStyle, story, pieces, inToc);
+                    Walk(child, byId, bodyStyle, fields, story, pieces, inToc);
                     if (child.Name == W + "tc" && (story.Length == 0 || story[story.Length - 1] != '\a'))
                     {
                         story.Append('\a');
@@ -353,23 +356,59 @@ namespace WordAddIn1
 
         private static bool IsTocParagraph(XElement paragraph)
         {
-            foreach (XElement instr in paragraph.Descendants(W + "instrText"))
+            string style = (string)paragraph.Element(W + "pPr")?.Element(W + "pStyle")?.Attribute(W + "val");
+            return style != null && (style.StartsWith("TOC", StringComparison.OrdinalIgnoreCase) || style == "TOC");
+        }
+
+        private static void NoteField(XElement run, List<bool> fields)
+        {
+            XElement marker = run.Element(W + "fldChar");
+            if (marker != null)
             {
-                string text = instr.Value ?? "";
-                if (text.IndexOf("TOC", StringComparison.OrdinalIgnoreCase) >= 0)
+                string kind = (string)marker.Attribute(W + "fldCharType") ?? "";
+                if (kind == "begin")
+                {
+                    fields.Add(false);
+                }
+                else if (kind == "end" && fields.Count > 0)
+                {
+                    fields.RemoveAt(fields.Count - 1);
+                }
+
+                return;
+            }
+
+            XElement instr = run.Element(W + "instrText");
+            if (instr == null || fields.Count == 0)
+            {
+                return;
+            }
+
+            string text = instr.Value ?? "";
+            if (text.IndexOf("TOC", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                fields[fields.Count - 1] = true;
+            }
+        }
+
+        private static bool InsideTocField(List<bool> fields)
+        {
+            for (int i = 0; i < fields.Count; i++)
+            {
+                if (fields[i])
                 {
                     return true;
                 }
             }
 
-            string style = (string)paragraph.Element(W + "pPr")?.Element(W + "pStyle")?.Attribute(W + "val");
-            return style != null && (style.StartsWith("TOC", StringComparison.OrdinalIgnoreCase) || style == "TOC");
+            return false;
         }
 
         private static void AppendParagraph(
             XElement paragraph,
             Dictionary<string, StructureStyleRecord> byId,
             StructureStyleRecord bodyStyle,
+            List<bool> fields,
             StringBuilder story,
             List<Piece> pieces,
             bool toc)
@@ -386,6 +425,7 @@ namespace WordAddIn1
             }
             foreach (XElement run in paragraph.Elements(W + "r"))
             {
+                NoteField(run, fields);
                 if (run.Element(W + "rPr")?.Element(W + "del") != null)
                 {
                     continue;
@@ -407,7 +447,7 @@ namespace WordAddIn1
 
                 int start = story.Length;
                 story.Append(text);
-                if (toc || runStyle == null)
+                if (toc || InsideTocField(fields) || runStyle == null)
                 {
                     continue;
                 }
