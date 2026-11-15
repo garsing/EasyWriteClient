@@ -105,12 +105,12 @@ namespace WordDocumentRoundtripTest
                 JObject body = Find(styles, "body");
                 bool headingPair = heading != null && Eq(heading, "origin", "builtin")
                     && Find(styles, "heading 1 Char") == null && Find(styles, "标题 1 字符") == null
-                    && Eq(heading, "support", s.IsWps ? "paragraph" : "both");
+                    && Eq(heading, "support", Obj(heading, "text_format") != null ? "both" : "paragraph");
                 Ok(run, "ds-cat-heading-pair", headingPair, Dump(heading));
                 JObject hText = Obj(heading, "text_format");
                 JObject hPara = Obj(heading, "paragraph_format");
                 bool headingFormat = s.IsWps
-                    ? heading != null && hText == null
+                    ? heading != null && hText != null && Near(hText, "font_size", 22, 1.2) && Flag(hText, "is_bold")
                         && Eq(hPara, "outline_level", "wdOutlineLevel1")
                         && hPara["space_before"] != null && hPara["space_after"] != null
                     : heading != null && hText != null && hText["font_size"] != null && hText["font_color"] != null
@@ -118,12 +118,19 @@ namespace WordDocumentRoundtripTest
                         && Eq(hPara, "outline_level", "wdOutlineLevel1")
                         && (hPara["space_before"] != null || hPara["space_after"] != null);
                 Ok(run, "ds-cat-heading-format", headingFormat, Dump(heading));
-                Ok(run, "ds-cat-body-defaults",
-                    body != null && Eq(body, "support", "both")
-                    && (Near(Obj(body, "text_format"), "font_size", 11, 0.6) || Near(Obj(body, "text_format"), "font_size", 10.5, 0.6))
-                    && (Near(Obj(body, "paragraph_format"), "space_after", 8, 1.2) || Near(Obj(body, "paragraph_format"), "space_after", 10, 1.2))
-                    && Eq(Obj(body, "paragraph_format"), "outline_level", "wdOutlineLevelBodyText"),
-                    Dump(body));
+                JObject bodyText = Obj(body, "text_format");
+                JObject bodyPara = Obj(body, "paragraph_format");
+                bool bodyDefaults = s.IsWps
+                    ? body != null && Eq(body, "support", "both")
+                        && Near(bodyText, "font_size", 10.5, 0.6)
+                        && bodyText["is_bold"] == null
+                        && (bodyPara == null || bodyPara["outline_level"] == null)
+                    : body != null && Eq(body, "support", "both")
+                        && Near(bodyText, "font_size", 11, 0.6)
+                        && Near(bodyPara, "space_after", 8, 1.2)
+                        && bodyText["is_bold"] == null
+                        && bodyPara["outline_level"] == null;
+                Ok(run, "ds-cat-body-defaults", bodyDefaults, Dump(body));
                 Ok(run, "ds-cat-body-empty-rpr",
                     body != null && Obj(body, "text_format") != null && Obj(body, "text_format")["font_size"] != null,
                     Dump(body));
@@ -143,7 +150,7 @@ namespace WordDocumentRoundtripTest
                     Dump(link));
                 JObject title = Find(styles, "title");
                 Ok(run, "ds-cat-title",
-                    title != null && Eq(title, "support", s.IsWps ? "paragraph" : "both"),
+                    title != null && Eq(title, "support", Obj(title, "text_format") != null ? "both" : "paragraph"),
                     Dump(title));
                 JObject subtitle = Find(styles, "subtitle");
                 string subOutline = Str(Obj(subtitle, "paragraph_format"), "outline_level");
@@ -184,9 +191,9 @@ namespace WordDocumentRoundtripTest
                 JObject header = Find(styles, "页眉") ?? Find(styles, "Header");
                 JObject footer = Find(styles, "页脚") ?? Find(styles, "Footer");
                 Ok(run, "ds-cat-caption-header",
-                    caption != null && Eq(caption, "support", "paragraph")
-                    && header != null && (Eq(header, "support", "paragraph") || Eq(header, "support", "both"))
-                    && footer != null && (Eq(footer, "support", "paragraph") || Eq(footer, "support", "both")),
+                    caption != null && Eq(caption, "support", Obj(caption, "text_format") != null ? "both" : "paragraph")
+                    && header != null && Eq(header, "support", Obj(header, "text_format") != null ? "both" : "paragraph")
+                    && footer != null && Eq(footer, "support", Obj(footer, "text_format") != null ? "both" : "paragraph"),
                     "题注=" + Dump(caption) + " 页眉=" + Dump(header) + " 页脚=" + Dump(footer));
                 JObject rules = Obj(listed, "apply_rules");
                 Ok(run, "ds-cat-rules",
@@ -646,9 +653,9 @@ namespace WordDocumentRoundtripTest
                 JObject textApply = One(s, id, Map(
                     "action", "apply", "target_codes", part, "structure", "heading_1", "text", "好"));
                 bool headingChar = HostHasStyle(s, path, HeadingCharNames);
-                bool textOk = Blob(textApply, "段落格式没有发生作用") && (headingChar
-                    ? !Bold(s, path, "只套好字", "好") && !StyleHas(s, path, "只套好字", HeadingNames) && SliceHas(s, path, "只套好字", "好", HeadingCharNames)
-                    : Eq(textApply, "scope", "text") && !StyleHas(s, path, "只套好字", HeadingNames) && Bold(s, path, "只套好字", "好"));
+                bool textOk = Blob(textApply, "段落格式没有发生作用") && !StyleHas(s, path, "只套好字", HeadingNames) && (headingChar
+                    ? !Bold(s, path, "只套好字", "好") && SliceHas(s, path, "只套好字", "好", HeadingCharNames)
+                    : Eq(textApply, "scope", "text") && Bold(s, path, "只套好字", "好"));
                 Ok(run, "ds-apply-both-text", OkFlag(textApply) && textOk, Dump(textApply));
             }
             finally

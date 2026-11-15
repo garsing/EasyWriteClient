@@ -6,7 +6,7 @@ using System.Xml.Linq;
 
 namespace WordAddIn1
 {
-    /// <summary>样式目录。只读 styles.xml 里写上的项，正文改读 docDefaults。</summary>
+    /// <summary>样式目录。只读 styles.xml 里写上的项。正文先读 docDefaults，缺的键再读正文样式自己写下的项。</summary>
     public sealed class StructureStyleRecord
     {
         public string Structure { get; set; }
@@ -307,29 +307,31 @@ namespace WordAddIn1
                 CharacterStyleId = linked == null ? null : linked.Id,
                 CharacterStyleName = linked == null ? null : linked.Name
             };
-            if (linked == null && !body)
-            {
-                record.Support = "paragraph";
-            }
-
             if (body)
             {
                 record.Support = "both";
                 record.TextFormat = ReadText(defaults == null ? null : defaults.Element(W + "rPrDefault")?.Element(W + "rPr"));
                 record.ParagraphFormat = ReadParagraph(defaults == null ? null : defaults.Element(W + "pPrDefault")?.Element(W + "pPr"));
-                if (!record.ParagraphFormat.ContainsKey("outline_level"))
-                {
-                    record.ParagraphFormat["outline_level"] = "wdOutlineLevelBodyText";
-                }
-
+                FillMissing(record.TextFormat, ReadText(style.RPr));
+                FillMissing(record.ParagraphFormat, ReadParagraph(style.PPr));
                 return record;
             }
 
-            XElement textSource = linked != null && linked.RPr != null ? linked.RPr : style.RPr;
-            record.TextFormat = record.Support == "paragraph" ? new Dictionary<string, object>() : ReadText(textSource);
-            record.ParagraphFormat = ReadParagraph(style.PPr);
-            if (record.Support == "paragraph")
+            Dictionary<string, object> text = ReadText(linked != null ? linked.RPr : null);
+            if (text.Count == 0)
             {
+                text = ReadText(style.RPr);
+            }
+
+            record.ParagraphFormat = ReadParagraph(style.PPr);
+            if (text.Count > 0)
+            {
+                record.Support = "both";
+                record.TextFormat = text;
+            }
+            else
+            {
+                record.Support = "paragraph";
                 record.TextFormat = null;
             }
 
@@ -514,6 +516,22 @@ namespace WordAddIn1
             }
 
             return format;
+        }
+
+        private static void FillMissing(Dictionary<string, object> target, Dictionary<string, object> extra)
+        {
+            if (target == null || extra == null)
+            {
+                return;
+            }
+
+            foreach (KeyValuePair<string, object> pair in extra)
+            {
+                if (!target.ContainsKey(pair.Key))
+                {
+                    target[pair.Key] = pair.Value;
+                }
+            }
         }
 
         private static void AddTwips(Dictionary<string, object> format, string key, string raw)

@@ -93,7 +93,14 @@ namespace WordAddIn1
                 else if (style.Support == "both")
                 {
                     range.Font.Reset();
-                    SetStyle(doc, range, Names(style, true), true);
+                    if (string.IsNullOrEmpty(style.CharacterStyleName))
+                    {
+                        WriteRunText(range, style.TextFormat);
+                    }
+                    else
+                    {
+                        SetStyle(doc, range, Names(style, true), true);
+                    }
                 }
                 else if (style.Support == "paragraph")
                 {
@@ -162,6 +169,72 @@ namespace WordAddIn1
         private static void ResetFont(Word.Range range)
         {
             range.Font.Reset();
+        }
+
+        private static void WriteRunText(Word.Range range, Dictionary<string, object> text)
+        {
+            if (range == null || text == null || text.Count == 0)
+            {
+                return;
+            }
+
+            Word.Font font = range.Font;
+            object face;
+            if (text.TryGetValue("font_name", out face) && face != null)
+            {
+                font.Name = face.ToString();
+                font.NameFarEast = face.ToString();
+            }
+
+            object size;
+            if (text.TryGetValue("font_size", out size) && size != null)
+            {
+                font.Size = Convert.ToSingle(size, System.Globalization.CultureInfo.InvariantCulture);
+            }
+
+            object color;
+            if (text.TryGetValue("font_color", out color) && color != null)
+            {
+                font.Color = (Word.WdColor)RgbToBgr(color.ToString());
+            }
+
+            object bold;
+            if (text.TryGetValue("is_bold", out bold))
+            {
+                font.Bold = True(bold) ? -1 : 0;
+            }
+
+            object italic;
+            if (text.TryGetValue("is_italic", out italic))
+            {
+                font.Italic = True(italic) ? -1 : 0;
+            }
+
+            object underline;
+            if (text.TryGetValue("has_underline", out underline))
+            {
+                font.Underline = True(underline)
+                    ? Word.WdUnderline.wdUnderlineSingle
+                    : Word.WdUnderline.wdUnderlineNone;
+            }
+        }
+
+        private static bool True(object value)
+        {
+            if (value is bool bit)
+            {
+                return bit;
+            }
+
+            string text = value == null ? "" : value.ToString();
+            return text == "1" || text.Equals("true", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static int RgbToBgr(string raw)
+        {
+            string hex = raw.Trim().TrimStart('#');
+            int rgb = int.Parse(hex, System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture);
+            return ((rgb & 0xFF) << 16) | (rgb & 0xFF00) | ((rgb >> 16) & 0xFF);
         }
 
         private static void SetStyle(Word.Document doc, Word.Range range, IList<string> names, bool character)
