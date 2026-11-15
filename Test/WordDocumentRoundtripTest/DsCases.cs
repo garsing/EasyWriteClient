@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using WordAddIn1;
@@ -781,13 +782,13 @@ namespace WordDocumentRoundtripTest
                 string code = Sent(body, "对不上甲");
                 string before = FullXml(s, path);
                 JObject miss = One(s, id, Map("action", "apply", "target_codes", code, "structure", "heading_1", "text", "没有这几个字"));
-                Ok(run, "ds-apply-miss-text", !OkFlag(miss) && FullXml(s, path) == before, Dump(miss));
+                Ok(run, "ds-apply-miss-text", !OkFlag(miss) && OnlyBuiltinStyleFill(before, FullXml(s, path)), Dump(miss));
                 JObject index = One(s, id, Map(
                     "action", "apply", "target_codes", code, "structure", "heading_1",
                     "text", Map("value", "甲", "index", 9)));
-                Ok(run, "ds-apply-miss-index", !OkFlag(index) && FullXml(s, path) == before, Dump(index));
+                Ok(run, "ds-apply-miss-index", !OkFlag(index) && OnlyBuiltinStyleFill(before, FullXml(s, path)), Dump(index));
                 JObject unknown = One(s, id, Map("action", "apply", "target_codes", code, "structure", "没有这种样式"));
-                Ok(run, "ds-apply-unknown", !OkFlag(unknown) && FullXml(s, path) == before, Dump(unknown));
+                Ok(run, "ds-apply-unknown", !OkFlag(unknown) && OnlyBuiltinStyleFill(before, FullXml(s, path)), Dump(unknown));
                 JObject two = One(s, id, Map("action", "apply", "target_codes", code + ",S_abc12", "structure", "heading_1"));
                 Ok(run, "ds-apply-one-code", !OkFlag(two), Dump(two));
             }
@@ -1868,6 +1869,331 @@ namespace WordDocumentRoundtripTest
             }
 
             return xml;
+        }
+
+        /// <summary>整篇没变，或只补进原先没有的内置样式。正文不变。原有样式定义不变，样式编号可以重排。可以因此多出 numbering.xml 和指向它的关系。</summary>
+        private static bool OnlyBuiltinStyleFill(string before, string after)
+        {
+            if (before == after)
+            {
+                return true;
+            }
+
+            Dictionary<string, XElement> left = PackageRoots(before);
+            Dictionary<string, XElement> right = PackageRoots(after);
+            if (left.Count == 0)
+            {
+                return false;
+            }
+
+            foreach (string name in left.Keys)
+            {
+                if (!right.ContainsKey(name))
+                {
+                    return false;
+                }
+            }
+
+            foreach (string name in right.Keys)
+            {
+                if (!left.ContainsKey(name) && !name.EndsWith("/numbering.xml", StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+            }
+
+            foreach (KeyValuePair<string, XElement> pair in left)
+            {
+                XElement other = right[pair.Key];
+                if (pair.Key.EndsWith("styles.xml", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!StylesOnlyGrew(pair.Value, other))
+                    {
+                        return false;
+                    }
+                }
+                else if (pair.Key.EndsWith("document.xml.rels", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!RelsOnlyAddedNumbering(pair.Value, other))
+                    {
+                        return false;
+                    }
+                }
+                else if (!XNode.DeepEquals(pair.Value, other))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static Dictionary<string, XElement> PackageRoots(string xml)
+        {
+            var map = new Dictionary<string, XElement>(StringComparer.OrdinalIgnoreCase);
+            if (string.IsNullOrEmpty(xml))
+            {
+                return map;
+            }
+
+            XDocument doc;
+            try
+            {
+                doc = XDocument.Parse(xml);
+            }
+            catch (Exception)
+            {
+                return map;
+            }
+
+            foreach (XElement part in doc.Descendants())
+            {
+                if (part.Name.LocalName != "part")
+                {
+                    continue;
+                }
+
+                string name = null;
+                foreach (XAttribute attr in part.Attributes())
+                {
+                    if (attr.Name.LocalName == "name")
+                    {
+                        name = attr.Value;
+                        break;
+                    }
+                }
+
+                if (string.IsNullOrEmpty(name))
+                {
+                    continue;
+                }
+
+                XElement root = part;
+                foreach (XElement child in part.Elements())
+                {
+                    if (child.Name.LocalName != "xmlData")
+                    {
+                        continue;
+                    }
+
+                    foreach (XElement data in child.Elements())
+                    {
+                        root = data;
+                        break;
+                    }
+
+                    break;
+                }
+
+                map[name] = root;
+            }
+
+            return map;
+        }
+
+        private static bool StylesOnlyGrew(XElement before, XElement after)
+        {
+            var beforeStyles = new Dictionary<string, XElement>(StringComparer.OrdinalIgnoreCase);
+            var afterStyles = new Dictionary<string, XElement>(StringComparer.OrdinalIgnoreCase);
+            if (!CollectStyles(before, beforeStyles) || !CollectStyles(after, afterStyles))
+            {
+                return false;
+            }
+
+            if (!SameNonStyleChildren(before, after))
+            {
+                return false;
+            }
+
+            foreach (KeyValuePair<string, XElement> pair in beforeStyles)
+            {
+                XElement other;
+                if (!afterStyles.TryGetValue(pair.Key, out other) || !SameStyle(pair.Value, other))
+                {
+                    return false;
+                }
+            }
+
+            return afterStyles.Count >= beforeStyles.Count;
+        }
+
+        private static bool CollectStyles(XElement styles, Dictionary<string, XElement> byName)
+        {
+            foreach (XElement child in styles.Elements())
+            {
+                if (child.Name.LocalName != "style")
+                {
+                    continue;
+                }
+
+                string name = null;
+                foreach (XElement node in child.Elements())
+                {
+                    if (node.Name.LocalName != "name")
+                    {
+                        continue;
+                    }
+
+                    foreach (XAttribute attr in node.Attributes())
+                    {
+                        if (attr.Name.LocalName == "val")
+                        {
+                            name = attr.Value;
+                            break;
+                        }
+                    }
+
+                    break;
+                }
+
+                if (string.IsNullOrEmpty(name) || byName.ContainsKey(name))
+                {
+                    return false;
+                }
+
+                byName[name] = child;
+            }
+
+            return true;
+        }
+
+        private static bool SameStyle(XElement before, XElement after)
+        {
+            return XNode.DeepEquals(WithoutStyleId(before), WithoutStyleId(after));
+        }
+
+        private static XElement WithoutStyleId(XElement style)
+        {
+            var copy = new XElement(style);
+            var drop = new List<XAttribute>();
+            foreach (XAttribute attr in copy.Attributes())
+            {
+                if (attr.Name.LocalName == "styleId")
+                {
+                    drop.Add(attr);
+                }
+            }
+
+            foreach (XAttribute attr in drop)
+            {
+                attr.Remove();
+            }
+
+            return copy;
+        }
+
+        private static bool RelsOnlyAddedNumbering(XElement before, XElement after)
+        {
+            var left = new Dictionary<string, XElement>(StringComparer.Ordinal);
+            var right = new Dictionary<string, XElement>(StringComparer.Ordinal);
+            if (!CollectRels(before, left) || !CollectRels(after, right))
+            {
+                return false;
+            }
+
+            foreach (string key in left.Keys)
+            {
+                if (!right.ContainsKey(key))
+                {
+                    return false;
+                }
+            }
+
+            foreach (KeyValuePair<string, XElement> pair in right)
+            {
+                if (left.ContainsKey(pair.Key))
+                {
+                    continue;
+                }
+
+                string target = "";
+                foreach (XAttribute attr in pair.Value.Attributes())
+                {
+                    if (attr.Name.LocalName == "Target")
+                    {
+                        target = attr.Value ?? "";
+                        break;
+                    }
+                }
+
+                if (target.IndexOf("numbering.xml", StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool CollectRels(XElement root, Dictionary<string, XElement> byId)
+        {
+            foreach (XElement child in root.Descendants())
+            {
+                if (child.Name.LocalName != "Relationship")
+                {
+                    continue;
+                }
+
+                string type = "";
+                string target = "";
+                foreach (XAttribute attr in child.Attributes())
+                {
+                    if (attr.Name.LocalName == "Type")
+                    {
+                        type = attr.Value ?? "";
+                    }
+                    else if (attr.Name.LocalName == "Target")
+                    {
+                        target = attr.Value ?? "";
+                    }
+                }
+
+                string id = type + "|" + target;
+                if (id == "|" || byId.ContainsKey(id))
+                {
+                    return false;
+                }
+
+                byId[id] = child;
+            }
+
+            return true;
+        }
+
+        private static bool SameNonStyleChildren(XElement before, XElement after)
+        {
+            var left = new List<XElement>();
+            var right = new List<XElement>();
+            foreach (XElement child in before.Elements())
+            {
+                if (child.Name.LocalName != "style")
+                {
+                    left.Add(child);
+                }
+            }
+
+            foreach (XElement child in after.Elements())
+            {
+                if (child.Name.LocalName != "style")
+                {
+                    right.Add(child);
+                }
+            }
+
+            if (left.Count != right.Count)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < left.Count; i++)
+            {
+                if (!XNode.DeepEquals(left[i], right[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private static bool SetStyle(Word.Range range, string[] names)

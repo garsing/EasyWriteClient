@@ -7,17 +7,6 @@ namespace WordAddIn1
     /// <summary>套用。先清这一侧的直接格式，再写样式。</summary>
     public static class StructureStyleApplier
     {
-        /// <summary>这次套用不会改文档时，返回那次回包。会改文档时返回 null，调用方再补样式表。</summary>
-        public static Dictionary<string, object> FinishWithoutWrite(
-            Word.Document doc,
-            Dictionary<string, object> item,
-            IList<StructureStyleRecord> styles,
-            bool disallowBackendApi)
-        {
-            ApplyPlan plan = Plan(doc, item, styles, disallowBackendApi);
-            return plan.WillWrite ? null : plan.Finished;
-        }
-
         public static Dictionary<string, object> Apply(
             Word.Document doc,
             Dictionary<string, object> item,
