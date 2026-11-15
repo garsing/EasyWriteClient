@@ -646,9 +646,9 @@ namespace WordDocumentRoundtripTest
                 JObject textApply = One(s, id, Map(
                     "action", "apply", "target_codes", part, "structure", "heading_1", "text", "好"));
                 bool headingChar = HostHasStyle(s, path, HeadingCharNames);
-                bool textOk = headingChar
+                bool textOk = Blob(textApply, "段落格式没有发生作用") && (headingChar
                     ? !Bold(s, path, "只套好字", "好") && !StyleHas(s, path, "只套好字", HeadingNames) && SliceHas(s, path, "只套好字", "好", HeadingCharNames)
-                    : Eq(textApply, "scope", "paragraph") && StyleHas(s, path, "只套好字", HeadingNames);
+                    : Eq(textApply, "scope", "text") && !StyleHas(s, path, "只套好字", HeadingNames) && Bold(s, path, "只套好字", "好"));
                 Ok(run, "ds-apply-both-text", OkFlag(textApply) && textOk, Dump(textApply));
             }
             finally
@@ -671,7 +671,9 @@ namespace WordDocumentRoundtripTest
                 PaintSlice(s, path, "正文几个字", "几个", HeadingCharNames);
                 string body = Content(s, id);
                 JObject textApply = One(s, id, Map("action", "apply", "target_codes", Sent(body, "正文几个字"), "structure", "body", "text", "几个"));
-                bool cleared = !SliceHas(s, path, "正文几个字", "几个", HeadingCharNames) && !StyleHas(s, path, "正文几个字", HeadingNames);
+                bool cleared = Blob(textApply, "段落格式没有发生作用")
+                    && !SliceHas(s, path, "正文几个字", "几个", HeadingCharNames)
+                    && !StyleHas(s, path, "正文几个字", HeadingNames);
                 Ok(run, "ds-apply-body-text", OkFlag(textApply) && cleared, Dump(textApply));
 
                 PaintBold(s, path, "整段回正文。", "整");
@@ -711,7 +713,9 @@ namespace WordDocumentRoundtripTest
                 JObject part = One(s, id, Map("action", "apply", "target_codes", Sent(body, "列表几个字"), "structure", "列表段落", "scope", "text", "text", "几"));
                 Ok(run, "ds-apply-para-text",
                     listBuiltin
-                        ? OkFlag(part) && StyleHas(s, path, "列表几个字", ListNames) && SliceHas(s, path, "列表几个字", "几", HeadingCharNames)
+                        ? OkFlag(part) && Blob(part, "段落格式没有发生作用") && Blob(part, "什么也不会发生")
+                            && !StyleHas(s, path, "列表几个字", ListNames)
+                            && SliceHas(s, path, "列表几个字", "几", HeadingCharNames)
                         : !OkFlag(part) && Blob(part, "没有样式"),
                     Dump(part));
             }
@@ -826,9 +830,9 @@ namespace WordDocumentRoundtripTest
                 JObject text = One(s, id, Map("action", "apply", "target_codes", Sent(body, "省略范围好"), "structure", "heading_1", "text", "好"));
                 bool headingChar = HostHasStyle(s, path, HeadingCharNames);
                 Ok(run, "ds-apply-scope-text",
-                    headingChar
-                        ? OkFlag(text) && !StyleHas(s, path, "省略范围好。", HeadingNames) && SliceHas(s, path, "省略范围好。", "好", HeadingCharNames)
-                        : OkFlag(text) && Eq(text, "scope", "paragraph") && StyleHas(s, path, "省略范围好。", HeadingNames),
+                    OkFlag(text) && Blob(text, "段落格式没有发生作用") && (headingChar
+                        ? !StyleHas(s, path, "省略范围好。", HeadingNames) && SliceHas(s, path, "省略范围好。", "好", HeadingCharNames)
+                        : Eq(text, "scope", "text") && !StyleHas(s, path, "省略范围好。", HeadingNames)),
                     Dump(text));
                 body = Content(s, id);
                 JObject para = One(s, id, Map("action", "apply", "target_codes", Sent(body, "省略整段"), "structure", "heading_1"));
@@ -838,7 +842,8 @@ namespace WordDocumentRoundtripTest
                 bool listBuiltin = HostHasStyle(s, path, ListNames);
                 Ok(run, "ds-apply-para-ignores-scope",
                     listBuiltin
-                        ? OkFlag(ignore) && StyleHas(s, path, "段落忽略范围", ListNames)
+                        ? OkFlag(ignore) && Blob(ignore, "段落格式没有发生作用") && Blob(ignore, "什么也不会发生")
+                            && !StyleHas(s, path, "段落忽略范围", ListNames)
                         : !OkFlag(ignore) && Blob(ignore, "没有样式"),
                     Dump(ignore));
             }

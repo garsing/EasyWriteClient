@@ -58,11 +58,6 @@ namespace WordAddIn1
                 scope = span == null ? "paragraph" : "text";
             }
 
-            if (style.Support == "paragraph")
-            {
-                scope = "paragraph";
-            }
-
             InsertTargetLocatorHelper.ResolveRangeResult located = InsertTargetLocatorHelper.TryResolveCodeSpan(
                 doc,
                 new[] { code.Trim() },
@@ -74,6 +69,11 @@ namespace WordAddIn1
             if (located == null || !located.Success || located.Range == null)
             {
                 return Fail(located == null ? "定位失败。" : located.Error);
+            }
+
+            if (style.Support == "paragraph" && scope == "text")
+            {
+                return Done(code, style, scope, warnings, ParagraphSkippedNote);
             }
 
             try
@@ -112,6 +112,22 @@ namespace WordAddIn1
                 return Fail(ex.Message);
             }
 
+            string note = scope == "text" && style.Support == "both" ? CharacterApplyNote : null;
+            return Done(code, style, scope, warnings, note);
+        }
+
+        private const string CharacterApplyNote = "由于是字符套用，所以段落格式没有发生作用。";
+
+        private const string ParagraphSkippedNote =
+            "由于是字符套用，所以段落格式没有发生作用。字符范围套到了只有段落格式的样式上，没有字符格式可套，所以这次套用什么也不会发生。";
+
+        private static Dictionary<string, object> Done(
+            string code,
+            StructureStyleRecord style,
+            string scope,
+            List<string> warnings,
+            string note)
+        {
             var done = new Dictionary<string, object>
             {
                 ["ok"] = true,
@@ -119,6 +135,11 @@ namespace WordAddIn1
                 ["structure"] = style.Structure,
                 ["scope"] = scope
             };
+            if (!string.IsNullOrEmpty(note))
+            {
+                done["note"] = note;
+            }
+
             if (warnings.Count > 0)
             {
                 done["format_warnings"] = warnings;
