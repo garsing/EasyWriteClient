@@ -1760,7 +1760,7 @@ namespace WordDocumentRoundtripTest
                 ? s.TryWpsDoc(path, doc =>
                 {
                     object range = SliceLate(doc, paraNeedle, slice);
-                    found = range == null ? "" : Convert.ToString(StyleOf(range));
+                    found = StyleNameLate(doc, range);
                     return range != null;
                 })
                 : s.OnWordDoc(path, doc =>
@@ -2137,11 +2137,51 @@ namespace WordDocumentRoundtripTest
             return false;
         }
 
-        private static object StyleOf(object range)
+        private static string StyleNameLate(object doc, object range)
         {
+            if (range == null)
+            {
+                return "";
+            }
+
+            object style;
             try
             {
-                return WdSession.ComGet(range, "Style");
+                style = WdSession.ComGet(range, "Style");
+            }
+            catch (Exception)
+            {
+                return "";
+            }
+
+            if (style == null)
+            {
+                return "";
+            }
+
+            try
+            {
+                string name = Convert.ToString(WdSession.ComGet(style, "NameLocal")) ?? "";
+                if (name.Length > 0)
+                {
+                    return name;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            int code;
+            if (!int.TryParse(Convert.ToString(style, CultureInfo.InvariantCulture), NumberStyles.Integer, CultureInfo.InvariantCulture, out code))
+            {
+                return "";
+            }
+
+            try
+            {
+                object styles = WdSession.ComGet(doc, "Styles");
+                object resolved = WdSession.ComCall(styles, "Item", code);
+                return Convert.ToString(WdSession.ComGet(resolved, "NameLocal")) ?? "";
             }
             catch (Exception)
             {
