@@ -1,0 +1,1884 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Text.RegularExpressions;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using WordAddIn1;
+using Word = Microsoft.Office.Interop.Word;
+
+namespace WordDocumentRoundtripTest
+{
+    /// <summary>样式工具。对照 docs/测试/word测试/样式工具。铺稿用 COM，列出和套用走 F_document_structure。</summary>
+    internal static class DsCases
+    {
+        public const int Target = 60;
+
+        private static readonly string[] HeadingNames = { "标题 1", "heading 1", "Heading 1" };
+        private static readonly string[] HeadingCharNames = { "标题 1 字符", "heading 1 Char", "Heading 1 Char" };
+        private static readonly string[] BodyNames = { "正文", "Normal" };
+        private static readonly string[] ListNames = { "列表段落", "List Paragraph" };
+        private static readonly string[] LinkNames = { "超链接", "Hyperlink" };
+
+        public static void Run(TestRun run, string host)
+        {
+            var s = new WdSession(host);
+            RunCatalog(run, s);
+            RunSpans(run, s);
+            RunApply(run, s);
+            RunEdit(run, s);
+        }
+
+        private static void RunCatalog(TestRun run, WdSession s)
+        {
+            string[] ids =
+            {
+                "ds-span-need-display",
+                "ds-cat-heading-pair", "ds-cat-heading-format", "ds-cat-body-defaults", "ds-cat-body-empty-rpr",
+                "ds-cat-list-para", "ds-cat-hyperlink", "ds-cat-title", "ds-cat-subtitle",
+                "ds-cat-heading-unused", "ds-cat-quote", "ds-cat-emphasis", "ds-cat-def-font",
+                "ds-cat-toc", "ds-cat-caption-header", "ds-cat-rules", "ds-cat-display-intact"
+            };
+            string path, id;
+            if (!Open(s, "样式目录甲。", out path, out id))
+            {
+                FailMany(run, "铺目录稿失败", ids);
+                return;
+            }
+
+            try
+            {
+                JObject early = Act(s, id, "list_spans");
+                bool needFail = !OkFlag(early) && Blob(early, "F_get_document_content");
+                Ok(run, "ds-span-need-display", needFail, Dump(early));
+
+                JObject listed = Act(s, id, "list_styles");
+                JArray styles = Arr(listed, "styles");
+                JObject heading = Find(styles, "heading_1");
+                JObject body = Find(styles, "body");
+                Ok(run, "ds-cat-heading-pair",
+                    heading != null && Eq(heading, "support", "both") && Eq(heading, "origin", "builtin") && Find(styles, "heading 1 Char") == null && Find(styles, "标题 1 字符") == null,
+                    Dump(heading));
+                JObject hText = Obj(heading, "text_format");
+                JObject hPara = Obj(heading, "paragraph_format");
+                Ok(run, "ds-cat-heading-format",
+                    heading != null && hText != null && hText["font_size"] != null && hText["font_color"] != null
+                    && hText["is_bold"] == null
+                    && Eq(hPara, "outline_level", "wdOutlineLevel1")
+                    && (hPara["space_before"] != null || hPara["space_after"] != null),
+                    Dump(heading));
+                Ok(run, "ds-cat-body-defaults",
+                    body != null && Eq(body, "support", "both")
+                    && (Near(Obj(body, "text_format"), "font_size", 11, 0.6) || Near(Obj(body, "text_format"), "font_size", 10.5, 0.6))
+                    && (Near(Obj(body, "paragraph_format"), "space_after", 8, 1.2) || Near(Obj(body, "paragraph_format"), "space_after", 10, 1.2))
+                    && Eq(Obj(body, "paragraph_format"), "outline_level", "wdOutlineLevelBodyText"),
+                    Dump(body));
+                Ok(run, "ds-cat-body-empty-rpr",
+                    body != null && Obj(body, "text_format") != null && Obj(body, "text_format")["font_size"] != null,
+                    Dump(body));
+                JObject list = Find(styles, "列表段落");
+                Ok(run, "ds-cat-list-para",
+                    list != null && Eq(list, "support", "paragraph") && Near(Obj(list, "paragraph_format"), "left_indent", 36, 1.2) && Obj(list, "text_format") == null,
+                    Dump(list));
+                JObject link = Find(styles, "超链接");
+                string color = Str(Obj(link, "text_format"), "font_color");
+                Ok(run, "ds-cat-hyperlink",
+                    link != null && Eq(link, "support", "character") && color.IndexOf("467886", StringComparison.OrdinalIgnoreCase) >= 0
+                    && Flag(Obj(link, "text_format"), "has_underline") && Obj(link, "paragraph_format") == null,
+                    Dump(link));
+                JObject title = Find(styles, "title");
+                Ok(run, "ds-cat-title", title != null && Eq(title, "support", "both"), Dump(title));
+                JObject subtitle = Find(styles, "subtitle");
+                string subOutline = Str(Obj(subtitle, "paragraph_format"), "outline_level");
+                Ok(run, "ds-cat-subtitle",
+                    subtitle != null && !Eq(subtitle, "structure", "heading_2") && (subOutline.Length == 0 || subOutline.IndexOf("2", StringComparison.Ordinal) < 0),
+                    Dump(subtitle));
+                bool unused = true;
+                for (int n = 2; n <= 9; n++)
+                {
+                    if (Find(styles, "heading_" + n) == null)
+                    {
+                        unused = false;
+                    }
+                }
+
+                Ok(run, "ds-cat-heading-unused", unused, "缺标题 2～9");
+                JObject quote = Find(styles, "引用");
+                JObject intense = Find(styles, "明显引用");
+                Ok(run, "ds-cat-quote",
+                    quote != null && Eq(quote, "support", "both") && intense != null && Eq(intense, "support", "both"),
+                    Dump(quote) + " / " + Dump(intense));
+                JObject emphasis = Find(styles, "明显强调");
+                Ok(run, "ds-cat-emphasis", emphasis != null && Eq(emphasis, "support", "character") && Eq(emphasis, "origin", "builtin"), Dump(emphasis));
+                JObject defFont = Find(styles, "默认段落字体");
+                Ok(run, "ds-cat-def-font", defFont != null && Eq(defFont, "support", "character"), Dump(defFont));
+                Ok(run, "ds-cat-toc", TocOk(styles), "没有目录样式");
+                Ok(run, "ds-cat-caption-header",
+                    Find(styles, "题注") != null && Eq(Find(styles, "题注"), "support", "paragraph")
+                    && Find(styles, "页眉") != null && Eq(Find(styles, "页眉"), "support", "paragraph")
+                    && Find(styles, "页脚") != null && Eq(Find(styles, "页脚"), "support", "paragraph"),
+                    "题注/页眉/页脚");
+                JObject rules = Obj(listed, "apply_rules");
+                Ok(run, "ds-cat-rules",
+                    rules != null && rules["both"] != null && rules["paragraph"] != null && rules["character"] != null && ApplyMatches(styles),
+                    Dump(rules));
+
+                string before = Content(s, id);
+                Act(s, id, "list_styles");
+                string after = Content(s, id);
+                Ok(run, "ds-cat-display-intact",
+                    before.Length > 0 && before == after && before.IndexOf("structure=", StringComparison.Ordinal) < 0 && before.IndexOf("[st ", StringComparison.Ordinal) < 0,
+                    Trim(before) + " -> " + Trim(after));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunSpans(TestRun run, WdSession s)
+        {
+            RunSpanPair(run, s);
+            RunSpanWhole(run, s);
+            RunSpanColor(run, s);
+            RunSpanMerge(run, s);
+            RunSpanRepeat(run, s);
+            RunSpanList(run, s);
+            RunSpanLink(run, s);
+            RunSpanToc(run, s);
+            RunSpanImage(run, s);
+            RunSpanMiss(run, s);
+            RunSpanEmpty(run, s);
+            RunSpanCustom(run, s);
+            RunSpanTable(run, s);
+        }
+
+        private static void RunSpanPair(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "你好啊哈哈哈哈", out path, out id))
+            {
+                FailMany(run, "铺分截稿失败", "ds-span-heading-text", "ds-span-body-rest", "ds-span-two");
+                return;
+            }
+
+            try
+            {
+                bool painted = PaintSlice(s, path, "你好啊哈哈哈哈", "你好啊", HeadingCharNames);
+                string body = Content(s, id);
+                JObject listed = Act(s, id, "list_spans");
+                JArray spans = Arr(listed, "spans");
+                JObject head = SpanText(spans, "你好啊");
+                JObject rest = SpanText(spans, "哈哈哈哈");
+                Ok(run, "ds-span-heading-text",
+                    painted && head != null && Eq(head, "structure", "heading_1") && Eq(head, "scope", "text")
+                    && Obj(head, "text_format") != null && Obj(head, "paragraph_format") == null,
+                    painted ? Dump(head) : "铺标题 1 字符失败");
+                Ok(run, "ds-span-body-rest",
+                    rest != null && Eq(rest, "structure", "body") && Eq(rest, "scope", "paragraph")
+                    && Obj(rest, "text_format") != null && Obj(rest, "paragraph_format") != null,
+                    Dump(rest));
+                Ok(run, "ds-span-two",
+                    head != null && rest != null && Str(head, "target_codes") == Str(rest, "target_codes")
+                    && Str(head, "target_codes").StartsWith("S_", StringComparison.Ordinal)
+                    && body.IndexOf(Str(head, "target_codes"), StringComparison.Ordinal) >= 0,
+                    Dump(head) + " / " + Dump(rest));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunSpanWhole(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "整句只有正文。", out path, out id))
+            {
+                FailMany(run, "铺整句稿失败", "ds-span-whole-omit");
+                return;
+            }
+
+            try
+            {
+                Content(s, id);
+                JObject one = First(Arr(Act(s, id, "list_spans"), "spans"));
+                Ok(run, "ds-span-whole-omit",
+                    one != null && Eq(one, "structure", "body") && Eq(one, "scope", "paragraph") && one["text"] == null,
+                    Dump(one));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunSpanColor(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "涂红一句。", out path, out id))
+            {
+                FailMany(run, "铺涂红稿失败", "ds-span-direct-color");
+                return;
+            }
+
+            try
+            {
+                bool painted = PaintColor(s, path, "涂红一句。", "红");
+                Content(s, id);
+                JArray spans = Arr(Act(s, id, "list_spans"), "spans");
+                Ok(run, "ds-span-direct-color",
+                    painted && spans.Count == 1 && Dump(First(spans)).IndexOf("FF0000", StringComparison.OrdinalIgnoreCase) < 0,
+                    painted ? Dump(First(spans)) : "涂红失败");
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunSpanMerge(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "甲乙丙丁", out path, out id))
+            {
+                FailMany(run, "铺合并稿失败", "ds-span-merge");
+                return;
+            }
+
+            try
+            {
+                bool a = PaintSlice(s, path, "甲乙丙丁", "甲乙", HeadingCharNames);
+                bool b = PaintSlice(s, path, "甲乙丙丁", "丙丁", HeadingCharNames);
+                Content(s, id);
+                JArray spans = Arr(Act(s, id, "list_spans"), "spans");
+                JObject merged = SpanText(spans, "甲乙丙丁");
+                Ok(run, "ds-span-merge", a && b && merged != null && Eq(merged, "structure", "heading_1") && spans.Count == 1, Dump(spans));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunSpanRepeat(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "好好好", out path, out id))
+            {
+                FailMany(run, "铺重复稿失败", "ds-span-repeat");
+                return;
+            }
+
+            try
+            {
+                bool painted = PaintNth(s, path, "好好好", "好", 2, LinkNames);
+                Content(s, id);
+                JArray spans = Arr(Act(s, id, "list_spans"), "spans");
+                JObject hit = null;
+                foreach (JObject span in Each(spans))
+                {
+                    if (Eq(span, "structure", "超链接") && TextIndex(span) == 2 && TextValue(span) == "好")
+                    {
+                        hit = span;
+                    }
+                }
+
+                Ok(run, "ds-span-repeat", painted && hit != null, painted ? Dump(spans) : "第二处超链接没铺上");
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunSpanList(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "列表整段。", out path, out id))
+            {
+                FailMany(run, "铺列表稿失败", "ds-span-list-scope");
+                return;
+            }
+
+            try
+            {
+                bool painted = PaintParagraph(s, path, "列表整段。", ListNames);
+                Content(s, id);
+                JObject one = First(Arr(Act(s, id, "list_spans"), "spans"));
+                Ok(run, "ds-span-list-scope",
+                    painted && one != null && Eq(one, "scope", "paragraph") && Obj(one, "text_format") == null
+                    && Near(Obj(one, "paragraph_format"), "left_indent", 36, 1.2),
+                    painted ? Dump(one) : "铺列表段落失败");
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunSpanLink(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "链接几个字。", out path, out id))
+            {
+                FailMany(run, "铺链接稿失败", "ds-span-link-scope");
+                return;
+            }
+
+            try
+            {
+                bool painted = PaintSlice(s, path, "链接几个字。", "几个", LinkNames);
+                Content(s, id);
+                JObject one = SpanText(Arr(Act(s, id, "list_spans"), "spans"), "几个");
+                Ok(run, "ds-span-link-scope",
+                    painted && one != null && Eq(one, "structure", "超链接") && Eq(one, "scope", "text")
+                    && Obj(one, "text_format") != null && Obj(one, "paragraph_format") == null,
+                    painted ? Dump(one) : "铺超链接失败");
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunSpanToc(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "目录后正文。", out path, out id))
+            {
+                FailMany(run, "铺目录稿失败", "ds-span-toc-skip");
+                return;
+            }
+
+            try
+            {
+                bool field = AddToc(s, path);
+                string body = Content(s, id);
+                JArray spans = Arr(Act(s, id, "list_spans"), "spans");
+                JObject hit = SpanText(spans, "目录后正文");
+                string code = hit == null ? "" : Str(hit, "target_codes");
+                Ok(run, "ds-span-toc-skip",
+                    field && hit != null && code.StartsWith("S_", StringComparison.Ordinal) && body.IndexOf(code, StringComparison.Ordinal) >= 0,
+                    field ? Dump(spans) : "目录域没插上");
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunSpanImage(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "图前字。", out path, out id))
+            {
+                FailMany(run, "铺图稿失败", "ds-span-image");
+                return;
+            }
+
+            try
+            {
+                bool picture = s.InsertPicture(path);
+                bool typed = s.AppendText(path, "图后字。");
+                Content(s, id);
+                JArray spans = Arr(Act(s, id, "list_spans"), "spans");
+                JObject hit = SpanText(spans, "图后字");
+                Ok(run, "ds-span-image",
+                    picture && typed && hit != null && Str(hit, "target_codes").StartsWith("S_", StringComparison.Ordinal),
+                    picture ? Dump(spans) : "插图失败");
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunSpanMiss(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "还在的句子。\r将对不上", out path, out id))
+            {
+                FailMany(run, "铺对不上稿失败", "ds-span-miss");
+                return;
+            }
+
+            try
+            {
+                string body = Content(s, id);
+                bool changed = ReplaceText(s, path, "将对不上", "已经改掉");
+                JObject listed = Act(s, id, "list_spans");
+                string blob = Dump(listed);
+                bool invented = false;
+                foreach (Match m in Regex.Matches(blob, @"S_[0-9A-Za-z]{5}"))
+                {
+                    if (body.IndexOf(m.Value, StringComparison.Ordinal) < 0)
+                    {
+                        invented = true;
+                    }
+                }
+
+                JObject keep = SpanText(Arr(listed, "spans"), "还在的句子");
+                Ok(run, "ds-span-miss",
+                    changed && Blob(listed, "对不上") && !invented && keep != null,
+                    changed ? blob : "改字失败");
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunSpanEmpty(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "有字。\r", out path, out id))
+            {
+                FailMany(run, "铺空段稿失败", "ds-span-empty");
+                return;
+            }
+
+            try
+            {
+                Content(s, id);
+                JArray spans = Arr(Act(s, id, "list_spans"), "spans");
+                bool empty = false;
+                foreach (JObject span in Each(spans))
+                {
+                    string text = TextValue(span);
+                    if (text != null && text.Trim().Length == 0)
+                    {
+                        empty = true;
+                    }
+                }
+
+                Ok(run, "ds-span-empty", spans.Count >= 1 && !empty && SpanText(spans, "有字") != null, Dump(spans));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunSpanCustom(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "自定义几个字。", out path, out id))
+            {
+                FailMany(run, "铺自定义稿失败", "ds-span-custom-name");
+                return;
+            }
+
+            try
+            {
+                JObject created = Act(s, id, Map(
+                    "action", "customize",
+                    "create", true,
+                    "name", "强调测列",
+                    "text_format", Map("font_size", 16),
+                    "paragraph_format", Map("outline_level", "wdOutlineLevel2")));
+                bool applied = OkFlag(created) && PaintSlice(s, path, "自定义几个字。", "几个", new[] { "强调测列 字符", "强调测列" });
+                Content(s, id);
+                JObject hit = SpanText(Arr(Act(s, id, "list_spans"), "spans"), "几个");
+                JObject row = Find(Arr(Act(s, id, "list_styles"), "styles"), "强调测列");
+                string outline = Str(Obj(row, "paragraph_format"), "outline_level");
+                Ok(run, "ds-span-custom-name",
+                    applied && hit != null && Eq(hit, "structure", "强调测列")
+                    && row != null && Eq(row, "structure", "强调测列")
+                    && outline.IndexOf("2", StringComparison.Ordinal) >= 0,
+                    applied ? Dump(hit) + Dump(row) : Dump(created));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunSpanTable(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "表外一句。", out path, out id))
+            {
+                FailMany(run, "铺表格稿失败", "ds-span-table");
+                return;
+            }
+
+            try
+            {
+                bool table = s.InsertTable(path, 1, 1, new[] { "表内标题" });
+                bool painted = PaintSlice(s, path, "表内标题", "表内", HeadingCharNames);
+                string body = Content(s, id);
+                JObject hit = SpanText(Arr(Act(s, id, "list_spans"), "spans"), "表内");
+                string code = hit == null ? "" : Str(hit, "target_codes");
+                Ok(run, "ds-span-table",
+                    table && painted && code.StartsWith("S_", StringComparison.Ordinal)
+                    && !code.StartsWith("P_", StringComparison.Ordinal)
+                    && !code.StartsWith("T_", StringComparison.Ordinal)
+                    && body.IndexOf(code, StringComparison.Ordinal) >= 0,
+                    table ? Dump(hit) : "插表失败");
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunApply(TestRun run, WdSession s)
+        {
+            RunApplyClear(run, s);
+            RunApplyBody(run, s);
+            RunApplyList(run, s);
+            RunApplyLink(run, s);
+            RunApplyMiss(run, s);
+            RunApplyItems(run, s);
+            RunApplyScope(run, s);
+            RunApplyCopy(run, s);
+        }
+
+        private static void RunApplyClear(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "整段套用。\r只套好字", out path, out id))
+            {
+                FailMany(run, "铺套用稿失败", "ds-apply-both-para", "ds-apply-both-text");
+                return;
+            }
+
+            try
+            {
+                PaintParagraphSpace(s, path, "整段套用。", 18f);
+                PaintBold(s, path, "整段套用。", "整");
+                string body = Content(s, id);
+                string whole = Sent(body, "整段套用");
+                JObject applied = One(s, id, Map("action", "apply", "target_codes", whole, "structure", "heading_1", "scope", "paragraph"));
+                bool paraOk = StyleHas(s, path, "整段套用。", HeadingNames) && !Bold(s, path, "整段套用。", "整");
+                Ok(run, "ds-apply-both-para", OkFlag(applied) && paraOk, OkFlag(applied) ? "段样式或加粗还在" : Dump(applied));
+
+                PaintBold(s, path, "只套好字", "好");
+                body = Content(s, id);
+                string part = Sent(body, "只套好字");
+                JObject textApply = One(s, id, Map(
+                    "action", "apply", "target_codes", part, "structure", "heading_1", "text", "好"));
+                bool textOk = !Bold(s, path, "只套好字", "好") && !StyleHas(s, path, "只套好字", HeadingNames) && SliceHas(s, path, "只套好字", "好", HeadingCharNames);
+                Ok(run, "ds-apply-both-text", OkFlag(textApply) && textOk, Dump(textApply));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunApplyBody(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "正文几个字\r整段回正文。", out path, out id))
+            {
+                FailMany(run, "铺正文套用失败", "ds-apply-body-text", "ds-apply-body-para");
+                return;
+            }
+
+            try
+            {
+                PaintSlice(s, path, "正文几个字", "几个", HeadingCharNames);
+                string body = Content(s, id);
+                JObject textApply = One(s, id, Map("action", "apply", "target_codes", Sent(body, "正文几个字"), "structure", "body", "text", "几个"));
+                bool cleared = !SliceHas(s, path, "正文几个字", "几个", HeadingCharNames) && !StyleHas(s, path, "正文几个字", HeadingNames);
+                Ok(run, "ds-apply-body-text", OkFlag(textApply) && cleared, Dump(textApply));
+
+                PaintBold(s, path, "整段回正文。", "整");
+                body = Content(s, id);
+                JObject paraApply = One(s, id, Map("action", "apply", "target_codes", Sent(body, "整段回正文"), "structure", "body", "scope", "paragraph"));
+                Ok(run, "ds-apply-body-para", OkFlag(paraApply) && !Bold(s, path, "整段回正文。", "整"), Dump(paraApply));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunApplyList(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "列表整段套。\r列表几个字", out path, out id))
+            {
+                FailMany(run, "铺列表套用失败", "ds-apply-para-whole", "ds-apply-para-text");
+                return;
+            }
+
+            try
+            {
+                PaintSlice(s, path, "列表整段套。", "整段", HeadingCharNames);
+                string body = Content(s, id);
+                JObject whole = One(s, id, Map("action", "apply", "target_codes", Sent(body, "列表整段套"), "structure", "列表段落", "scope", "paragraph"));
+                Ok(run, "ds-apply-para-whole",
+                    OkFlag(whole) && StyleHas(s, path, "列表整段套。", ListNames) && SliceHas(s, path, "列表整段套。", "整段", HeadingCharNames),
+                    Dump(whole));
+
+                PaintSlice(s, path, "列表几个字", "几", HeadingCharNames);
+                body = Content(s, id);
+                JObject part = One(s, id, Map("action", "apply", "target_codes", Sent(body, "列表几个字"), "structure", "列表段落", "scope", "text", "text", "几"));
+                Ok(run, "ds-apply-para-text",
+                    OkFlag(part) && StyleHas(s, path, "列表几个字", ListNames) && SliceHas(s, path, "列表几个字", "几", HeadingCharNames),
+                    Dump(part));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunApplyLink(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "超链接整段。\r超链接好字", out path, out id))
+            {
+                FailMany(run, "铺超链接套用失败", "ds-apply-char-para", "ds-apply-char-text");
+                return;
+            }
+
+            try
+            {
+                string body = Content(s, id);
+                JObject whole = One(s, id, Map("action", "apply", "target_codes", Sent(body, "超链接整段"), "structure", "超链接", "scope", "paragraph"));
+                Ok(run, "ds-apply-char-para",
+                    OkFlag(whole) && !StyleHas(s, path, "超链接整段。", LinkNames) && SliceHas(s, path, "超链接整段。", "整段", LinkNames),
+                    Dump(whole));
+                body = Content(s, id);
+                JObject part = One(s, id, Map("action", "apply", "target_codes", Sent(body, "超链接好字"), "structure", "超链接", "text", "好"));
+                Ok(run, "ds-apply-char-text",
+                    OkFlag(part) && SliceHas(s, path, "超链接好字", "好", LinkNames) && !SliceHas(s, path, "超链接好字", "字", LinkNames),
+                    Dump(part));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunApplyMiss(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "对不上甲。", out path, out id))
+            {
+                FailMany(run, "铺失败套用稿失败", "ds-apply-miss-text", "ds-apply-miss-index", "ds-apply-unknown", "ds-apply-one-code");
+                return;
+            }
+
+            try
+            {
+                string body = Content(s, id);
+                string code = Sent(body, "对不上甲");
+                string before = FullXml(s, path);
+                JObject miss = One(s, id, Map("action", "apply", "target_codes", code, "structure", "heading_1", "text", "没有这几个字"));
+                Ok(run, "ds-apply-miss-text", !OkFlag(miss) && FullXml(s, path) == before, Dump(miss));
+                JObject index = One(s, id, Map(
+                    "action", "apply", "target_codes", code, "structure", "heading_1",
+                    "text", Map("value", "甲", "index", 9)));
+                Ok(run, "ds-apply-miss-index", !OkFlag(index) && FullXml(s, path) == before, Dump(index));
+                JObject unknown = One(s, id, Map("action", "apply", "target_codes", code, "structure", "没有这种样式"));
+                Ok(run, "ds-apply-unknown", !OkFlag(unknown) && FullXml(s, path) == before, Dump(unknown));
+                JObject two = One(s, id, Map("action", "apply", "target_codes", code + ",S_abc12", "structure", "heading_1"));
+                Ok(run, "ds-apply-one-code", !OkFlag(two), Dump(two));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunApplyItems(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "第一项不动。\r第二项套上。", out path, out id))
+            {
+                FailMany(run, "铺多项稿失败", "ds-apply-items-partial");
+                return;
+            }
+
+            try
+            {
+                string body = Content(s, id);
+                JObject data = Act(s, id, Map(
+                    "action", "apply",
+                    "items", new List<Dictionary<string, object>>
+                    {
+                        Map("target_codes", Sent(body, "第一项不动"), "structure", "heading_1", "text", "没有"),
+                        Map("target_codes", Sent(body, "第二项套上"), "structure", "heading_1", "scope", "paragraph")
+                    }));
+                JArray applied = Arr(data, "applied");
+                bool firstFail = applied.Count >= 1 && !OkFlag(applied[0] as JObject);
+                bool secondOk = applied.Count >= 2 && OkFlag(applied[1] as JObject) && StyleHas(s, path, "第二项套上。", HeadingNames);
+                Ok(run, "ds-apply-items-partial", firstFail && secondOk && !StyleHas(s, path, "第一项不动。", HeadingNames), Dump(data));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunApplyScope(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "省略范围好。\r省略整段。\r段落忽略范围", out path, out id))
+            {
+                FailMany(run, "铺范围稿失败", "ds-apply-scope-text", "ds-apply-scope-para", "ds-apply-para-ignores-scope", "ds-apply-alias");
+                return;
+            }
+
+            try
+            {
+                string body = Content(s, id);
+                JObject text = One(s, id, Map("action", "apply", "target_codes", Sent(body, "省略范围好"), "structure", "heading_1", "text", "好"));
+                Ok(run, "ds-apply-scope-text",
+                    OkFlag(text) && !StyleHas(s, path, "省略范围好。", HeadingNames) && SliceHas(s, path, "省略范围好。", "好", HeadingCharNames),
+                    Dump(text));
+                body = Content(s, id);
+                JObject para = One(s, id, Map("action", "apply", "target_codes", Sent(body, "省略整段"), "structure", "heading_1"));
+                Ok(run, "ds-apply-scope-para", OkFlag(para) && StyleHas(s, path, "省略整段。", HeadingNames), Dump(para));
+                body = Content(s, id);
+                JObject ignore = One(s, id, Map("action", "apply", "target_codes", Sent(body, "段落忽略范围"), "structure", "列表段落", "scope", "text", "text", "忽略"));
+                Ok(run, "ds-apply-para-ignores-scope", OkFlag(ignore) && StyleHas(s, path, "段落忽略范围", ListNames), Dump(ignore));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+
+            if (!Open(s, "别名甲。\r别名乙。\r别名丙。", out path, out id))
+            {
+                FailMany(run, "铺别名稿失败", "ds-apply-alias");
+                return;
+            }
+
+            try
+            {
+                string body = Content(s, id);
+                bool a = OkFlag(One(s, id, Map("action", "apply", "target_codes", Sent(body, "别名甲"), "structure", "heading_1", "scope", "paragraph")));
+                bool b = OkFlag(One(s, id, Map("action", "apply", "target_codes", Sent(body, "别名乙"), "structure", "标题 1", "scope", "paragraph")));
+                bool c = OkFlag(One(s, id, Map("action", "apply", "target_codes", Sent(body, "别名丙"), "structure", "heading 1", "scope", "paragraph")));
+                Ok(run, "ds-apply-alias",
+                    a && b && c
+                    && StyleHas(s, path, "别名甲。", HeadingNames)
+                    && StyleHas(s, path, "别名乙。", HeadingNames)
+                    && StyleHas(s, path, "别名丙。", HeadingNames),
+                    a + "," + b + "," + c);
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunApplyCopy(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "不抄字号好", out path, out id))
+            {
+                FailMany(run, "铺不抄字号稿失败", "ds-apply-no-copy", "ds-apply-extra-format");
+                return;
+            }
+
+            try
+            {
+                string body = Content(s, id);
+                string code = Sent(body, "不抄字号好");
+                JObject extra = One(s, id, Map(
+                    "action", "apply", "target_codes", code, "structure", "heading_1", "text", "好",
+                    "text_format", Map("font_size", 8)));
+                string xml = FullXml(s, path);
+                int at = xml.IndexOf("好", StringComparison.Ordinal);
+                string window = at < 0 ? "" : xml.Substring(Math.Max(0, at - 400), Math.Min(400, at));
+                bool copied = window.IndexOf("<w:sz", StringComparison.Ordinal) >= 0 || window.IndexOf(":sz ", StringComparison.Ordinal) >= 0;
+                Ok(run, "ds-apply-no-copy", OkFlag(extra) && !copied, copied ? window : Dump(extra));
+                Ok(run, "ds-apply-extra-format", OkFlag(extra) && Blob(extra, "format_warnings"), Dump(extra));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunEdit(TestRun run, WdSession s)
+        {
+            RunEditHeading(run, s);
+            RunEditSides(run, s);
+            RunEditCreate(run, s);
+            RunEditOutline(run, s);
+            RunEditBody(run, s);
+        }
+
+        private static void RunEditHeading(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "跟着变字。\r盖住字号。", out path, out id))
+            {
+                FailMany(run, "铺改字号稿失败", "ds-edit-heading-size");
+                return;
+            }
+
+            try
+            {
+                PaintParagraph(s, path, "跟着变字。", HeadingNames);
+                PaintParagraph(s, path, "盖住字号。", HeadingNames);
+                PaintSize(s, path, "盖住字号。", "盖", 28f);
+                JObject edited = Act(s, id, Map(
+                    "action", "customize", "structure", "heading_1",
+                    "text_format", Map("font_size", 20)));
+                float follow = ReadSize(s, path, "跟着变字。", "跟");
+                float direct = ReadSize(s, path, "盖住字号。", "盖");
+                Ok(run, "ds-edit-heading-size",
+                    OkFlag(edited) && Math.Abs(follow - 20f) < 0.6f && Math.Abs(direct - 28f) < 0.6f,
+                    "follow=" + follow.ToString(CultureInfo.InvariantCulture) + " direct=" + direct.ToString(CultureInfo.InvariantCulture) + " " + Dump(edited));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunEditSides(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "改两侧。", out path, out id))
+            {
+                FailMany(run, "铺改两侧稿失败", "ds-edit-para-side", "ds-edit-char-side");
+                return;
+            }
+
+            try
+            {
+                JObject para = Act(s, id, Map(
+                    "action", "customize", "structure", "列表段落",
+                    "paragraph_format", Map("left_indent", 24),
+                    "text_format", Map("font_size", 9)));
+                JObject styles = Act(s, id, "list_styles");
+                JObject list = Find(Arr(styles, "styles"), "列表段落");
+                Ok(run, "ds-edit-para-side",
+                    Blob(para, "format_warnings") && list != null && Eq(list, "support", "paragraph")
+                    && Near(Obj(list, "paragraph_format"), "left_indent", 24, 1.2) && Obj(list, "text_format") == null,
+                    Dump(para) + Dump(list));
+                JObject character = Act(s, id, Map(
+                    "action", "customize", "structure", "超链接",
+                    "text_format", Map("font_color", "FF00FF"),
+                    "paragraph_format", Map("outline_level", "wdOutlineLevel2")));
+                JObject link = Find(Arr(Act(s, id, "list_styles"), "styles"), "超链接");
+                string linkColor = Str(Obj(link, "text_format"), "font_color");
+                Ok(run, "ds-edit-char-side",
+                    Blob(character, "format_warnings") && linkColor.IndexOf("FF00FF", StringComparison.OrdinalIgnoreCase) >= 0
+                    && (Obj(link, "paragraph_format") == null || Str(Obj(link, "paragraph_format"), "outline_level").Length == 0),
+                    Dump(character) + Dump(link));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunEditCreate(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "新建样式。", out path, out id))
+            {
+                FailMany(run, "铺新建稿失败", "ds-edit-create-noname", "ds-edit-create-dup", "ds-edit-create-keys", "ds-edit-create-outline", "ds-edit-create-clean");
+                return;
+            }
+
+            try
+            {
+                JObject noname = Act(s, id, Map("action", "customize", "create", true));
+                Ok(run, "ds-edit-create-noname", !OkFlag(noname), Dump(noname));
+                JObject dup = Act(s, id, Map("action", "customize", "create", true, "name", "标题 1"));
+                JObject heading = Find(Arr(Act(s, id, "list_styles"), "styles"), "heading_1");
+                Ok(run, "ds-edit-create-dup", !OkFlag(dup) && heading != null, Dump(dup));
+                JObject created = Act(s, id, Map(
+                    "action", "customize", "create", true, "name", "强调测",
+                    "text_format", Map("font_size", 16)));
+                JObject row = Find(Arr(Act(s, id, "list_styles"), "styles"), "强调测");
+                string xml = FullXml(s, path);
+                bool linked = xml.IndexOf("强调测", StringComparison.Ordinal) >= 0
+                    && xml.IndexOf("强调测 字符", StringComparison.Ordinal) >= 0
+                    && Eq(row, "support", "both");
+                bool sizeOnly = row != null && Near(Obj(row, "text_format"), "font_size", 16, 0.6)
+                    && (Obj(row, "paragraph_format") == null || Str(Obj(row, "paragraph_format"), "outline_level").Length == 0);
+                Ok(run, "ds-edit-create-keys", OkFlag(created) && linked && sizeOnly, Dump(created) + Dump(row));
+                JObject outlined = Act(s, id, Map(
+                    "action", "customize", "create", true, "name", "强调纲",
+                    "paragraph_format", Map("outline_level", "wdOutlineLevel2")));
+                JObject outlineRow = Find(Arr(Act(s, id, "list_styles"), "styles"), "强调纲");
+                Ok(run, "ds-edit-create-outline",
+                    OkFlag(outlined) && outlineRow != null && Eq(outlineRow, "structure", "强调纲")
+                    && Str(Obj(outlineRow, "paragraph_format"), "outline_level").IndexOf("2", StringComparison.Ordinal) >= 0,
+                    Dump(outlined) + Dump(outlineRow));
+                if (!OkFlag(created) && Blob(created, "连成一对") && Find(Arr(Act(s, id, "list_styles"), "styles"), "强调测") == null)
+                {
+                    Ok(run, "ds-edit-create-clean", true, Dump(created));
+                }
+                else if (linked)
+                {
+                    run.CaseSkip("ds-edit-create-clean", "这次新建已经连成对，失败路径没出现");
+                }
+                else
+                {
+                    Ok(run, "ds-edit-create-clean", false, Dump(created));
+                }
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunEditOutline(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "改大纲。", out path, out id))
+            {
+                FailMany(run, "铺大纲稿失败", "ds-edit-outline-keep");
+                return;
+            }
+
+            try
+            {
+                JObject edited = Act(s, id, Map(
+                    "action", "customize", "structure", "heading_1",
+                    "paragraph_format", Map("outline_level", "wdOutlineLevel3")));
+                JObject heading = Find(Arr(Act(s, id, "list_styles"), "styles"), "heading_1");
+                Ok(run, "ds-edit-outline-keep",
+                    OkFlag(edited) && heading != null && Eq(heading, "structure", "heading_1")
+                    && Str(Obj(heading, "paragraph_format"), "outline_level").IndexOf("3", StringComparison.Ordinal) >= 0,
+                    Dump(edited) + Dump(heading));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunEditBody(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "正文跟着。\r标题不跟。", out path, out id))
+            {
+                FailMany(run, "铺正文稿失败", "ds-edit-body");
+                return;
+            }
+
+            try
+            {
+                PaintParagraph(s, path, "标题不跟。", HeadingNames);
+                float headingBefore = ReadSize(s, path, "标题不跟。", "标");
+                JObject edited = Act(s, id, Map(
+                    "action", "customize", "structure", "body",
+                    "text_format", Map("font_size", 12)));
+                float bodySize = ReadSize(s, path, "正文跟着。", "正");
+                float headingAfter = ReadSize(s, path, "标题不跟。", "标");
+                Ok(run, "ds-edit-body",
+                    OkFlag(edited) && Math.Abs(bodySize - 12f) < 0.6f && Math.Abs(headingAfter - headingBefore) < 0.6f && Math.Abs(headingAfter - 12f) > 0.6f,
+                    "body=" + bodySize.ToString(CultureInfo.InvariantCulture) + " heading=" + headingAfter.ToString(CultureInfo.InvariantCulture));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static bool Open(WdSession s, string plain, out string path, out string id)
+        {
+            path = s.NewDocxPath();
+            id = null;
+            ToolResult opened = s.Open(path, true, s.App);
+            if (!opened.Success)
+            {
+                return false;
+            }
+
+            id = WdSession.Str(opened, "channel_id");
+            return s.TypePlain(path, plain);
+        }
+
+        private static JObject Act(WdSession s, string id, string action)
+        {
+            return Act(s, id, Map("action", action));
+        }
+
+        private static JObject Act(WdSession s, string id, Dictionary<string, object> args)
+        {
+            args["channel_id"] = id;
+            ToolResult result = s.DocumentStructure(args);
+            JObject data = Parse(result);
+            if (data == null)
+            {
+                data = new JObject();
+            }
+
+            data["_success"] = result != null && result.Success;
+            data["_error"] = result == null ? "" : (result.Error ?? "");
+            return data;
+        }
+
+        private static JObject One(WdSession s, string id, Dictionary<string, object> args)
+        {
+            JObject data = Act(s, id, args);
+            JArray applied = Arr(data, "applied");
+            if (applied.Count == 1 && applied[0] is JObject item)
+            {
+                if (item["format_warnings"] == null && data["format_warnings"] != null)
+                {
+                    item["format_warnings"] = data["format_warnings"];
+                }
+
+                item["_success"] = OkFlag(item);
+                item["_error"] = Str(item, "error");
+                return item;
+            }
+
+            return data;
+        }
+
+        private static string Content(WdSession s, string id)
+        {
+            ToolResult got = s.GetContent(id, "sentence");
+            return got.Success ? WdSession.Str(got, "document_content") : "";
+        }
+
+        private static string Sent(string body, string text)
+        {
+            if (string.IsNullOrEmpty(body) || string.IsNullOrEmpty(text))
+            {
+                return "";
+            }
+
+            int at = body.IndexOf(text, StringComparison.Ordinal);
+            if (at < 0)
+            {
+                return "";
+            }
+
+            int mark = body.LastIndexOf("[S_", at, StringComparison.Ordinal);
+            if (mark < 0)
+            {
+                return "";
+            }
+
+            Match m = Regex.Match(body.Substring(mark), @"\[S_([0-9A-Za-z]{5})(?:-start| start)");
+            return m.Success ? "S_" + m.Groups[1].Value : "";
+        }
+
+        private static bool PaintParagraph(WdSession s, string path, string needle, string[] names)
+        {
+            return s.IsWps
+                ? s.TryWpsDoc(path, doc => PaintParagraphLate(doc, needle, names))
+                : s.OnWordDoc(path, doc =>
+                {
+                    Word.Paragraph para = FindPara(doc, needle);
+                    return para != null && SetStyle(para.Range, names);
+                });
+        }
+
+        private static bool PaintSlice(WdSession s, string path, string paraNeedle, string slice, string[] names)
+        {
+            return s.IsWps
+                ? s.TryWpsDoc(path, doc => PaintSliceLate(doc, paraNeedle, slice, names))
+                : s.OnWordDoc(path, doc =>
+                {
+                    Word.Range range = Slice(doc, paraNeedle, slice);
+                    return range != null && SetStyle(range, names);
+                });
+        }
+
+        private static bool PaintNth(WdSession s, string path, string paraNeedle, string slice, int nth, string[] names)
+        {
+            return s.IsWps
+                ? s.TryWpsDoc(path, doc => PaintNthLate(doc, paraNeedle, slice, nth, names))
+                : s.OnWordDoc(path, doc =>
+                {
+                    Word.Range range = Nth(doc, paraNeedle, slice, nth);
+                    return range != null && SetStyle(range, names);
+                });
+        }
+
+        private static bool PaintBold(WdSession s, string path, string paraNeedle, string slice)
+        {
+            return s.IsWps
+                ? s.TryWpsDoc(path, doc =>
+                {
+                    object range = SliceLate(doc, paraNeedle, slice);
+                    if (range == null)
+                    {
+                        return false;
+                    }
+
+                    WdSession.ComSet(WdSession.ComGet(range, "Font"), "Bold", 1);
+                    return true;
+                })
+                : s.OnWordDoc(path, doc =>
+                {
+                    Word.Range range = Slice(doc, paraNeedle, slice);
+                    if (range == null)
+                    {
+                        return false;
+                    }
+
+                    range.Font.Bold = 1;
+                    return true;
+                });
+        }
+
+        private static bool PaintColor(WdSession s, string path, string paraNeedle, string slice)
+        {
+            return s.OnWordDoc(path, doc =>
+            {
+                Word.Range range = Slice(doc, paraNeedle, slice);
+                if (range == null)
+                {
+                    return false;
+                }
+
+                range.Font.Color = Word.WdColor.wdColorRed;
+                return true;
+            }) || s.TryWpsDoc(path, doc =>
+            {
+                object range = SliceLate(doc, paraNeedle, slice);
+                if (range == null)
+                {
+                    return false;
+                }
+
+                WdSession.ComSet(WdSession.ComGet(range, "Font"), "Color", 255);
+                return true;
+            });
+        }
+
+        private static bool PaintSize(WdSession s, string path, string paraNeedle, string slice, float size)
+        {
+            return s.IsWps
+                ? s.TryWpsDoc(path, doc =>
+                {
+                    object range = SliceLate(doc, paraNeedle, slice);
+                    if (range == null)
+                    {
+                        return false;
+                    }
+
+                    WdSession.ComSet(WdSession.ComGet(range, "Font"), "Size", size);
+                    return true;
+                })
+                : s.OnWordDoc(path, doc =>
+                {
+                    Word.Range range = Slice(doc, paraNeedle, slice);
+                    if (range == null)
+                    {
+                        return false;
+                    }
+
+                    range.Font.Size = size;
+                    return true;
+                });
+        }
+
+        private static bool PaintParagraphSpace(WdSession s, string path, string needle, float before)
+        {
+            return s.IsWps
+                ? s.TryWpsDoc(path, doc => PaintSpaceLate(doc, needle, before))
+                : s.OnWordDoc(path, doc =>
+                {
+                    Word.Paragraph para = FindPara(doc, needle);
+                    if (para == null)
+                    {
+                        return false;
+                    }
+
+                    para.Format.SpaceBefore = before;
+                    return true;
+                });
+        }
+
+        private static bool AddToc(WdSession s, string path)
+        {
+            return s.IsWps
+                ? s.TryWpsDoc(path, doc =>
+                {
+                    object range = WdSession.ComGet(doc, "Range");
+                    WdSession.ComCall(range, "Collapse", 1);
+                    object fields = WdSession.ComGet(doc, "Fields");
+                    WdSession.ComCall(fields, "Add", range, 13, "\\o \"1-3\" \\h \\z \\u", false);
+                    return true;
+                })
+                : s.OnWordDoc(path, doc =>
+                {
+                    Word.Range range = doc.Range(0, 0);
+                    doc.Fields.Add(range, Word.WdFieldType.wdFieldTOC, "\\o \"1-3\" \\h \\z \\u", false);
+                    return true;
+                });
+        }
+
+        private static bool ReplaceText(WdSession s, string path, string from, string to)
+        {
+            return s.IsWps
+                ? s.TryWpsDoc(path, doc => ReplaceLate(doc, from, to))
+                : s.OnWordDoc(path, doc =>
+                {
+                    Word.Paragraph para = FindPara(doc, from);
+                    if (para == null)
+                    {
+                        return false;
+                    }
+
+                    para.Range.Text = to + "\r";
+                    return true;
+                });
+        }
+
+        private static bool StyleHas(WdSession s, string path, string needle, string[] names)
+        {
+            string found = "";
+            bool ok = s.IsWps
+                ? s.TryWpsDoc(path, doc =>
+                {
+                    found = ParaStyleLate(doc, needle);
+                    return true;
+                })
+                : s.OnWordDoc(path, doc =>
+                {
+                    Word.Paragraph para = FindPara(doc, needle);
+                    if (para == null)
+                    {
+                        return false;
+                    }
+
+                    found = StyleName(para.Range);
+                    return true;
+                });
+            return ok && HasName(found, names);
+        }
+
+        private static bool SliceHas(WdSession s, string path, string paraNeedle, string slice, string[] names)
+        {
+            string found = "";
+            bool ok = s.IsWps
+                ? s.TryWpsDoc(path, doc =>
+                {
+                    object range = SliceLate(doc, paraNeedle, slice);
+                    found = range == null ? "" : Convert.ToString(StyleOf(range));
+                    return range != null;
+                })
+                : s.OnWordDoc(path, doc =>
+                {
+                    Word.Range range = Slice(doc, paraNeedle, slice);
+                    if (range == null)
+                    {
+                        return false;
+                    }
+
+                    found = StyleName(range);
+                    return true;
+                });
+            return ok && HasName(found, names);
+        }
+
+        private static bool Bold(WdSession s, string path, string paraNeedle, string slice)
+        {
+            int bold = 0;
+            if (s.IsWps)
+            {
+                s.TryWpsDoc(path, doc =>
+                {
+                    object range = SliceLate(doc, paraNeedle, slice);
+                    if (range == null)
+                    {
+                        return false;
+                    }
+
+                    bold = Convert.ToInt32(WdSession.ComGet(WdSession.ComGet(range, "Font"), "Bold"));
+                    return true;
+                });
+            }
+            else
+            {
+                s.OnWordDoc(path, doc =>
+                {
+                    Word.Range range = Slice(doc, paraNeedle, slice);
+                    if (range == null)
+                    {
+                        return false;
+                    }
+
+                    bold = range.Font.Bold;
+                    return true;
+                });
+            }
+
+            return bold != 0;
+        }
+
+        private static float ReadSize(WdSession s, string path, string paraNeedle, string slice)
+        {
+            float size = 0;
+            if (s.IsWps)
+            {
+                s.TryWpsDoc(path, doc =>
+                {
+                    object range = SliceLate(doc, paraNeedle, slice);
+                    if (range == null)
+                    {
+                        return false;
+                    }
+
+                    size = Convert.ToSingle(WdSession.ComGet(WdSession.ComGet(range, "Font"), "Size"), CultureInfo.InvariantCulture);
+                    return true;
+                });
+            }
+            else
+            {
+                s.OnWordDoc(path, doc =>
+                {
+                    Word.Range range = Slice(doc, paraNeedle, slice);
+                    if (range == null)
+                    {
+                        return false;
+                    }
+
+                    size = range.Font.Size;
+                    return true;
+                });
+            }
+
+            return size;
+        }
+
+        private static string FullXml(WdSession s, string path)
+        {
+            string xml = "";
+            if (s.IsWps)
+            {
+                s.TryWpsDoc(path, doc =>
+                {
+                    xml = Convert.ToString(WdSession.ComGet(doc, "WordOpenXML")) ?? "";
+                    return true;
+                });
+            }
+            else
+            {
+                s.OnWordDoc(path, doc =>
+                {
+                    xml = doc.WordOpenXML ?? "";
+                    return true;
+                });
+            }
+
+            return xml;
+        }
+
+        private static bool SetStyle(Word.Range range, string[] names)
+        {
+            foreach (string name in names)
+            {
+                try
+                {
+                    object styleRef = name;
+                    range.set_Style(ref styleRef);
+                    return true;
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            return false;
+        }
+
+        private static Word.Paragraph FindPara(Word.Document doc, string needle)
+        {
+            foreach (Word.Paragraph para in doc.Paragraphs)
+            {
+                string text = para.Range.Text ?? "";
+                if (text.IndexOf(needle, StringComparison.Ordinal) >= 0)
+                {
+                    return para;
+                }
+            }
+
+            return null;
+        }
+
+        private static Word.Range Slice(Word.Document doc, string paraNeedle, string slice)
+        {
+            Word.Paragraph para = FindPara(doc, paraNeedle);
+            if (para == null)
+            {
+                return null;
+            }
+
+            string text = para.Range.Text ?? "";
+            int at = text.IndexOf(slice, StringComparison.Ordinal);
+            if (at < 0)
+            {
+                return null;
+            }
+
+            return doc.Range(para.Range.Start + at, para.Range.Start + at + slice.Length);
+        }
+
+        private static Word.Range Nth(Word.Document doc, string paraNeedle, string slice, int nth)
+        {
+            Word.Paragraph para = FindPara(doc, paraNeedle);
+            if (para == null)
+            {
+                return null;
+            }
+
+            string text = para.Range.Text ?? "";
+            int seen = 0;
+            int at = 0;
+            while (at <= text.Length - slice.Length)
+            {
+                int found = text.IndexOf(slice, at, StringComparison.Ordinal);
+                if (found < 0)
+                {
+                    return null;
+                }
+
+                seen++;
+                if (seen == nth)
+                {
+                    return doc.Range(para.Range.Start + found, para.Range.Start + found + slice.Length);
+                }
+
+                at = found + slice.Length;
+            }
+
+            return null;
+        }
+
+        private static string StyleName(Word.Range range)
+        {
+            try
+            {
+                object style = range.get_Style();
+                Word.Style typed = style as Word.Style;
+                if (typed != null)
+                {
+                    return typed.NameLocal ?? "";
+                }
+
+                return Convert.ToString(style) ?? "";
+            }
+            catch (Exception)
+            {
+                return "";
+            }
+        }
+
+        private static bool PaintParagraphLate(object doc, string needle, string[] names)
+        {
+            object para = FindParaLate(doc, needle);
+            if (para == null)
+            {
+                return false;
+            }
+
+            return SetStyleLate(WdSession.ComGet(para, "Range"), names);
+        }
+
+        private static bool PaintSliceLate(object doc, string paraNeedle, string slice, string[] names)
+        {
+            object range = SliceLate(doc, paraNeedle, slice);
+            return range != null && SetStyleLate(range, names);
+        }
+
+        private static bool PaintNthLate(object doc, string paraNeedle, string slice, int nth, string[] names)
+        {
+            object range = NthLate(doc, paraNeedle, slice, nth);
+            return range != null && SetStyleLate(range, names);
+        }
+
+        private static bool PaintSpaceLate(object doc, string needle, float before)
+        {
+            object para = FindParaLate(doc, needle);
+            if (para == null)
+            {
+                return false;
+            }
+
+            WdSession.ComSet(WdSession.ComGet(para, "Format"), "SpaceBefore", before);
+            return true;
+        }
+
+        private static bool ReplaceLate(object doc, string from, string to)
+        {
+            object para = FindParaLate(doc, from);
+            if (para == null)
+            {
+                return false;
+            }
+
+            WdSession.ComSet(WdSession.ComGet(para, "Range"), "Text", to + "\r");
+            return true;
+        }
+
+        private static string ParaStyleLate(object doc, string needle)
+        {
+            object para = FindParaLate(doc, needle);
+            if (para == null)
+            {
+                return "";
+            }
+
+            return Convert.ToString(StyleOf(WdSession.ComGet(para, "Range"))) ?? "";
+        }
+
+        private static object FindParaLate(object doc, string needle)
+        {
+            object paras = WdSession.ComGet(doc, "Paragraphs");
+            int count = Convert.ToInt32(WdSession.ComGet(paras, "Count"));
+            for (int i = 1; i <= count; i++)
+            {
+                object para = WdSession.ComCall(paras, "Item", i);
+                string text = Convert.ToString(WdSession.ComGet(WdSession.ComGet(para, "Range"), "Text")) ?? "";
+                if (text.IndexOf(needle, StringComparison.Ordinal) >= 0)
+                {
+                    return para;
+                }
+            }
+
+            return null;
+        }
+
+        private static object SliceLate(object doc, string paraNeedle, string slice)
+        {
+            object para = FindParaLate(doc, paraNeedle);
+            if (para == null)
+            {
+                return null;
+            }
+
+            object range = WdSession.ComGet(para, "Range");
+            string text = Convert.ToString(WdSession.ComGet(range, "Text")) ?? "";
+            int at = text.IndexOf(slice, StringComparison.Ordinal);
+            if (at < 0)
+            {
+                return null;
+            }
+
+            int start = Convert.ToInt32(WdSession.ComGet(range, "Start"));
+            return WdSession.ComCall(doc, "Range", start + at, start + at + slice.Length);
+        }
+
+        private static object NthLate(object doc, string paraNeedle, string slice, int nth)
+        {
+            object para = FindParaLate(doc, paraNeedle);
+            if (para == null)
+            {
+                return null;
+            }
+
+            object range = WdSession.ComGet(para, "Range");
+            string text = Convert.ToString(WdSession.ComGet(range, "Text")) ?? "";
+            int start = Convert.ToInt32(WdSession.ComGet(range, "Start"));
+            int seen = 0;
+            int at = 0;
+            while (at <= text.Length - slice.Length)
+            {
+                int found = text.IndexOf(slice, at, StringComparison.Ordinal);
+                if (found < 0)
+                {
+                    return null;
+                }
+
+                seen++;
+                if (seen == nth)
+                {
+                    return WdSession.ComCall(doc, "Range", start + found, start + found + slice.Length);
+                }
+
+                at = found + slice.Length;
+            }
+
+            return null;
+        }
+
+        private static bool SetStyleLate(object range, string[] names)
+        {
+            foreach (string name in names)
+            {
+                try
+                {
+                    WdSession.ComSet(range, "Style", name);
+                    return true;
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            return false;
+        }
+
+        private static object StyleOf(object range)
+        {
+            try
+            {
+                return WdSession.ComGet(range, "Style");
+            }
+            catch (Exception)
+            {
+                return "";
+            }
+        }
+
+        private static bool HasName(string found, string[] names)
+        {
+            if (string.IsNullOrEmpty(found))
+            {
+                return false;
+            }
+
+            foreach (string name in names)
+            {
+                if (found.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool TocOk(JArray styles)
+        {
+            foreach (JObject row in Each(styles))
+            {
+                string structure = Str(row, "structure");
+                if (structure.IndexOf("TOC", StringComparison.OrdinalIgnoreCase) < 0
+                    && structure.IndexOf("目录", StringComparison.Ordinal) < 0)
+                {
+                    continue;
+                }
+
+                if (Eq(row, "support", "paragraph") && !structure.StartsWith("heading_", StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool ApplyMatches(JArray styles)
+        {
+            foreach (JObject row in Each(styles))
+            {
+                if (Str(row, "apply") != Str(row, "support"))
+                {
+                    return false;
+                }
+            }
+
+            return styles.Count > 0;
+        }
+
+        private static Dictionary<string, object> Map(params object[] pairs)
+        {
+            var map = new Dictionary<string, object>();
+            for (int i = 0; i + 1 < pairs.Length; i += 2)
+            {
+                map[(string)pairs[i]] = pairs[i + 1];
+            }
+
+            return map;
+        }
+
+        private static JObject Parse(ToolResult result)
+        {
+            if (result == null || result.Data == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                return JObject.Parse(JsonConvert.SerializeObject(result.Data));
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static JArray Arr(JObject data, string key)
+        {
+            return data == null ? new JArray() : (data[key] as JArray ?? new JArray());
+        }
+
+        private static JObject Obj(JObject data, string key)
+        {
+            return data == null ? null : data[key] as JObject;
+        }
+
+        private static JObject Find(JArray rows, string structure)
+        {
+            foreach (JObject row in Each(rows))
+            {
+                if (string.Equals(Str(row, "structure"), structure, StringComparison.OrdinalIgnoreCase))
+                {
+                    return row;
+                }
+            }
+
+            return null;
+        }
+
+        private static JObject SpanText(JArray spans, string text)
+        {
+            foreach (JObject span in Each(spans))
+            {
+                if (TextValue(span) == text || (TextValue(span) != null && TextValue(span).IndexOf(text, StringComparison.Ordinal) >= 0 && text.Length >= 2))
+                {
+                    return span;
+                }
+            }
+
+            return null;
+        }
+
+        private static string TextValue(JObject span)
+        {
+            if (span == null || span["text"] == null)
+            {
+                return null;
+            }
+
+            JToken text = span["text"];
+            if (text.Type == JTokenType.Object)
+            {
+                return text["value"] == null ? null : text["value"].ToString();
+            }
+
+            return text.ToString();
+        }
+
+        private static int TextIndex(JObject span)
+        {
+            if (span == null || !(span["text"] is JObject text) || text["index"] == null)
+            {
+                return 0;
+            }
+
+            return text["index"].Value<int>();
+        }
+
+        private static JObject First(JArray rows)
+        {
+            return rows.Count == 0 ? null : rows[0] as JObject;
+        }
+
+        private static IEnumerable<JObject> Each(JArray rows)
+        {
+            if (rows == null)
+            {
+                yield break;
+            }
+
+            foreach (JToken token in rows)
+            {
+                if (token is JObject row)
+                {
+                    yield return row;
+                }
+            }
+        }
+
+        private static bool OkFlag(JObject data)
+        {
+            if (data == null)
+            {
+                return false;
+            }
+
+            if (data["ok"] != null && data["ok"].Type == JTokenType.Boolean)
+            {
+                return data["ok"].Value<bool>();
+            }
+
+            return data["_success"] != null && data["_success"].Type == JTokenType.Boolean && data["_success"].Value<bool>();
+        }
+
+        private static bool Eq(JObject data, string key, string expected)
+        {
+            return data != null && string.Equals(Str(data, key), expected, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string Str(JObject data, string key)
+        {
+            if (data == null || data[key] == null)
+            {
+                return "";
+            }
+
+            return data[key].ToString();
+        }
+
+        private static bool Flag(JObject data, string key)
+        {
+            return data != null && data[key] != null && data[key].Type == JTokenType.Boolean && data[key].Value<bool>();
+        }
+
+        private static bool Near(JObject data, string key, double expected, double tol)
+        {
+            if (data == null || data[key] == null)
+            {
+                return false;
+            }
+
+            double value;
+            return double.TryParse(data[key].ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out value)
+                && Math.Abs(value - expected) <= tol;
+        }
+
+        private static bool Blob(JObject data, string needle)
+        {
+            return data != null && Dump(data).IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static string Dump(JToken token)
+        {
+            if (token == null)
+            {
+                return "(空)";
+            }
+
+            string text = token.ToString(Formatting.None);
+            return text.Length <= 500 ? text : text.Substring(0, 500);
+        }
+
+        private static string Trim(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return "";
+            }
+
+            return text.Length <= 180 ? text : text.Substring(0, 180);
+        }
+
+        private static void Ok(TestRun run, string id, bool pass, string detail)
+        {
+            if (pass)
+            {
+                run.CaseOk(id);
+            }
+            else
+            {
+                run.CaseFail(id, detail ?? "");
+            }
+        }
+
+        private static void FailMany(TestRun run, string reason, params string[] ids)
+        {
+            foreach (string id in ids)
+            {
+                run.CaseFail(id, reason);
+            }
+        }
+    }
+}

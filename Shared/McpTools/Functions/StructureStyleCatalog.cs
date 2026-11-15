@@ -26,9 +26,7 @@ namespace WordAddIn1
                 ["structure"] = Structure,
                 ["origin"] = Origin,
                 ["support"] = Support,
-                ["apply"] = StructureStyleCatalog.ApplyRules.ContainsKey(Support)
-                    ? StructureStyleCatalog.ApplyRules[Support]
-                    : Support
+                ["apply"] = Support
             };
             if (TextFormat != null && TextFormat.Count > 0)
             {

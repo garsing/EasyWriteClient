@@ -37,6 +37,12 @@ namespace WordAddIn1
                 return Fail(sibling);
             }
 
+            var warnings = new List<string>();
+            if (item != null && (item.ContainsKey("text_format") || item.ContainsKey("paragraph_format")))
+            {
+                warnings.Add("套用忽略 text_format 和 paragraph_format，按样式定义套。");
+            }
+
             TextSpan span = null;
             if (item != null && item.ContainsKey("text"))
             {
@@ -106,13 +112,19 @@ namespace WordAddIn1
                 return Fail(ex.Message);
             }
 
-            return new Dictionary<string, object>
+            var done = new Dictionary<string, object>
             {
                 ["ok"] = true,
                 ["target_codes"] = code.Trim(),
                 ["structure"] = style.Structure,
                 ["scope"] = scope
             };
+            if (warnings.Count > 0)
+            {
+                done["format_warnings"] = warnings;
+            }
+
+            return done;
         }
 
         private static Word.Range ParagraphText(Word.Paragraph paragraph)

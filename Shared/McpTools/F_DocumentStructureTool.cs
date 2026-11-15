@@ -67,7 +67,11 @@ namespace WordAddIn1
                 return new ToolResult
                 {
                     Success = true,
-                    Data = new Dictionary<string, object> { ["styles"] = rows }
+                    Data = new Dictionary<string, object>
+                    {
+                        ["styles"] = rows,
+                        ["apply_rules"] = StructureStyleCatalog.ApplyRules
+                    }
                 };
             }
 
