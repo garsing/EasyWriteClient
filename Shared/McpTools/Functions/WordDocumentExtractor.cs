@@ -1321,7 +1321,9 @@ namespace WordAddIn1
                 swLocal.ElapsedMilliseconds,
                 "S_=" + (mapResult.SentenceMappings?.Count ?? 0)
                 + " P_=" + (mapResult.ParagraphMappings?.Count ?? 0));
-            DocumentState.SetChunkParagraphDisplayContents(mapResult.ChunkParagraphDisplayContents);
+            DocumentState.SetChunkParagraphDisplays(
+                mapResult.ChunkParagraphDisplayContents,
+                mapResult.ChunkParagraphAgentDisplays);
 
             var nameToContentMap = mapResult.NameToSentenceContentMap ?? new Dictionary<string, string>();
             var allChunkSentenceNames = mapResult.AllChunkSentenceNames;

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace WordAddIn1.DocumentMapping
@@ -69,15 +70,38 @@ namespace WordAddIn1.DocumentMapping
             IReadOnlyList<IReadOnlyList<string>> segsParagraphNames,
             IReadOnlyDictionary<string, string> nameToParagraphContent)
         {
+            return BuildCore(nonSegs, segsParagraphNames, nameToParagraphContent, false);
+        }
+
+        public static string BuildAgent(
+            IReadOnlyList<string> nonSegs,
+            IReadOnlyList<IReadOnlyList<string>> segsParagraphNames,
+            IReadOnlyDictionary<string, string> nameToParagraphContent)
+        {
+            return BuildCore(nonSegs, segsParagraphNames, nameToParagraphContent, true);
+        }
+
+        private static string BuildCore(
+            IReadOnlyList<string> nonSegs,
+            IReadOnlyList<IReadOnlyList<string>> segsParagraphNames,
+            IReadOnlyDictionary<string, string> nameToParagraphContent,
+            bool forAgent)
+        {
             var displayParts = new List<string>();
             List<List<string>> publicSegs = BuildPublicSegs(segsParagraphNames);
             nonSegs = nonSegs ?? new List<string>();
+            string openId = null;
 
             for (int segIdx = 0; segIdx < publicSegs.Count; segIdx++)
             {
                 if (segIdx < nonSegs.Count)
                 {
-                    displayParts.Add(nonSegs[segIdx] ?? "");
+                    string nonSeg = nonSegs[segIdx] ?? "";
+                    displayParts.Add(nonSeg);
+                    if (nonSeg.Length > 0)
+                    {
+                        openId = null;
+                    }
                 }
 
                 IReadOnlyList<string> baseSeg = segsParagraphNames != null && segIdx < segsParagraphNames.Count
@@ -95,6 +119,19 @@ namespace WordAddIn1.DocumentMapping
 
                     paragraphContent = paragraphContent ?? "";
                     string publicCode = publicSegs[segIdx][i];
+                    string fieldId = forAgent ? WordAddIn1.TocFieldStamp.ParagraphFieldId(paragraphName) : null;
+                    if (!string.IsNullOrEmpty(fieldId))
+                    {
+                        if (!string.Equals(openId, fieldId, StringComparison.Ordinal))
+                        {
+                            segDisplayParts.Add("[目录域 " + fieldId + "]");
+                            openId = fieldId;
+                        }
+
+                        continue;
+                    }
+
+                    openId = null;
                     segDisplayParts.Add($"[{publicCode} start]{paragraphContent}[{publicCode} end]");
                 }
 

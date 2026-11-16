@@ -51,8 +51,11 @@ namespace WordAddIn1
         public Dictionary<string, List<string>> ParagraphToSentences { get; } =
             new Dictionary<string, List<string>>(StringComparer.Ordinal);
 
-        /// <summary>按 chunk 序存的 paragraph display（仅 [P_*]）</summary>
+        /// <summary>按 chunk 序存的 paragraph display（仅 [P_*]）。定位和故事对齐用这份。</summary>
         public List<string> ChunkParagraphDisplayContents { get; } = new List<string>();
+
+        /// <summary>给智能体的段落 display。整段落在目录域里的 P_ 已收成 [目录域 ewC_]。</summary>
+        public List<string> ChunkParagraphAgentDisplays { get; } = new List<string>();
 
         public string Snapshot { get; set; } = "";
 
@@ -117,6 +120,7 @@ namespace WordAddIn1
             ParagraphSegSnapshot = "";
             SnapshotIdx = -1;
             ChunkParagraphDisplayContents.Clear();
+            ChunkParagraphAgentDisplays.Clear();
             BodyFormat = null;
         }
     }

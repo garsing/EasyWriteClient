@@ -187,7 +187,10 @@ namespace WordAddIn1
             {
                 if (isParagraph)
                 {
-                    var paraDisplays = DocumentState.ChunkParagraphDisplayContents;
+                    var agentDisplays = DocumentState.ChunkParagraphAgentDisplays;
+                    var paraDisplays = agentDisplays != null && agentDisplays.Count > 0
+                        ? agentDisplays
+                        : DocumentState.ChunkParagraphDisplayContents;
                     if (paraDisplays != null && paraDisplays.Count > 0)
                     {
                         return paraDisplays[0] ?? "";

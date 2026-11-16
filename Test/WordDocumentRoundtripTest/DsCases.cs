@@ -447,6 +447,7 @@ namespace WordDocumentRoundtripTest
                 "ds-toc-reuse",
                 "ds-toc-notoc",
                 "ds-toc-spans",
+                "ds-toc-para",
                 "ds-toc-reject",
                 "ds-toc-style"))
             {
@@ -463,6 +464,7 @@ namespace WordDocumentRoundtripTest
                     "ds-toc-reuse",
                     "ds-toc-notoc",
                     "ds-toc-spans",
+                    "ds-toc-para",
                     "ds-toc-reject",
                     "ds-toc-style");
                 return;
@@ -506,7 +508,19 @@ namespace WordDocumentRoundtripTest
                     "code=" + bodyCode + " leaked=" + leaked + " " + Dump(spans));
 
                 string paras = ParagraphContent(s, id);
-                string paraCode = TocParagraph(paras);
+                bool paraToken = Regex.IsMatch(paras ?? "", @"\[目录域 ewC_[A-Za-z0-9]{8,32}\]");
+                bool paraBody = (paras ?? "").IndexOf("你好啊", StringComparison.Ordinal) >= 0;
+                bool paraLeak = ParagraphHoldsTab(paras);
+                int parasBefore = ParagraphCount(s, path);
+                ParagraphContent(s, id);
+                int parasAfter = ParagraphCount(s, path);
+                Ok(run, "ds-toc-para",
+                    MarkerSliceDropped() && paraToken && paraBody && !paraLeak
+                    && parasBefore > 0 && parasBefore == parasAfter,
+                    "token=" + paraToken + " body=" + paraBody + " leak=" + paraLeak
+                    + " count=" + parasBefore + "/" + parasAfter + " paras=" + paras);
+
+                string paraCode = InteriorParagraphCode(s, path);
                 bool rejected = false;
                 string rejectDetail = "para=" + paraCode;
                 if (paraCode.Length > 0)
@@ -2140,23 +2154,96 @@ namespace WordDocumentRoundtripTest
             return (body ?? "").Substring(mark, end - mark).IndexOf(extra, StringComparison.Ordinal) >= 0;
         }
 
-        private static string TocParagraph(string display)
+        private static bool MarkerSliceDropped()
+        {
+            string edge = TocFieldStamp.Edge.ToString();
+            List<WordAddIn1.DocumentMapping.ParagraphBlock> dropped =
+                WordAddIn1.DocumentMapping.SplitTextByParagraphs.Split(edge + "\r");
+            List<WordAddIn1.DocumentMapping.ParagraphBlock> tail =
+                WordAddIn1.DocumentMapping.SplitTextByParagraphs.Split("甲\r" + edge);
+            List<WordAddIn1.DocumentMapping.ParagraphBlock> blank =
+                WordAddIn1.DocumentMapping.SplitTextByParagraphs.Split("\r");
+            List<WordAddIn1.DocumentMapping.ParagraphBlock> joined =
+                WordAddIn1.DocumentMapping.SplitTextByParagraphs.Split("甲" + edge + "乙\r");
+            return dropped.Count == 1
+                && dropped[0].Text.Length == 0
+                && dropped[0].TrailingCr
+                && tail.Count == 1
+                && tail[0].Text == "甲"
+                && blank.Count == 1
+                && joined.Count == 1
+                && joined[0].Text == "甲乙";
+        }
+
+        private static bool ParagraphHoldsTab(string display)
         {
             if (string.IsNullOrEmpty(display))
             {
-                return "";
+                return false;
             }
 
             foreach (Match m in Regex.Matches(display, @"\[(P_[0-9A-Za-z]{5}(?:_\d+)?) start\]([\s\S]*?)\[\1 end\]"))
             {
-                string inner = m.Groups[2].Value ?? "";
-                if (inner.IndexOf('\t') >= 0 && inner.IndexOf("你好啊", StringComparison.Ordinal) < 0)
+                if ((m.Groups[2].Value ?? "").IndexOf('\t') >= 0)
                 {
-                    return m.Groups[1].Value;
+                    return true;
                 }
             }
 
-            return "";
+            return false;
+        }
+
+        private static int ParagraphCount(WdSession s, string path)
+        {
+            int count = -1;
+            bool ok = s.IsWps
+                ? s.TryWpsDoc(path, doc =>
+                {
+                    object paras = WdSession.ComGet(doc, "Paragraphs");
+                    count = Convert.ToInt32(WdSession.ComGet(paras, "Count"));
+                    return true;
+                })
+                : s.OnWordDoc(path, doc =>
+                {
+                    count = doc.Paragraphs.Count;
+                    return true;
+                });
+            return ok ? count : -1;
+        }
+
+        private static string InteriorParagraphCode(WdSession s, string path)
+        {
+            string code = "";
+            if (s.IsWps)
+            {
+                s.TryWpsDoc(path, doc =>
+                {
+                    Word.Document wordDoc = doc as Word.Document;
+                    if (wordDoc == null)
+                    {
+                        return false;
+                    }
+
+                    WordDocumentExtractor.ProcessDocument(
+                        wordDoc,
+                        ProcessDocumentOptions.ForProcessActions("locate"));
+                    code = TocFieldStamp.FirstInteriorParagraph() ?? "";
+                    return true;
+                });
+            }
+            else
+            {
+                s.OnWordDoc(path, doc =>
+                {
+                    WordDocumentExtractor.ProcessDocument(
+                        doc,
+                        ProcessDocumentOptions.ForProcessActions("locate"));
+                    code = TocFieldStamp.FirstInteriorParagraph() ?? "";
+                    return true;
+                });
+            }
+
+            return code;
         }
 
         private static bool SpanHasTab(JArray spans)

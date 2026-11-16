@@ -21,7 +21,15 @@ namespace WordAddIn1.DocumentMapping
             {
                 bool isLast = i == parts.Length - 1;
                 bool trailingCr = !isLast;
-                string part = parts[i].Replace(WordAddIn1.TocFieldStamp.Edge.ToString(), "");
+                string raw = parts[i] ?? "";
+                string edge = WordAddIn1.TocFieldStamp.Edge.ToString();
+                bool onlyEdge = raw.Length > 0 && raw.Replace(edge, "").Length == 0;
+                if (onlyEdge && !trailingCr)
+                {
+                    continue;
+                }
+
+                string part = raw.Replace(edge, "");
 
                 if (part == "" && !trailingCr)
                 {

@@ -31,6 +31,7 @@ namespace WordAddIn1
         private static List<string> _ids = new List<string>();
         private static readonly HashSet<string> Interior = new HashSet<string>(StringComparer.Ordinal);
         private static readonly Dictionary<string, string> SentenceId = new Dictionary<string, string>(StringComparer.Ordinal);
+        private static readonly Dictionary<string, string> ParagraphId = new Dictionary<string, string>(StringComparer.Ordinal);
         private static int _fieldCursor;
         private static bool _inside;
         private static string _openId;
@@ -47,6 +48,7 @@ namespace WordAddIn1
                 _ids = new List<string>();
                 Interior.Clear();
                 SentenceId.Clear();
+                ParagraphId.Clear();
                 _fieldCursor = 0;
                 _inside = false;
                 _openId = null;
@@ -59,6 +61,7 @@ namespace WordAddIn1
             {
                 Interior.Clear();
                 SentenceId.Clear();
+                ParagraphId.Clear();
                 _fieldCursor = 0;
                 _inside = false;
                 _openId = null;
@@ -80,6 +83,7 @@ namespace WordAddIn1
 
             try
             {
+                var fields = new List<Word.Field>();
                 foreach (Word.Field field in doc.Fields)
                 {
                     int type;
@@ -92,24 +96,31 @@ namespace WordAddIn1
                         continue;
                     }
 
-                    if (type != (int)Word.WdFieldType.wdFieldTOC)
+                    if (type == (int)Word.WdFieldType.wdFieldTOC)
                     {
-                        continue;
+                        fields.Add(field);
                     }
+                }
 
-                    Word.Range point = field.Code.Duplicate;
-                    point.Collapse(Word.WdCollapseDirection.wdCollapseStart);
-                    string existing = FindBookmark(doc, point.Start);
-                    if (!string.IsNullOrEmpty(existing))
+                var stamped = new string[fields.Count];
+                for (int i = fields.Count - 1; i >= 0; i--)
+                {
+                    try
                     {
-                        ids.Add(existing);
-                        continue;
+                        stamped[i] = Stamp(doc, fields[i]);
+                        EnsureResultParagraph(fields[i]);
                     }
-
-                    string created = AddBookmark(doc, point);
-                    if (!string.IsNullOrEmpty(created))
+                    catch (Exception ex)
                     {
-                        ids.Add(created);
+                        System.Diagnostics.Debug.WriteLine("[TocFieldStamp] " + ex.Message);
+                    }
+                }
+
+                foreach (string id in stamped)
+                {
+                    if (!string.IsNullOrEmpty(id))
+                    {
+                        ids.Add(id);
                     }
                 }
             }
@@ -269,16 +280,59 @@ namespace WordAddIn1
 
             lock (Gate)
             {
+                string id = null;
                 foreach (string sentence in sentenceNames)
                 {
-                    if (string.IsNullOrEmpty(sentence) || !Interior.Contains(sentence))
+                    if (string.IsNullOrEmpty(sentence)
+                        || !SentenceId.TryGetValue(sentence, out string found)
+                        || string.IsNullOrEmpty(found))
+                    {
+                        return;
+                    }
+
+                    if (id == null)
+                    {
+                        id = found;
+                    }
+                    else if (!string.Equals(id, found, StringComparison.Ordinal))
                     {
                         return;
                     }
                 }
 
                 Interior.Add(paragraphName);
+                ParagraphId[paragraphName] = id;
             }
+        }
+
+        public static string ParagraphFieldId(string paragraphName)
+        {
+            if (string.IsNullOrEmpty(paragraphName))
+            {
+                return null;
+            }
+
+            lock (Gate)
+            {
+                string id;
+                return ParagraphId.TryGetValue(paragraphName, out id) ? id : null;
+            }
+        }
+
+        public static string FirstInteriorParagraph()
+        {
+            lock (Gate)
+            {
+                foreach (KeyValuePair<string, string> pair in ParagraphId)
+                {
+                    if (!string.IsNullOrEmpty(pair.Key))
+                    {
+                        return pair.Key;
+                    }
+                }
+            }
+
+            return null;
         }
 
         public static string CollapseDisplay(string display)
@@ -359,6 +413,49 @@ namespace WordAddIn1
         private static int NextSentence(string display, int from)
         {
             return display.IndexOf("[S_", from, StringComparison.Ordinal);
+        }
+
+        private static string Stamp(Word.Document doc, Word.Field field)
+        {
+            Word.Range point = field.Code.Duplicate;
+            point.Collapse(Word.WdCollapseDirection.wdCollapseStart);
+            string existing = FindBookmark(doc, point.Start);
+            if (!string.IsNullOrEmpty(existing))
+            {
+                return existing;
+            }
+
+            return AddBookmark(doc, point);
+        }
+
+        private static void EnsureResultParagraph(Word.Field field)
+        {
+            Word.Range result = field.Result;
+            if (result == null)
+            {
+                return;
+            }
+
+            string text = result.Text ?? "";
+            if (text.Length > 0 && text[text.Length - 1] == '\r')
+            {
+                return;
+            }
+
+            Word.Document doc = result.Parent as Word.Document;
+            if (doc != null && result.End < doc.Content.End)
+            {
+                Word.Range next = doc.Range(result.End, result.End + 1);
+                string nextText = next.Text ?? "";
+                if (nextText.Length > 0 && nextText[0] == '\r')
+                {
+                    return;
+                }
+            }
+
+            Word.Range at = result.Duplicate;
+            at.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+            at.InsertAfter("\r");
         }
 
         private static string FindBookmark(Word.Document doc, int start)

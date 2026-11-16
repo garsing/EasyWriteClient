@@ -152,7 +152,10 @@ namespace WordAddIn1
 
                     {
 
-                        var paraDisplays = DocumentState.ChunkParagraphDisplayContents;
+                        var agentDisplays = DocumentState.ChunkParagraphAgentDisplays;
+                        var paraDisplays = agentDisplays != null && agentDisplays.Count > 0
+                            ? agentDisplays
+                            : DocumentState.ChunkParagraphDisplayContents;
 
                         if (paraDisplays != null && chunkIdx >= 1 && chunkIdx <= paraDisplays.Count)
 

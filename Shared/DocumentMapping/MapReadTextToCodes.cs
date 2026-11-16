@@ -68,11 +68,18 @@ namespace WordAddIn1.DocumentMapping
                 mapped.AllChunkParagraphNames.Add(chunkAllParagraphNames);
                 mapped.AllChunkSegsSentenceNames.Add(chunkSegsSentenceNames);
                 mapped.AllChunkSegsParagraphNames.Add(chunkSegsParagraphNames);
+                IReadOnlyDictionary<string, string> paragraphDisplayMap =
+                    DisplayMapFromMappings(store.GetParagraphMappings());
                 mapped.ChunkParagraphDisplayContents.Add(
                     BuildParagraphDisplayContent.Build(
                         chunkNonSegs,
                         chunkSegsParagraphNames,
-                        DisplayMapFromMappings(store.GetParagraphMappings())));
+                        paragraphDisplayMap));
+                mapped.ChunkParagraphAgentDisplays.Add(
+                    BuildParagraphDisplayContent.BuildAgent(
+                        chunkNonSegs,
+                        chunkSegsParagraphNames,
+                        paragraphDisplayMap));
             }
 
             mapped.NameToSentenceContentMap = ContentMapFromMappings(store.GetSentenceMappings());

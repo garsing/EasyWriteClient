@@ -207,6 +207,7 @@ namespace WordAddIn1
             }
 
             IReadOnlyList<string> paras = DocumentState.ChunkParagraphDisplayContents;
+            IReadOnlyList<string> agentParas = DocumentState.ChunkParagraphAgentDisplays;
             if (paras != null && paras.Count > 0)
             {
                 var stamped = new List<string>(paras.Count);
@@ -215,7 +216,16 @@ namespace WordAddIn1
                     stamped.Add(Stamp(paras[i]));
                 }
 
-                DocumentState.SetChunkParagraphDisplayContents(stamped);
+                var stampedAgent = new List<string>();
+                if (agentParas != null)
+                {
+                    for (int i = 0; i < agentParas.Count; i++)
+                    {
+                        stampedAgent.Add(Stamp(agentParas[i]));
+                    }
+                }
+
+                DocumentState.SetChunkParagraphDisplays(stamped, stampedAgent);
             }
         }
 

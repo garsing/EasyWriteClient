@@ -482,6 +482,7 @@ namespace WordAddIn1
         public static void SetChunkParagraphDisplayContents(IReadOnlyList<string> contents)
         {
             Session.ChunkParagraphDisplayContents.Clear();
+            Session.ChunkParagraphAgentDisplays.Clear();
             if (contents == null)
             {
                 return;
@@ -490,6 +491,22 @@ namespace WordAddIn1
             foreach (string content in contents)
             {
                 Session.ChunkParagraphDisplayContents.Add(content ?? "");
+            }
+        }
+
+        public static void SetChunkParagraphDisplays(
+            IReadOnlyList<string> full,
+            IReadOnlyList<string> agent)
+        {
+            SetChunkParagraphDisplayContents(full);
+            if (agent == null)
+            {
+                return;
+            }
+
+            foreach (string content in agent)
+            {
+                Session.ChunkParagraphAgentDisplays.Add(content ?? "");
             }
         }
 
@@ -564,6 +581,8 @@ namespace WordAddIn1
         public static IReadOnlyDictionary<string, List<string>> ParagraphToSentences => Session.ParagraphToSentences;
 
         public static IReadOnlyList<string> ChunkParagraphDisplayContents => Session.ChunkParagraphDisplayContents;
+
+        public static IReadOnlyList<string> ChunkParagraphAgentDisplays => Session.ChunkParagraphAgentDisplays;
 
         public static string FindOrCreateSentenceName(string content, int mark = 0)
         {
