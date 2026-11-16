@@ -11,7 +11,7 @@ namespace WordDocumentRoundtripTest
     /// <summary>目录域和目录内容控件。对照 docs/测试/word测试/目录。</summary>
     internal static class TcCases
     {
-        public const int Target = 60;
+        public const int Target = 90;
 
         private static readonly Regex Token = new Regex(
             @"\[目录域 (ewC_[A-Za-z0-9]{8,32})\]",
@@ -50,6 +50,7 @@ namespace WordDocumentRoundtripTest
 
             var s = new WdSession(host);
             RunSplit(run);
+            RunConsolidate(run);
             RunStandard(run, s);
             RunNotoc(run, s);
             RunTwo(run, s);
@@ -103,6 +104,189 @@ namespace WordDocumentRoundtripTest
             return blocks;
         }
 
+        private static void RunConsolidate(TestRun run)
+        {
+            if (!Want(
+                "tc-seg-three", "tc-seg-head", "tc-seg-tail", "tc-seg-cr",
+                "tc-seg-two", "tc-seg-same", "tc-seg-image", "tc-seg-cell", "tc-seg-pair", "tc-seg-nest",
+                "tc-col-one", "tc-col-two", "tc-col-empty", "tc-col-keep", "tc-col-story", "tc-col-agent"))
+            {
+                return;
+            }
+
+            string a = TocFieldStamp.FormatMarker("ewC_aaaaaaaa");
+            string b = TocFieldStamp.FormatMarker("ewC_bbbbbbbb");
+            string one = "前文\r" + a + "目录行\r" + a + "后文。";
+            List<string> three = SegTexts(one);
+            Ok(run, "tc-seg-three",
+                three.Count == 3 && three[0] == "前文\r" && three[1] == "目录行\r" && three[2] == "后文。",
+                JoinSegs(three));
+
+            string head = a + "目录\r" + a + "后";
+            List<string> headSegs = SegTexts(head);
+            Ok(run, "tc-seg-head",
+                headSegs.Count == 2 && headSegs[0] == "目录\r" && headSegs[1] == "后"
+                && GapTexts(head)[0].StartsWith(a, StringComparison.Ordinal),
+                JoinSegs(headSegs));
+
+            string tail = "甲\r" + a;
+            List<string> tailSegs = SegTexts(tail);
+            List<ParagraphBlock> tailParas = ParasThroughSeg(tail);
+            Ok(run, "tc-seg-tail",
+                tailSegs.Count == 1 && tailSegs[0] == "甲\r"
+                && tailParas.Count == 1 && tailParas[0].Text == "甲",
+                JoinSegs(tailSegs));
+
+            string cr = "甲" + a + "\r乙" + a + "后";
+            List<string> crSegs = SegTexts(cr);
+            List<string> crGaps = GapTexts(cr);
+            string crGap = crGaps.Count > 1 ? crGaps[1] : "";
+            Ok(run, "tc-seg-cr",
+                crSegs.Count == 3 && crSegs[0] == "甲" && crSegs[1] == "\r乙" && crGap == a,
+                "gap=" + crGap + " segs=" + JoinSegs(crSegs));
+
+            string two = "前文\r" + a + "目录甲\r" + a + "中\r" + b + "目录乙\r" + b + "后文。";
+            List<string> twoSegs = SegTexts(two);
+            Ok(run, "tc-seg-two",
+                twoSegs.Count == 5
+                && twoSegs[0] == "前文\r" && twoSegs[1] == "目录甲\r" && twoSegs[2] == "中\r"
+                && twoSegs[3] == "目录乙\r" && twoSegs[4] == "后文。",
+                JoinSegs(twoSegs));
+
+            string same = "前文\r" + a + "目录行\r" + a + "中\r" + b + "目录行\r" + b + "后文。";
+            List<string> sameSegs = SegTexts(same);
+            Ok(run, "tc-seg-same",
+                sameSegs.Count == 5 && sameSegs[1] == "目录行\r" && sameSegs[3] == "目录行\r" && sameSegs[2] == "中\r",
+                JoinSegs(sameSegs));
+
+            string image = "<image id=\"i1\" src=\"a\"/>\r" + a + "目录\r" + a + "后";
+            List<string> imageSegs = SegTexts(image);
+            Ok(run, "tc-seg-image",
+                imageSegs.Count == 2 && imageSegs[0] == "目录\r" && imageSegs[1] == "后",
+                JoinSegs(imageSegs));
+
+            string cell = "前<table id=\"t\"><td>格内" + a + "目录\r" + a + "格尾</td></table>后";
+            List<string> cellSegs = SegTexts(cell);
+            Ok(run, "tc-seg-cell",
+                cellSegs.Count == 5
+                && cellSegs[0] == "前" && cellSegs[1] == "格内" && cellSegs[2] == "目录\r"
+                && cellSegs[3] == "格尾" && cellSegs[4] == "后",
+                JoinSegs(cellSegs));
+
+            List<string> pairIds = MarkerIds(string.Join("", GapTexts(same)));
+            bool markerInSeg = false;
+            foreach (string seg in sameSegs)
+            {
+                if ((seg ?? "").IndexOf("<toc", StringComparison.Ordinal) >= 0)
+                {
+                    markerInSeg = true;
+                }
+            }
+
+            Ok(run, "tc-seg-pair",
+                !markerInSeg && pairIds.Count == 4
+                && pairIds[0] == "ewC_aaaaaaaa" && pairIds[1] == "ewC_aaaaaaaa"
+                && pairIds[2] == "ewC_bbbbbbbb" && pairIds[3] == "ewC_bbbbbbbb",
+                string.Join(",", pairIds));
+
+            string nest = "外前<table id=\"o\"><td>外格<table id=\"i\"><td>内" + a + "目录" + a + "内尾</td></table>外尾</td></table>外后";
+            List<string> nestSegs = SegTexts(nest);
+            int nestAt = nestSegs.IndexOf("目录");
+            Ok(run, "tc-seg-nest",
+                nestAt > 0 && nestAt + 1 < nestSegs.Count
+                && nestSegs[nestAt - 1] == "内" && nestSegs[nestAt + 1] == "内尾"
+                && nestSegs.Contains("外后"),
+                JoinSegs(nestSegs));
+
+            string wrapped = "前文" + a + "[S_abcde-start]目录行[S_abcde-end]" + a + "后文";
+            Ok(run, "tc-col-one",
+                TocFieldStamp.CollapseMarked(wrapped) == "前文[目录域 ewC_aaaaaaaa]后文",
+                TocFieldStamp.CollapseMarked(wrapped));
+
+            string twoWrap = "前文" + a + "目录甲" + a + "中" + b + "目录乙" + b + "后文";
+            Ok(run, "tc-col-two",
+                TocFieldStamp.CollapseMarked(twoWrap) == "前文[目录域 ewC_aaaaaaaa]中[目录域 ewC_bbbbbbbb]后文",
+                TocFieldStamp.CollapseMarked(twoWrap));
+
+            Ok(run, "tc-col-empty",
+                TocFieldStamp.CollapseMarked(a + a) == "[目录域 ewC_aaaaaaaa]",
+                TocFieldStamp.CollapseMarked(a + a));
+
+            string lone = "前文" + a + "后文";
+            Ok(run, "tc-col-keep",
+                TocFieldStamp.CollapseMarked(lone) == lone,
+                TocFieldStamp.CollapseMarked(lone));
+
+            string storyRaw = "前文\r" + a + "目录行\t1\r" + a + "你好啊。";
+            string story = DisplayStoryConvert.ToStory(storyRaw);
+            Ok(run, "tc-col-story",
+                story.IndexOf("目录行", StringComparison.Ordinal) >= 0
+                && story.IndexOf("你好啊", StringComparison.Ordinal) >= 0
+                && story.IndexOf("ewC_", StringComparison.Ordinal) < 0
+                && story.IndexOf("<toc", StringComparison.Ordinal) < 0,
+                story);
+
+            string agentStory = DisplayStoryConvert.ToStory(TocFieldStamp.CollapseMarked(storyRaw));
+            Ok(run, "tc-col-agent",
+                agentStory.IndexOf("你好啊", StringComparison.Ordinal) >= 0
+                && agentStory.IndexOf("目录行", StringComparison.Ordinal) < 0
+                && agentStory.IndexOf("ewC_", StringComparison.Ordinal) < 0,
+                agentStory);
+        }
+
+        private static List<string> SegTexts(string text)
+        {
+            var segs = new List<string>();
+            List<string> parts = WordDocumentExtractor.SplitTextByCellsForMapping(text, out List<int> _);
+            for (int i = 1; i < parts.Count; i += 2)
+            {
+                segs.Add(parts[i]);
+            }
+
+            return segs;
+        }
+
+        private static List<string> GapTexts(string text)
+        {
+            var gaps = new List<string>();
+            List<string> parts = WordDocumentExtractor.SplitTextByCellsForMapping(text, out List<int> _);
+            for (int i = 0; i < parts.Count; i += 2)
+            {
+                gaps.Add(parts[i]);
+            }
+
+            return gaps;
+        }
+
+        private static List<string> MarkerIds(string text)
+        {
+            var ids = new List<string>();
+            foreach (Match match in TocFieldStamp.Marker.Matches(text ?? ""))
+            {
+                ids.Add(match.Groups[1].Value);
+            }
+
+            return ids;
+        }
+
+        private static string JoinSegs(List<string> segs)
+        {
+            return segs == null ? "" : string.Join(" | ", segs.ConvertAll(seg => (seg ?? "").Replace("\r", "\\r")));
+        }
+
+        private static string ParaHolding(string display, string text)
+        {
+            foreach (Match match in Regex.Matches(display ?? "", @"\[(P_[0-9A-Za-z]{5}(?:_\d+)?) start\]([\s\S]*?)\[\1 end\]"))
+            {
+                if ((match.Groups[2].Value ?? "").IndexOf(text, StringComparison.Ordinal) >= 0)
+                {
+                    return match.Groups[2].Value ?? "";
+                }
+            }
+
+            return "";
+        }
+
         private static void RunStandard(TestRun run, WdSession s)
         {
             if (!Want(
@@ -112,7 +296,8 @@ namespace WordDocumentRoundtripTest
                 "tc-fold-sent", "tc-fold-para", "tc-fold-chunk", "tc-fold-lines", "tc-fold-body",
                 "tc-fold-full", "tc-fold-story", "tc-fold-inside",
                 "tc-op-sent", "tc-op-para", "tc-op-style", "tc-op-ewc", "tc-op-body",
-                "tc-span-hide", "tc-span-style", "tc-nth"))
+                "tc-span-hide", "tc-span-style", "tc-nth",
+                "tc-mark-pair", "tc-mark-between", "tc-glue-store", "tc-para-store"))
             {
                 return;
             }
@@ -127,7 +312,8 @@ namespace WordDocumentRoundtripTest
                     "tc-fold-sent", "tc-fold-para", "tc-fold-chunk", "tc-fold-lines", "tc-fold-body",
                     "tc-fold-full", "tc-fold-story", "tc-fold-inside",
                     "tc-op-sent", "tc-op-para", "tc-op-style", "tc-op-ewc", "tc-op-body",
-                    "tc-span-hide", "tc-span-style", "tc-nth");
+                    "tc-span-hide", "tc-span-style", "tc-nth",
+                    "tc-mark-pair", "tc-mark-between", "tc-glue-store", "tc-para-store");
                 return;
             }
 
@@ -194,6 +380,44 @@ namespace WordDocumentRoundtripTest
                     (agent ?? "").IndexOf("<toc", StringComparison.Ordinal) < 0
                     && (full ?? "").IndexOf("第一章", StringComparison.Ordinal) >= 0,
                     Brief(full));
+                List<string> pair = MarkerIds(full);
+                int openAt = (full ?? "").IndexOf("<toc", StringComparison.Ordinal);
+                int closeAt = openAt < 0 ? -1 : (full ?? "").IndexOf("<toc", openAt + 4, StringComparison.Ordinal);
+                string between = openAt >= 0 && closeAt > openAt
+                    ? (full ?? "").Substring(openAt, closeAt - openAt)
+                    : "";
+                string afterMark = closeAt < 0 ? "" : (full ?? "").Substring(closeAt);
+                Ok(run, "tc-mark-pair",
+                    pair.Count == 2 && pair[0] == pair[1] && pair[0] == bookmark
+                    && (agent ?? "").IndexOf("<toc", StringComparison.Ordinal) < 0,
+                    string.Join(",", pair) + " mark=" + bookmark);
+                Ok(run, "tc-mark-between",
+                    between.IndexOf("第一章", StringComparison.Ordinal) >= 0
+                    && afterMark.IndexOf("你好啊", StringComparison.Ordinal) >= 0
+                    && between.IndexOf("你好啊", StringComparison.Ordinal) < 0,
+                    Brief(full));
+                bool glueOk = false;
+                string glueDetail = "";
+                foreach (IReadOnlyList<string> mapping in DocumentState.SentenceNameMapping)
+                {
+                    string content = mapping != null && mapping.Count >= 3 ? mapping[2] ?? "" : "";
+                    if (content.IndexOf("你好啊", StringComparison.Ordinal) < 0)
+                    {
+                        continue;
+                    }
+
+                    glueOk = content.IndexOf('\t') < 0 && content.IndexOf("<toc", StringComparison.Ordinal) < 0;
+                    glueDetail = content;
+                    break;
+                }
+
+                Ok(run, "tc-glue-store", glueOk, glueDetail);
+                string held = ParaHolding(full, "你好啊");
+                Ok(run, "tc-para-store",
+                    held.IndexOf("你好啊", StringComparison.Ordinal) >= 0
+                    && held.IndexOf("第一章", StringComparison.Ordinal) < 0
+                    && held.IndexOf("<toc", StringComparison.Ordinal) < 0,
+                    held);
                 string interior = FirstInteriorParagraph(s, path);
                 Ok(run, "tc-fold-inside",
                     interior.StartsWith("P_", StringComparison.Ordinal) && (para ?? "").IndexOf(interior, StringComparison.Ordinal) < 0,
@@ -264,7 +488,7 @@ namespace WordDocumentRoundtripTest
 
         private static void RunTwo(TestRun run, WdSession s)
         {
-            if (!Want("tc-id-two", "tc-fold-two", "tc-fold-disagree"))
+            if (!Want("tc-id-two", "tc-fold-two", "tc-fold-disagree", "tc-mark-order", "tc-mark-mid"))
             {
                 return;
             }
@@ -273,7 +497,7 @@ namespace WordDocumentRoundtripTest
             string path, id;
             if (!Open(s, "占位。", out path, out id) || !InsertXml(s, path, twoXml))
             {
-                FailMany(run, "铺两份目录失败", "tc-id-two", "tc-fold-two", "tc-fold-disagree");
+                FailMany(run, "铺两份目录失败", "tc-id-two", "tc-fold-two", "tc-fold-disagree", "tc-mark-order", "tc-mark-mid");
                 return;
             }
 
@@ -290,6 +514,32 @@ namespace WordDocumentRoundtripTest
                 Ok(run, "tc-fold-disagree",
                     mid >= 0 && (para ?? "").IndexOf("[P_", mid, StringComparison.Ordinal) >= 0,
                     para);
+                string full = "";
+                string agent = "";
+                ReadDisplays(s, path, ref full, ref agent);
+                List<string> ids = MarkerIds(full);
+                List<string> books = FieldBookmarks(s, path);
+                MatchCollection markerHits = TocFieldStamp.Marker.Matches(full ?? "");
+                string midSpan = "";
+                if (markerHits.Count >= 3)
+                {
+                    int from = markerHits[1].Index + markerHits[1].Length;
+                    int to = markerHits[2].Index;
+                    if (to > from)
+                    {
+                        midSpan = (full ?? "").Substring(from, to - from);
+                    }
+                }
+
+                Ok(run, "tc-mark-order",
+                    ids.Count == 4 && ids[0] == ids[1] && ids[2] == ids[3] && ids[0] != ids[2]
+                    && books.Count >= 2 && ids[0] == books[0] && ids[2] == books[1],
+                    string.Join(",", ids) + " books=" + string.Join(",", books));
+                Ok(run, "tc-mark-mid",
+                    midSpan.IndexOf("中间正文", StringComparison.Ordinal) >= 0
+                    && midSpan.IndexOf("目录甲", StringComparison.Ordinal) < 0
+                    && midSpan.IndexOf("目录乙", StringComparison.Ordinal) < 0,
+                    Brief(full));
             }
             finally
             {
@@ -299,7 +549,7 @@ namespace WordDocumentRoundtripTest
 
         private static void RunCell(TestRun run, WdSession s)
         {
-            if (!Want("tc-id-cell", "tc-fold-table-mark"))
+            if (!Want("tc-id-cell", "tc-fold-table-mark", "tc-mark-cell"))
             {
                 return;
             }
@@ -307,7 +557,7 @@ namespace WordDocumentRoundtripTest
             string path, id;
             if (!Open(s, "第一章标题\r格外正文。", out path, out id) || !StyleFirst(s, path) || !AddTocInCell(s, path) || !UpdateFields(s, path))
             {
-                FailMany(run, "铺单元格目录失败", "tc-id-cell", "tc-fold-table-mark");
+                FailMany(run, "铺单元格目录失败", "tc-id-cell", "tc-fold-table-mark", "tc-mark-cell");
                 return;
             }
 
@@ -323,6 +573,20 @@ namespace WordDocumentRoundtripTest
                     token.Success && tokenText.IndexOf("[in_table]", StringComparison.Ordinal) < 0
                     && tokenText.IndexOf("表", StringComparison.Ordinal) < 0,
                     para);
+                string full = "";
+                string agent = "";
+                ReadDisplays(s, path, ref full, ref agent);
+                List<string> ids = MarkerIds(full);
+                MatchCollection hits = TocFieldStamp.Marker.Matches(full ?? "");
+                string inside = hits.Count >= 2
+                    ? (full ?? "").Substring(hits[0].Index, hits[1].Index - hits[0].Index)
+                    : "";
+                Ok(run, "tc-mark-cell",
+                    ids.Count == 2 && ids[0] == ids[1] && ids[0] == (token.Success ? token.Groups[1].Value : "")
+                    && inside.IndexOf("第一章", StringComparison.Ordinal) >= 0
+                    && inside.IndexOf("格外正文", StringComparison.Ordinal) < 0
+                    && (full ?? "").IndexOf("格外正文", StringComparison.Ordinal) >= 0,
+                    Brief(full));
             }
             finally
             {
@@ -332,7 +596,7 @@ namespace WordDocumentRoundtripTest
 
         private static void RunNest(TestRun run, WdSession s)
         {
-            if (!Want("tc-id-nest"))
+            if (!Want("tc-id-nest", "tc-mark-nest"))
             {
                 return;
             }
@@ -340,7 +604,7 @@ namespace WordDocumentRoundtripTest
             string path, id;
             if (!Open(s, "第一章标题\r外层正文。", out path, out id) || !StyleFirst(s, path) || !AddTocInNestedCell(s, path) || !UpdateFields(s, path))
             {
-                Fail(run, "tc-id-nest", "铺嵌套目录失败");
+                FailMany(run, "铺嵌套目录失败", "tc-id-nest", "tc-mark-nest");
                 return;
             }
 
@@ -349,6 +613,19 @@ namespace WordDocumentRoundtripTest
                 string para = Paragraph(s, id);
                 int tables = TableCount(s, path);
                 Ok(run, "tc-id-nest", Token.IsMatch(para ?? ""), "tables=" + tables + " para=" + para);
+                string full = "";
+                string agent = "";
+                ReadDisplays(s, path, ref full, ref agent);
+                List<string> ids = MarkerIds(full);
+                MatchCollection hits = TocFieldStamp.Marker.Matches(full ?? "");
+                string inside = hits.Count >= 2
+                    ? (full ?? "").Substring(hits[0].Index, hits[1].Index - hits[0].Index)
+                    : "";
+                Ok(run, "tc-mark-nest",
+                    ids.Count == 2 && ids[0] == ids[1]
+                    && inside.IndexOf("外层正文", StringComparison.Ordinal) < 0
+                    && (full ?? "").IndexOf("外层正文", StringComparison.Ordinal) >= 0,
+                    Brief(full));
             }
             finally
             {
@@ -414,7 +691,7 @@ namespace WordDocumentRoundtripTest
 
         private static void RunNotTocField(TestRun run, WdSession s)
         {
-            if (!Want("tc-sent-not-toc"))
+            if (!Want("tc-sent-not-toc", "tc-mark-none"))
             {
                 return;
             }
@@ -422,7 +699,7 @@ namespace WordDocumentRoundtripTest
             string path, id;
             if (!Open(s, "今天。", out path, out id) || !AddPageField(s, path))
             {
-                Fail(run, "tc-sent-not-toc", "铺页码域失败");
+                FailMany(run, "铺页码域失败", "tc-sent-not-toc", "tc-mark-none");
                 return;
             }
 
@@ -433,6 +710,12 @@ namespace WordDocumentRoundtripTest
                     (sent ?? "").IndexOf("[目录域", StringComparison.Ordinal) < 0
                     && (sent ?? "").IndexOf("今天", StringComparison.Ordinal) >= 0,
                     sent);
+                string full = "";
+                string agent = "";
+                ReadDisplays(s, path, ref full, ref agent);
+                Ok(run, "tc-mark-none",
+                    MarkerIds(full).Count == 0 && (full ?? "").IndexOf("今天", StringComparison.Ordinal) >= 0,
+                    Brief(full));
             }
             finally
             {
@@ -442,7 +725,7 @@ namespace WordDocumentRoundtripTest
 
         private static void RunBothSides(TestRun run, WdSession s)
         {
-            if (!Want("tc-sent-both-sides"))
+            if (!Want("tc-sent-both-sides", "tc-mark-both"))
             {
                 return;
             }
@@ -450,7 +733,7 @@ namespace WordDocumentRoundtripTest
             string path, id;
             if (!Open(s, "前文。\r第一章标题\r后文。", out path, out id) || !StyleParagraph(s, path, "第一章标题") || !AddTocBefore(s, path, "第一章标题") || !UpdateFields(s, path))
             {
-                Fail(run, "tc-sent-both-sides", "铺稿失败");
+                FailMany(run, "铺稿失败", "tc-sent-both-sides", "tc-mark-both");
                 return;
             }
 
@@ -463,6 +746,16 @@ namespace WordDocumentRoundtripTest
                 Ok(run, "tc-sent-both-sides",
                     Token.Matches(sent ?? "").Count == 1 && before >= 0 && token > before && after > token,
                     sent);
+                string full = "";
+                string agent = "";
+                ReadDisplays(s, path, ref full, ref agent);
+                MatchCollection hits = TocFieldStamp.Marker.Matches(full ?? "");
+                int markAt = hits.Count > 0 ? hits[0].Index : -1;
+                int fore = (full ?? "").IndexOf("前文", StringComparison.Ordinal);
+                int aft = (full ?? "").IndexOf("后文", StringComparison.Ordinal);
+                Ok(run, "tc-mark-both",
+                    hits.Count == 2 && fore >= 0 && markAt > fore && aft > hits[1].Index,
+                    Brief(full));
             }
             finally
             {
@@ -580,7 +873,7 @@ namespace WordDocumentRoundtripTest
 
         private static void RunPlain(TestRun run, WdSession s)
         {
-            if (!Want("tc-plain-none", "tc-plain-style"))
+            if (!Want("tc-plain-none", "tc-plain-style", "tc-mark-style"))
             {
                 return;
             }
@@ -608,7 +901,7 @@ namespace WordDocumentRoundtripTest
 
             if (!Open(s, "普通目录行", out path, out id) || !StyleNamed(s, path, "普通目录行", new[] { "目录 1", "TOC 1" }))
             {
-                Fail(run, "tc-plain-style", "铺目录样式失败");
+                FailMany(run, "铺目录样式失败", "tc-plain-style", "tc-mark-style");
                 return;
             }
 
@@ -619,6 +912,12 @@ namespace WordDocumentRoundtripTest
                     (para ?? "").IndexOf("普通目录行", StringComparison.Ordinal) >= 0
                     && (para ?? "").IndexOf("[目录域", StringComparison.Ordinal) < 0,
                     para);
+                string full = "";
+                string agent = "";
+                ReadDisplays(s, path, ref full, ref agent);
+                Ok(run, "tc-mark-style",
+                    MarkerIds(full).Count == 0 && (full ?? "").IndexOf("普通目录行", StringComparison.Ordinal) >= 0,
+                    Brief(full));
             }
             finally
             {
@@ -630,7 +929,8 @@ namespace WordDocumentRoundtripTest
         {
             if (!Want(
                 "tc-ctl-token", "tc-ctl-hide", "tc-ctl-one", "tc-ctl-body", "tc-ctl-tag",
-                "tc-ctl-reuse", "tc-ctl-nocr", "tc-ctl-wid", "tc-ctl-inner"))
+                "tc-ctl-reuse", "tc-ctl-nocr", "tc-ctl-wid", "tc-ctl-inner",
+                "tc-mark-ctl", "tc-mark-one"))
             {
                 return;
             }
@@ -640,7 +940,8 @@ namespace WordDocumentRoundtripTest
             {
                 FailMany(run, "铺目录控件失败",
                     "tc-ctl-token", "tc-ctl-hide", "tc-ctl-one", "tc-ctl-body", "tc-ctl-tag",
-                    "tc-ctl-reuse", "tc-ctl-nocr", "tc-ctl-wid", "tc-ctl-inner");
+                    "tc-ctl-reuse", "tc-ctl-nocr", "tc-ctl-wid", "tc-ctl-inner",
+                    "tc-mark-ctl", "tc-mark-one");
                 return;
             }
 
@@ -668,6 +969,20 @@ namespace WordDocumentRoundtripTest
                 Ok(run, "tc-ctl-nocr", before > 0 && before == ParagraphCount(s, path), before.ToString());
                 Ok(run, "tc-ctl-wid", name != "1051109989", name);
                 Ok(run, "tc-ctl-inner", Token.Matches(para ?? "").Count == 1, para);
+                string full = "";
+                string agent = "";
+                ReadDisplays(s, path, ref full, ref agent);
+                List<string> ids = MarkerIds(full);
+                MatchCollection hits = TocFieldStamp.Marker.Matches(full ?? "");
+                string inside = hits.Count >= 2
+                    ? (full ?? "").Substring(hits[0].Index, hits[1].Index - hits[0].Index)
+                    : "";
+                Ok(run, "tc-mark-ctl",
+                    ids.Count == 2 && ids[0] == ids[1] && ids[0] == name
+                    && inside.IndexOf("键入章标题", StringComparison.Ordinal) >= 0
+                    && inside.IndexOf("后文你好啊", StringComparison.Ordinal) < 0,
+                    string.Join(",", ids));
+                Ok(run, "tc-mark-one", ids.Count == 2, "n=" + ids.Count + " " + Brief(full));
             }
             finally
             {
@@ -677,7 +992,7 @@ namespace WordDocumentRoundtripTest
 
         private static void RunControlField(TestRun run, WdSession s)
         {
-            if (!Want("tc-ctl-field"))
+            if (!Want("tc-ctl-field", "tc-mark-field"))
             {
                 return;
             }
@@ -686,7 +1001,7 @@ namespace WordDocumentRoundtripTest
             const string xml = "<pkg:package xmlns:pkg=\"http://schemas.microsoft.com/office/2006/xmlPackage\"><pkg:part pkg:name=\"/_rels/.rels\" pkg:contentType=\"application/vnd.openxmlformats-package.relationships+xml\"><pkg:xmlData><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/></Relationships></pkg:xmlData></pkg:part><pkg:part pkg:name=\"/word/document.xml\" pkg:contentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"><pkg:xmlData><w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:sdt><w:sdtPr><w:id w:val=\"99\"/><w:docPartObj><w:docPartGallery w:val=\"Table of Contents\"/><w:docPartUnique/></w:docPartObj></w:sdtPr><w:sdtContent><w:p><w:r><w:fldChar w:fldCharType=\"begin\"/></w:r><w:r><w:instrText xml:space=\"preserve\"> TOC \\o \"1-3\" \\h \\z \\u </w:instrText></w:r><w:r><w:fldChar w:fldCharType=\"separate\"/></w:r><w:r><w:t>目录条目</w:t></w:r><w:r><w:fldChar w:fldCharType=\"end\"/></w:r></w:p></w:sdtContent></w:sdt><w:p><w:r><w:t>后文。</w:t></w:r></w:p></w:body></w:document></pkg:xmlData></pkg:part></pkg:package>";
             if (!Open(s, "占位。", out path, out id) || !InsertXml(s, path, xml))
             {
-                Fail(run, "tc-ctl-field", "铺控件内目录域失败");
+                FailMany(run, "铺控件内目录域失败", "tc-ctl-field", "tc-mark-field");
                 return;
             }
 
@@ -698,6 +1013,13 @@ namespace WordDocumentRoundtripTest
                 Ok(run, "tc-ctl-field",
                     marks.Count == 1 && CountBookmarks(s, path, name) == 1,
                     "n=" + marks.Count + " marks=" + CountBookmarks(s, path, name) + " para=" + para);
+                string full = "";
+                string agent = "";
+                ReadDisplays(s, path, ref full, ref agent);
+                List<string> ids = MarkerIds(full);
+                Ok(run, "tc-mark-field",
+                    ids.Count == 2 && ids[0] == ids[1] && ids[0] == name,
+                    string.Join(",", ids) + " name=" + name);
             }
             finally
             {
