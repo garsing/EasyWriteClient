@@ -58,6 +58,7 @@ namespace WordDocumentRoundtripTest
             RunEdit(run, s);
             RunMore(run, s);
             RunToc(run, s);
+            RunTocControl(run, s);
         }
 
         private static bool Want(params string[] ids)
@@ -555,6 +556,64 @@ namespace WordDocumentRoundtripTest
             {
                 s.CloseDocByPath(path);
             }
+        }
+
+        private static void RunTocControl(TestRun run, WdSession s)
+        {
+            if (Only == null || !Want("ds-toc-control"))
+            {
+                return;
+            }
+
+            string path, id;
+            if (!Open(s, "后文你好啊。", out path, out id) || !InsertTocControl(s, path))
+            {
+                FailMany(run, "铺目录控件失败", "ds-toc-control");
+                return;
+            }
+
+            try
+            {
+                string paras = ParagraphContent(s, id);
+                Match token = Regex.Match(paras ?? "", @"\[目录域 (ewC_[A-Za-z0-9]{8,32})\]");
+                string name = token.Success ? token.Groups[1].Value : "";
+                string again = ParagraphContent(s, id);
+                Match token2 = Regex.Match(again ?? "", @"\[目录域 (ewC_[A-Za-z0-9]{8,32})\]");
+                string withoutToken = Regex.Replace(
+                    paras ?? "",
+                    @"\[目录域 ewC_[A-Za-z0-9]{8,32}\]",
+                    "");
+                bool hidden = withoutToken.IndexOf("键入章标题", StringComparison.Ordinal) < 0
+                    && withoutToken.IndexOf("目录", StringComparison.Ordinal) < 0;
+                bool kept = (paras ?? "").IndexOf("后文你好啊", StringComparison.Ordinal) >= 0;
+                int marks = CountBookmarks(s, path, name);
+                Ok(run, "ds-toc-control",
+                    token.Success && token2.Success && token2.Groups[1].Value == name
+                    && hidden && kept && marks == 0,
+                    "name=" + name + " again=" + (token2.Success ? token2.Groups[1].Value : "")
+                    + " marks=" + marks + " paras=" + paras);
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static bool InsertTocControl(WdSession s, string path)
+        {
+            const string xml = "<pkg:package xmlns:pkg=\"http://schemas.microsoft.com/office/2006/xmlPackage\"><pkg:part pkg:name=\"/_rels/.rels\" pkg:contentType=\"application/vnd.openxmlformats-package.relationships+xml\"><pkg:xmlData><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/></Relationships></pkg:xmlData></pkg:part><pkg:part pkg:name=\"/word/document.xml\" pkg:contentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"><pkg:xmlData><w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:sdt><w:sdtPr><w:id w:val=\"1051109989\"/><w:docPartObj><w:docPartGallery w:val=\"Table of Contents\"/><w:docPartUnique/></w:docPartObj></w:sdtPr><w:sdtContent><w:p><w:r><w:t>目录</w:t></w:r></w:p><w:p><w:r><w:t>键入章标题(第 1 级)</w:t></w:r><w:r><w:t>1</w:t></w:r></w:p></w:sdtContent></w:sdt><w:p><w:r><w:t>后文你好啊。</w:t></w:r></w:p></w:body></w:document></pkg:xmlData></pkg:part></pkg:package>";
+            return s.IsWps
+                ? s.TryWpsDoc(path, doc =>
+                {
+                    object content = WdSession.ComGet(doc, "Content");
+                    WdSession.ComCall(content, "InsertXML", xml);
+                    return true;
+                })
+                : s.OnWordDoc(path, doc =>
+                {
+                    doc.Content.InsertXML(xml);
+                    return true;
+                });
         }
 
         private static void RunSpanToc(TestRun run, WdSession s)

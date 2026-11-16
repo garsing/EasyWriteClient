@@ -142,11 +142,10 @@ namespace WordAddIn1
                 _readTableEmitIndex = 0;
                 _placeholderImageCounter = 0;
                 _tocFrames.Clear();
-                TocFieldStamp.Collect(document);
 
-                // 先取 XML，用表骨架收 COM（含内表父格），再发号。避免 Range.Tables 漏内表。
+                // 先钉目录编号。补了换行或写了控件 Tag 时，这里返回的是钉完之后的 XML。
                 sw.Restart();
-                string docXml = document.Content.WordOpenXML;
+                string docXml = TocFieldStamp.Prepare(document);
                 EasyWriteDiagnostics.LogTiming(
                     "content_WordOpenXML",
                     sw.ElapsedMilliseconds,
@@ -1847,6 +1846,18 @@ namespace WordAddIn1
                         result += "</table>\n";
                     }
                     // 块级修订：w:ins 内可能含 w:p，纳入读回；w:del 为已删内容，跳过
+                    else if (child.Name == w + "sdt" && TocFieldStamp.IsPlainTocGallery(child))
+                    {
+                        result += TocFieldStamp.Edge.ToString();
+                        XElement galleryContent = child.Element(w + "sdtContent");
+                        if (galleryContent != null)
+                        {
+                            result += ProcessElementRecursive(
+                                galleryContent, w, document, docPath, imageSaveDir, fileHash);
+                        }
+
+                        result += TocFieldStamp.Edge.ToString();
+                    }
                     else if (IsRevisionInsertion(child, w))
                     {
                         result += ProcessElementRecursive(child, w, document, docPath, imageSaveDir, fileHash);
