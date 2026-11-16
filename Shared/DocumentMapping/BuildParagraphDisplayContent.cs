@@ -76,16 +76,18 @@ namespace WordAddIn1.DocumentMapping
         public static string BuildAgent(
             IReadOnlyList<string> nonSegs,
             IReadOnlyList<IReadOnlyList<string>> segsParagraphNames,
-            IReadOnlyDictionary<string, string> nameToParagraphContent)
+            IReadOnlyDictionary<string, string> nameToParagraphContent,
+            IReadOnlyList<IReadOnlyList<string>> segsParagraphFieldIds)
         {
-            return BuildCore(nonSegs, segsParagraphNames, nameToParagraphContent, true);
+            return BuildCore(nonSegs, segsParagraphNames, nameToParagraphContent, true, segsParagraphFieldIds);
         }
 
         private static string BuildCore(
             IReadOnlyList<string> nonSegs,
             IReadOnlyList<IReadOnlyList<string>> segsParagraphNames,
             IReadOnlyDictionary<string, string> nameToParagraphContent,
-            bool forAgent)
+            bool forAgent,
+            IReadOnlyList<IReadOnlyList<string>> segsParagraphFieldIds = null)
         {
             var displayParts = new List<string>();
             List<List<string>> publicSegs = BuildPublicSegs(segsParagraphNames);
@@ -119,7 +121,12 @@ namespace WordAddIn1.DocumentMapping
 
                     paragraphContent = paragraphContent ?? "";
                     string publicCode = publicSegs[segIdx][i];
-                    string fieldId = forAgent ? WordAddIn1.TocFieldStamp.ParagraphFieldId(paragraphName) : null;
+                    IReadOnlyList<string> fieldSeg = forAgent
+                        && segsParagraphFieldIds != null
+                        && segIdx < segsParagraphFieldIds.Count
+                        ? segsParagraphFieldIds[segIdx]
+                        : null;
+                    string fieldId = fieldSeg != null && i < fieldSeg.Count ? fieldSeg[i] : null;
                     if (!string.IsNullOrEmpty(fieldId))
                     {
                         if (!string.Equals(openId, fieldId, StringComparison.Ordinal))

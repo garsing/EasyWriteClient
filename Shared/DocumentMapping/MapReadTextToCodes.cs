@@ -35,6 +35,8 @@ namespace WordAddIn1.DocumentMapping
                 var chunkNonSegs = new List<string>();
                 var chunkSegsSentenceNames = new List<List<string>>();
                 var chunkSegsParagraphNames = new List<List<string>>();
+                var chunkSegsSentenceFieldIds = new List<List<string>>();
+                var chunkSegsParagraphFieldIds = new List<List<string>>();
                 var chunkSegMarksList = new List<int>();
                 var chunkAllSentenceNames = new List<string>();
                 var chunkAllParagraphNames = new List<string>();
@@ -55,6 +57,8 @@ namespace WordAddIn1.DocumentMapping
                     SegMapResult segResult = MapSegTextToCodes(chunkParts[partIdx], segMark, store);
                     chunkSegsSentenceNames.Add(segResult.SentenceNames);
                     chunkSegsParagraphNames.Add(segResult.ParagraphNames);
+                    chunkSegsSentenceFieldIds.Add(segResult.SentenceFieldIds);
+                    chunkSegsParagraphFieldIds.Add(segResult.ParagraphFieldIds);
                     chunkAllSentenceNames.AddRange(segResult.SentenceNames);
                     chunkAllParagraphNames.AddRange(segResult.ParagraphNames);
                 }
@@ -68,6 +72,8 @@ namespace WordAddIn1.DocumentMapping
                 mapped.AllChunkParagraphNames.Add(chunkAllParagraphNames);
                 mapped.AllChunkSegsSentenceNames.Add(chunkSegsSentenceNames);
                 mapped.AllChunkSegsParagraphNames.Add(chunkSegsParagraphNames);
+                mapped.AllChunkSegsSentenceFieldIds.Add(chunkSegsSentenceFieldIds);
+                mapped.AllChunkSegsParagraphFieldIds.Add(chunkSegsParagraphFieldIds);
                 IReadOnlyDictionary<string, string> paragraphDisplayMap =
                     DisplayMapFromMappings(store.GetParagraphMappings());
                 mapped.ChunkParagraphDisplayContents.Add(
@@ -79,7 +85,8 @@ namespace WordAddIn1.DocumentMapping
                     BuildParagraphDisplayContent.BuildAgent(
                         chunkNonSegs,
                         chunkSegsParagraphNames,
-                        paragraphDisplayMap));
+                        paragraphDisplayMap,
+                        chunkSegsParagraphFieldIds));
             }
 
             mapped.NameToSentenceContentMap = ContentMapFromMappings(store.GetSentenceMappings());
@@ -167,6 +174,17 @@ namespace WordAddIn1.DocumentMapping
                     ? mapped.AllChunkSegsSentenceNames[c]
                     : new List<List<string>>();
                 string display = BuildSentenceDisplayContent.Build(nonSegs, segs, content, inoperable);
+                var occurrenceIds = new List<string>();
+                if (c < mapped.AllChunkSegsSentenceFieldIds.Count && mapped.AllChunkSegsSentenceFieldIds[c] != null)
+                {
+                    foreach (List<string> segIds in mapped.AllChunkSegsSentenceFieldIds[c])
+                    {
+                        if (segIds != null)
+                        {
+                            occurrenceIds.AddRange(segIds);
+                        }
+                    }
+                }
 
                 List<List<string>> geoSets = new List<List<string>>();
                 if (c < mapped.AllChunkSegNeedsGeometry.Count)
@@ -200,7 +218,7 @@ namespace WordAddIn1.DocumentMapping
                     }
                 }
 
-                mapped.ChunkDisplayContents.Add(TocFieldStamp.CollapseDisplay(display));
+                mapped.ChunkDisplayContents.Add(TocFieldStamp.CollapseDisplay(display, occurrenceIds));
                 var flat = new List<string>();
                 foreach (List<string> seg in segs)
                 {
@@ -248,6 +266,7 @@ namespace WordAddIn1.DocumentMapping
             // Path S：对完整 seg 并行分句（保留段末 \r，不走去 \r 后的 block.Text）
             int sentenceOffset = 0;
             var sentenceTexts = new List<string>();
+            var sentenceParagraphIndex = new List<int>();
             foreach (string sentenceContent in SentenceSplitter.SplitTextBySentencesForDocument(segText))
             {
                 if (sentenceContent == null)
@@ -256,31 +275,63 @@ namespace WordAddIn1.DocumentMapping
                 }
 
                 sentenceTexts.Add(sentenceContent);
+                int sentencePara = FindParagraphIndexAtOffset(paragraphRanges, sentenceOffset);
                 string storedSentence = AutonumConvert.StripTags(sentenceContent).Replace(TocFieldStamp.Edge.ToString(), "");
                 var sPair = store.FindOrCreateSentence(storedSentence, segMark);
                 string sName = sPair.Item1;
                 RememberDisplayInner(store, sName, sentenceContent, storedSentence);
                 result.SentenceNames.Add(sName);
-
-                int sentenceStart = sentenceOffset;
+                sentenceParagraphIndex.Add(sentencePara);
                 sentenceOffset += storedSentence.Length;
 
-                string paragraphName = FindParagraphNameAtOffset(paragraphRanges, sentenceStart);
+                string paragraphName = sentencePara >= 0 ? paragraphRanges[sentencePara].Name : null;
                 if (!string.IsNullOrEmpty(paragraphName))
                 {
                     store.LinkSentenceToParagraph(sName, paragraphName);
                 }
             }
 
-            TocFieldStamp.MarkSeg(segText, result.SentenceNames, sentenceTexts);
-            IReadOnlyDictionary<string, List<string>> byParagraph = store.GetParagraphToSentences();
-            foreach (string paragraphName in result.ParagraphNames)
+            List<string> occurrenceIds = TocFieldStamp.MarkSeg(segText, result.SentenceNames, sentenceTexts);
+            result.SentenceFieldIds.AddRange(occurrenceIds);
+            while (result.SentenceFieldIds.Count < result.SentenceNames.Count)
             {
-                if (byParagraph != null
-                    && byParagraph.TryGetValue(paragraphName, out List<string> linked)
-                    && linked != null)
+                result.SentenceFieldIds.Add(null);
+            }
+
+            var seen = new int[result.ParagraphNames.Count];
+            var bad = new bool[result.ParagraphNames.Count];
+            var paraIds = new string[result.ParagraphNames.Count];
+            for (int s = 0; s < result.SentenceNames.Count; s++)
+            {
+                int p = s < sentenceParagraphIndex.Count ? sentenceParagraphIndex[s] : -1;
+                if (p < 0 || p >= result.ParagraphNames.Count)
                 {
-                    TocFieldStamp.MarkCoveredParagraph(paragraphName, linked);
+                    continue;
+                }
+
+                seen[p]++;
+                string id = s < result.SentenceFieldIds.Count ? result.SentenceFieldIds[s] : null;
+                if (string.IsNullOrEmpty(id))
+                {
+                    bad[p] = true;
+                }
+                else if (paraIds[p] == null)
+                {
+                    paraIds[p] = id;
+                }
+                else if (!string.Equals(paraIds[p], id, StringComparison.Ordinal))
+                {
+                    bad[p] = true;
+                }
+            }
+
+            for (int p = 0; p < result.ParagraphNames.Count; p++)
+            {
+                string id = seen[p] > 0 && !bad[p] ? paraIds[p] : null;
+                result.ParagraphFieldIds.Add(id);
+                if (!string.IsNullOrEmpty(id))
+                {
+                    TocFieldStamp.RememberInterior(result.ParagraphNames[p]);
                 }
             }
 
@@ -299,6 +350,33 @@ namespace WordAddIn1.DocumentMapping
         public static SegMapResult MapSegTextToCodes(string segText, int segMark, InMemoryMappingStore store)
         {
             return MapSegTextToCodes(segText, segMark, (IMappingStore)store);
+        }
+
+        private static int FindParagraphIndexAtOffset(
+            IReadOnlyList<ParagraphRange> paragraphRanges,
+            int sentenceStart)
+        {
+            if (paragraphRanges == null || paragraphRanges.Count == 0 || sentenceStart < 0)
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < paragraphRanges.Count; i++)
+            {
+                ParagraphRange range = paragraphRanges[i];
+                if (sentenceStart >= range.Start && sentenceStart < range.End)
+                {
+                    return i;
+                }
+            }
+
+            ParagraphRange last = paragraphRanges[paragraphRanges.Count - 1];
+            if (sentenceStart == last.End)
+            {
+                return paragraphRanges.Count - 1;
+            }
+
+            return -1;
         }
 
         private static string FindParagraphNameAtOffset(

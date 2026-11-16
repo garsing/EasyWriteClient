@@ -25,6 +25,8 @@ namespace WordAddIn1.DocumentMapping
     {
         public List<string> ParagraphNames { get; } = new List<string>();
         public List<string> SentenceNames { get; } = new List<string>();
+        public List<string> ParagraphFieldIds { get; } = new List<string>();
+        public List<string> SentenceFieldIds { get; } = new List<string>();
     }
 
     public sealed class MapReadTextResult
@@ -41,6 +43,8 @@ namespace WordAddIn1.DocumentMapping
         public List<List<string>> AllChunkNonSegs { get; set; } = new List<List<string>>();
         public List<List<List<string>>> AllChunkSegsSentenceNames { get; set; } = new List<List<List<string>>>();
         public List<List<List<string>>> AllChunkSegsParagraphNames { get; set; } = new List<List<List<string>>>();
+        public List<List<List<string>>> AllChunkSegsSentenceFieldIds { get; set; } = new List<List<List<string>>>();
+        public List<List<List<string>>> AllChunkSegsParagraphFieldIds { get; set; } = new List<List<List<string>>>();
         public List<List<int>> AllChunkSegMarks { get; set; } = new List<List<int>>();
         public Dictionary<string, string> NameToSentenceContentMap { get; set; } = new Dictionary<string, string>();
         public string ParagraphSnapshot { get; set; } = "";

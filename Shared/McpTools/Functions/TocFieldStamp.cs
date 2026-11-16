@@ -33,8 +33,6 @@ namespace WordAddIn1
         private static readonly object Gate = new object();
         private static List<string> _ids = new List<string>();
         private static readonly HashSet<string> Interior = new HashSet<string>(StringComparer.Ordinal);
-        private static readonly Dictionary<string, string> SentenceId = new Dictionary<string, string>(StringComparer.Ordinal);
-        private static readonly Dictionary<string, string> ParagraphId = new Dictionary<string, string>(StringComparer.Ordinal);
         private static int _fieldCursor;
         private static bool _inside;
         private static string _openId;
@@ -50,8 +48,6 @@ namespace WordAddIn1
             {
                 _ids = new List<string>();
                 Interior.Clear();
-                SentenceId.Clear();
-                ParagraphId.Clear();
                 _fieldCursor = 0;
                 _inside = false;
                 _openId = null;
@@ -63,8 +59,6 @@ namespace WordAddIn1
             lock (Gate)
             {
                 Interior.Clear();
-                SentenceId.Clear();
-                ParagraphId.Clear();
                 _fieldCursor = 0;
                 _inside = false;
                 _openId = null;
@@ -213,11 +207,11 @@ namespace WordAddIn1
         {
             lock (Gate)
             {
-                foreach (KeyValuePair<string, string> pair in SentenceId)
+                foreach (string code in Interior)
                 {
-                    if (!string.IsNullOrEmpty(pair.Key))
+                    if (code.StartsWith("S_", StringComparison.Ordinal))
                     {
-                        return pair.Key;
+                        return code;
                     }
                 }
             }
@@ -247,15 +241,20 @@ namespace WordAddIn1
             return false;
         }
 
-        public static void MarkSeg(string segText, IList<string> sentenceNames, IList<string> sentenceTexts)
+        /// <summary>
+        /// 按切句顺序返回每一句当时所在的目录编号。句子码本身不保存这枚编号。
+        /// </summary>
+        public static List<string> MarkSeg(string segText, IList<string> sentenceNames, IList<string> sentenceTexts)
         {
+            var occurrenceIds = new List<string>();
             if (string.IsNullOrEmpty(segText) || sentenceNames == null || sentenceTexts == null)
             {
-                return;
+                return occurrenceIds;
             }
 
             int si = 0;
             int consumed = 0;
+            string pending = null;
             lock (Gate)
             {
                 for (int i = 0; i < segText.Length; i++)
@@ -283,23 +282,39 @@ namespace WordAddIn1
                         continue;
                     }
 
-                    if (_inside && si < sentenceNames.Count && !string.IsNullOrEmpty(_openId))
+                    if (_inside && !string.IsNullOrEmpty(_openId))
                     {
-                        string name = sentenceNames[si];
-                        if (!string.IsNullOrEmpty(name))
+                        pending = _openId;
+                        if (si < sentenceNames.Count && !string.IsNullOrEmpty(sentenceNames[si]))
                         {
-                            Interior.Add(name);
-                            SentenceId[name] = _openId;
+                            Interior.Add(sentenceNames[si]);
                         }
                     }
 
                     consumed++;
                     if (consumed >= sentenceTexts[si].Length)
                     {
+                        occurrenceIds.Add(pending);
                         si++;
                         consumed = 0;
+                        pending = null;
                     }
                 }
+            }
+
+            return occurrenceIds;
+        }
+
+        public static void RememberInterior(string code)
+        {
+            if (string.IsNullOrEmpty(code))
+            {
+                return;
+            }
+
+            lock (Gate)
+            {
+                Interior.Add(code);
             }
         }
 
@@ -312,79 +327,20 @@ namespace WordAddIn1
 
             lock (Gate)
             {
-                if (SentenceId.ContainsKey(rewritten))
+                if (Interior.Contains(rewritten))
                 {
                     return;
                 }
 
-                string id = null;
                 foreach (string original in originals)
                 {
-                    if (string.IsNullOrEmpty(original) || !SentenceId.TryGetValue(original, out string found))
-                    {
-                        return;
-                    }
-
-                    if (id == null)
-                    {
-                        id = found;
-                    }
-                    else if (!string.Equals(id, found, StringComparison.Ordinal))
+                    if (string.IsNullOrEmpty(original) || !Interior.Contains(original))
                     {
                         return;
                     }
                 }
 
                 Interior.Add(rewritten);
-                SentenceId[rewritten] = id;
-            }
-        }
-
-        public static void MarkCoveredParagraph(string paragraphName, IReadOnlyList<string> sentenceNames)
-        {
-            if (string.IsNullOrEmpty(paragraphName) || sentenceNames == null || sentenceNames.Count == 0)
-            {
-                return;
-            }
-
-            lock (Gate)
-            {
-                string id = null;
-                foreach (string sentence in sentenceNames)
-                {
-                    if (string.IsNullOrEmpty(sentence)
-                        || !SentenceId.TryGetValue(sentence, out string found)
-                        || string.IsNullOrEmpty(found))
-                    {
-                        return;
-                    }
-
-                    if (id == null)
-                    {
-                        id = found;
-                    }
-                    else if (!string.Equals(id, found, StringComparison.Ordinal))
-                    {
-                        return;
-                    }
-                }
-
-                Interior.Add(paragraphName);
-                ParagraphId[paragraphName] = id;
-            }
-        }
-
-        public static string ParagraphFieldId(string paragraphName)
-        {
-            if (string.IsNullOrEmpty(paragraphName))
-            {
-                return null;
-            }
-
-            lock (Gate)
-            {
-                string id;
-                return ParagraphId.TryGetValue(paragraphName, out id) ? id : null;
             }
         }
 
@@ -392,11 +348,11 @@ namespace WordAddIn1
         {
             lock (Gate)
             {
-                foreach (KeyValuePair<string, string> pair in ParagraphId)
+                foreach (string code in Interior)
                 {
-                    if (!string.IsNullOrEmpty(pair.Key))
+                    if (code.StartsWith("P_", StringComparison.Ordinal))
                     {
-                        return pair.Key;
+                        return code;
                     }
                 }
             }
@@ -404,7 +360,7 @@ namespace WordAddIn1
             return null;
         }
 
-        public static string CollapseDisplay(string display)
+        public static string CollapseDisplay(string display, IList<string> occurrenceIds)
         {
             if (string.IsNullOrEmpty(display) || display.IndexOf("[S_", StringComparison.Ordinal) < 0)
             {
@@ -413,19 +369,20 @@ namespace WordAddIn1
 
             var sb = new StringBuilder();
             int i = 0;
+            int occ = 0;
             string openId = null;
             while (i < display.Length)
             {
                 Match m = SentenceBlock.Match(display, i);
-        if (!m.Success || m.Index != i)
-        {
-            if (openId != null)
-            {
-                sb.Append("[目录域 ").Append(openId).Append(']');
-                openId = null;
-            }
+                if (!m.Success || m.Index != i)
+                {
+                    if (openId != null)
+                    {
+                        sb.Append("[目录域 ").Append(openId).Append(']');
+                        openId = null;
+                    }
 
-            int next = NextSentence(display, i);
+                    int next = NextSentence(display, i);
                     sb.Append(display, i, (next < 0 ? display.Length : next) - i);
                     if (next < 0)
                     {
@@ -437,15 +394,9 @@ namespace WordAddIn1
                     continue;
                 }
 
-                string code = "S_" + m.Groups[1].Value;
-                string id;
-                bool interior;
-                lock (Gate)
-                {
-                    interior = SentenceId.TryGetValue(code, out id);
-                }
-
-                if (!interior)
+                string id = occurrenceIds != null && occ < occurrenceIds.Count ? occurrenceIds[occ] : null;
+                occ++;
+                if (string.IsNullOrEmpty(id))
                 {
                     if (openId != null)
                     {

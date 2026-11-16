@@ -77,6 +77,10 @@ namespace WordAddIn1.DocumentMapping
             for (int c = 0; c < mapped.AllChunkSegsSentenceNames.Count; c++)
             {
                 List<List<string>> segs = mapped.AllChunkSegsSentenceNames[c];
+                List<List<string>> idSegs = mapped.AllChunkSegsSentenceFieldIds != null
+                    && c < mapped.AllChunkSegsSentenceFieldIds.Count
+                    ? mapped.AllChunkSegsSentenceFieldIds[c]
+                    : null;
                 List<int> marks = c < mapped.AllChunkSegMarks.Count
                     ? mapped.AllChunkSegMarks[c]
                     : new List<int>();
@@ -86,14 +90,22 @@ namespace WordAddIn1.DocumentMapping
                     int mark = s < marks.Count ? marks[s] : 0;
                     bool geometry;
                     int before = segs[s] == null ? 0 : segs[s].Count;
+                    List<string> fieldIds = idSegs != null && s < idSegs.Count ? idSegs[s] : null;
+                    List<string> rewrittenIds;
                     segs[s] = RewriteSeg(
                         segs[s],
+                        fieldIds,
                         mark,
                         story,
                         content,
                         store,
                         mapped.InoperableSentenceCodes,
-                        out geometry);
+                        out geometry,
+                        out rewrittenIds);
+                    if (idSegs != null && s < idSegs.Count)
+                    {
+                        idSegs[s] = rewrittenIds;
+                    }
                     segCount++;
                     sentenceIn += before;
                     sentenceOut += segs[s] == null ? 0 : segs[s].Count;
@@ -156,14 +168,17 @@ namespace WordAddIn1.DocumentMapping
 
         private static List<string> RewriteSeg(
             List<string> originalNames,
+            List<string> fieldIds,
             int segMark,
             string story,
             Dictionary<string, string> content,
             IMappingStore store,
             HashSet<string> inoperable,
-            out bool needsGeometry)
+            out bool needsGeometry,
+            out List<string> rewrittenIds)
         {
             needsGeometry = false;
+            rewrittenIds = new List<string>();
             if (originalNames == null || originalNames.Count == 0)
             {
                 return originalNames ?? new List<string>();
@@ -214,11 +229,13 @@ namespace WordAddIn1.DocumentMapping
                 if (segMark == 1)
                 {
                     needsGeometry = true;
+                    rewrittenIds = fieldIds != null ? new List<string>(fieldIds) : new List<string>();
                     return new List<string>(originalNames);
                 }
 
                 string code = store.FindOrCreateSentence(groups[0].Concat, segMark).Item1;
                 TocFieldStamp.Carry(originalNames, code);
+                rewrittenIds.Add(PickFieldId(fieldIds, 0, originalNames.Count - 1));
                 inoperable.Add(code);
                 content[code] = groups[0].Concat;
                 var d22Inner = new StringBuilder();
@@ -237,11 +254,13 @@ namespace WordAddIn1.DocumentMapping
                 if (g.Start == g.End && g.Unique)
                 {
                     publicNames.Add(originalNames[g.Start]);
+                    rewrittenIds.Add(PickFieldId(fieldIds, g.Start, g.End));
                     continue;
                 }
 
                 string merged = store.FindOrCreateSentence(g.Concat, segMark).Item1;
                 TocFieldStamp.Carry(Slice(originalNames, g.Start, g.End), merged);
+                rewrittenIds.Add(PickFieldId(fieldIds, g.Start, g.End));
                 content[merged] = g.Concat;
                 var innerParts = new StringBuilder();
                 for (int k = g.Start; k <= g.End; k++)
@@ -276,6 +295,30 @@ namespace WordAddIn1.DocumentMapping
             }
 
             return null;
+        }
+
+        private static string PickFieldId(IList<string> fieldIds, int start, int end)
+        {
+            if (fieldIds == null || start < 0 || end >= fieldIds.Count || start > end)
+            {
+                return null;
+            }
+
+            string id = fieldIds[start];
+            if (string.IsNullOrEmpty(id))
+            {
+                return null;
+            }
+
+            for (int i = start + 1; i <= end; i++)
+            {
+                if (!string.Equals(fieldIds[i], id, StringComparison.Ordinal))
+                {
+                    return null;
+                }
+            }
+
+            return id;
         }
 
         private static string LookupContent(IMappingStore store, string code)
