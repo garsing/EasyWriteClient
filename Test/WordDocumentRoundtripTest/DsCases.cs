@@ -481,7 +481,8 @@ namespace WordDocumentRoundtripTest
                 Match token = Regex.Match(body ?? "", @"\[目录域 (ewC_[A-Za-z0-9]{8,32})\]");
                 string name = token.Success ? token.Groups[1].Value : "";
                 bool bodyKept = (body ?? "").IndexOf("你好啊", StringComparison.Ordinal) >= 0;
-                bool noEdge = (body ?? "").IndexOf(TocFieldStamp.Edge) < 0;
+                bool noEdge = (body ?? "").IndexOf(TocFieldStamp.Edge) < 0
+                    && (body ?? "").IndexOf("<toc", StringComparison.Ordinal) < 0;
                 bool glued = SentenceHolds(body, "你好啊", "\t");
                 Ok(run, "ds-toc-token",
                     painted && field && updated && token.Success && bodyKept && noEdge && !glued,
@@ -2215,23 +2216,34 @@ namespace WordDocumentRoundtripTest
 
         private static bool MarkerSliceDropped()
         {
-            string edge = TocFieldStamp.Edge.ToString();
-            List<WordAddIn1.DocumentMapping.ParagraphBlock> dropped =
-                WordAddIn1.DocumentMapping.SplitTextByParagraphs.Split(edge + "\r");
-            List<WordAddIn1.DocumentMapping.ParagraphBlock> tail =
-                WordAddIn1.DocumentMapping.SplitTextByParagraphs.Split("甲\r" + edge);
+            string marker = TocFieldStamp.FormatMarker("ewC_abcdefgh");
+            List<WordAddIn1.DocumentMapping.ParagraphBlock> dropped = ParasThroughSeg(marker + "\r");
+            List<WordAddIn1.DocumentMapping.ParagraphBlock> tail = ParasThroughSeg("甲\r" + marker);
             List<WordAddIn1.DocumentMapping.ParagraphBlock> blank =
                 WordAddIn1.DocumentMapping.SplitTextByParagraphs.Split("\r");
-            List<WordAddIn1.DocumentMapping.ParagraphBlock> joined =
-                WordAddIn1.DocumentMapping.SplitTextByParagraphs.Split("甲" + edge + "乙\r");
+            List<WordAddIn1.DocumentMapping.ParagraphBlock> split = ParasThroughSeg("甲" + marker + "乙\r");
             return dropped.Count == 1
                 && dropped[0].Text.Length == 0
                 && dropped[0].TrailingCr
                 && tail.Count == 1
                 && tail[0].Text == "甲"
                 && blank.Count == 1
-                && joined.Count == 1
-                && joined[0].Text == "甲乙";
+                && blank[0].Text.Length == 0
+                && split.Count == 2
+                && split[0].Text == "甲"
+                && split[1].Text == "乙";
+        }
+
+        private static List<WordAddIn1.DocumentMapping.ParagraphBlock> ParasThroughSeg(string text)
+        {
+            var blocks = new List<WordAddIn1.DocumentMapping.ParagraphBlock>();
+            List<string> parts = WordDocumentExtractor.SplitTextByCellsForMapping(text, out List<int> _);
+            for (int i = 1; i < parts.Count; i += 2)
+            {
+                blocks.AddRange(WordAddIn1.DocumentMapping.SplitTextByParagraphs.Split(parts[i]));
+            }
+
+            return blocks;
         }
 
         private static bool ParagraphHoldsTab(string display)

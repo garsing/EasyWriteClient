@@ -11,12 +11,15 @@ namespace WordAddIn1
 {
     /// <summary>
     /// 主文档目录钉 ewC_。目录域钉在域起点的书签上；目录内容控件钉在外层控件的 Tag 上。
-    /// 切句标记不进正文。
+    /// 读文时头尾各写一枚带同一编号的 toc 标记。标记只做 seg 边界，不进句子、不进段落。
     /// </summary>
     public static class TocFieldStamp
     {
         public const char Edge = '\uE001';
         public const string InteriorMessage = "这是目录域里面的编码，不能直接改。";
+        public static readonly Regex Marker = new Regex(
+            @"<toc\s+id=""(ewC_[A-Za-z0-9]{8,32})""\s*/>",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
         private static readonly Regex BookmarkName = new Regex(
             @"^ewC_[A-Za-z0-9]{8,32}$",
@@ -26,16 +29,10 @@ namespace WordAddIn1
             @"(^|[^A-Za-z0-9])TOC([^A-Za-z0-9]|$)",
             RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
-        private static readonly Regex SentenceBlock = new Regex(
-            @"\[S_([0-9A-Za-z]{5})-start[^\]]*\][\s\S]*?\[S_\1-end\]",
-            RegexOptions.Compiled);
-
         private static readonly object Gate = new object();
         private static List<string> _ids = new List<string>();
         private static readonly HashSet<string> Interior = new HashSet<string>(StringComparer.Ordinal);
         private static int _fieldCursor;
-        private static bool _inside;
-        private static string _openId;
 
         public static bool IsTocInstruction(string text)
         {
@@ -49,8 +46,6 @@ namespace WordAddIn1
                 _ids = new List<string>();
                 Interior.Clear();
                 _fieldCursor = 0;
-                _inside = false;
-                _openId = null;
             }
         }
 
@@ -60,8 +55,6 @@ namespace WordAddIn1
             {
                 Interior.Clear();
                 _fieldCursor = 0;
-                _inside = false;
-                _openId = null;
             }
         }
 
@@ -105,8 +98,6 @@ namespace WordAddIn1
                 {
                     _ids = ids;
                     _fieldCursor = 0;
-                    _inside = false;
-                    _openId = null;
                 }
 
                 return xml;
@@ -196,8 +187,6 @@ namespace WordAddIn1
             {
                 _ids = ids;
                 _fieldCursor = 0;
-                _inside = false;
-                _openId = null;
             }
 
             return xml;
@@ -241,68 +230,41 @@ namespace WordAddIn1
             return false;
         }
 
-        /// <summary>
-        /// 按切句顺序返回每一句当时所在的目录编号。句子码本身不保存这枚编号。
-        /// </summary>
-        public static List<string> MarkSeg(string segText, IList<string> sentenceNames, IList<string> sentenceTexts)
+        public static string FormatMarker(string id)
         {
-            var occurrenceIds = new List<string>();
-            if (string.IsNullOrEmpty(segText) || sentenceNames == null || sentenceTexts == null)
-            {
-                return occurrenceIds;
-            }
+            return "<toc id=\"" + (id ?? "") + "\"/>";
+        }
 
-            int si = 0;
-            int consumed = 0;
-            string pending = null;
+        /// <summary>
+        /// 读文遇到一份目录的开头时取下一枚已钉编号，写成标记。结尾复用同一串。
+        /// </summary>
+        public static string TakeMarker()
+        {
             lock (Gate)
             {
-                for (int i = 0; i < segText.Length; i++)
-                {
-                    char ch = segText[i];
-                    if (ch == Edge)
-                    {
-                        if (!_inside)
-                        {
-                            _inside = true;
-                            _openId = _fieldCursor < _ids.Count ? _ids[_fieldCursor] : null;
-                            _fieldCursor++;
-                        }
-                        else
-                        {
-                            _inside = false;
-                            _openId = null;
-                        }
+                string id = _fieldCursor < _ids.Count ? _ids[_fieldCursor] : null;
+                _fieldCursor++;
+                return string.IsNullOrEmpty(id) ? "" : FormatMarker(id);
+            }
+        }
 
-                        continue;
-                    }
-
-                    if (si >= sentenceTexts.Count)
-                    {
-                        continue;
-                    }
-
-                    if (_inside && !string.IsNullOrEmpty(_openId))
-                    {
-                        pending = _openId;
-                        if (si < sentenceNames.Count && !string.IsNullOrEmpty(sentenceNames[si]))
-                        {
-                            Interior.Add(sentenceNames[si]);
-                        }
-                    }
-
-                    consumed++;
-                    if (consumed >= sentenceTexts[si].Length)
-                    {
-                        occurrenceIds.Add(pending);
-                        si++;
-                        consumed = 0;
-                        pending = null;
-                    }
-                }
+        /// <summary>
+        /// 梅花间竹里的非 seg 可能夹着目录标记。同一编号先开后合，返回此刻还开着的编号。
+        /// </summary>
+        public static string ScanMarkers(string text, string openId)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return openId;
             }
 
-            return occurrenceIds;
+            foreach (Match match in Marker.Matches(text))
+            {
+                string id = match.Groups[1].Value;
+                openId = string.Equals(openId, id, StringComparison.Ordinal) ? null : id;
+            }
+
+            return openId;
         }
 
         public static void RememberInterior(string code)
@@ -360,79 +322,60 @@ namespace WordAddIn1
             return null;
         }
 
-        public static string CollapseDisplay(string display, IList<string> occurrenceIds)
+        /// <summary>
+        /// 同一编号的头尾标记包住的内容收成一行。标记本身不留在给智能体的 display 里。
+        /// </summary>
+        public static string CollapseMarked(string display)
         {
-            if (string.IsNullOrEmpty(display) || display.IndexOf("[S_", StringComparison.Ordinal) < 0)
+            if (string.IsNullOrEmpty(display) || display.IndexOf("<toc", StringComparison.Ordinal) < 0)
             {
                 return display ?? "";
             }
 
             var sb = new StringBuilder();
             int i = 0;
-            int occ = 0;
-            string openId = null;
             while (i < display.Length)
             {
-                Match m = SentenceBlock.Match(display, i);
-                if (!m.Success || m.Index != i)
+                Match open = Marker.Match(display, i);
+                if (!open.Success)
                 {
-                    if (openId != null)
-                    {
-                        sb.Append("[目录域 ").Append(openId).Append(']');
-                        openId = null;
-                    }
+                    sb.Append(display, i, display.Length - i);
+                    break;
+                }
 
-                    int next = NextSentence(display, i);
-                    sb.Append(display, i, (next < 0 ? display.Length : next) - i);
-                    if (next < 0)
+                sb.Append(display, i, open.Index - i);
+                string id = open.Groups[1].Value;
+                Match close = null;
+                int search = open.Index + open.Length;
+                while (search <= display.Length)
+                {
+                    Match next = Marker.Match(display, search);
+                    if (!next.Success)
                     {
                         break;
                     }
 
-                    i = next;
-                    openId = null;
+                    if (string.Equals(next.Groups[1].Value, id, StringComparison.Ordinal))
+                    {
+                        close = next;
+                        break;
+                    }
+
+                    search = next.Index + next.Length;
+                }
+
+                if (close == null)
+                {
+                    sb.Append(open.Value);
+                    i = open.Index + open.Length;
                     continue;
                 }
 
-                string id = occurrenceIds != null && occ < occurrenceIds.Count ? occurrenceIds[occ] : null;
-                occ++;
-                if (string.IsNullOrEmpty(id))
-                {
-                    if (openId != null)
-                    {
-                        sb.Append("[目录域 ").Append(openId).Append(']');
-                        openId = null;
-                    }
-
-                    sb.Append(m.Value);
-                    i = m.Index + m.Length;
-                    continue;
-                }
-
-                if (openId != id)
-                {
-                    if (openId != null)
-                    {
-                        sb.Append("[目录域 ").Append(openId).Append(']');
-                    }
-
-                    openId = id;
-                }
-
-                i = m.Index + m.Length;
-            }
-
-            if (openId != null)
-            {
-                sb.Append("[目录域 ").Append(openId).Append(']');
+                sb.Append("[目录域 ").Append(id).Append(']');
+                i = close.Index + close.Length;
             }
 
             return sb.ToString();
-        }
-
-        private static int NextSentence(string display, int from)
-        {
-            return display.IndexOf("[S_", from, StringComparison.Ordinal);
         }
 
         private sealed class TocSlot

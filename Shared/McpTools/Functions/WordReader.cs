@@ -28,6 +28,7 @@ namespace WordAddIn1
         {
             public bool Toc;
             public bool Opened;
+            public string Marker;
         }
 
         // 单次 ReadWord 内的完整抽图上下文（按 XML 顺序逐 drawing 落盘）
@@ -1517,10 +1518,19 @@ namespace WordAddIn1
                 {
                     if (!frame.Opened)
                     {
-                        textBuffer.Append(TocFieldStamp.Edge);
+                        frame.Marker = TocFieldStamp.TakeMarker();
+                        frame.Opened = true;
+                        if (!string.IsNullOrEmpty(frame.Marker))
+                        {
+                            textBuffer.Append(frame.Marker);
+                        }
                     }
 
-                    textBuffer.Append(TocFieldStamp.Edge);
+                    if (!string.IsNullOrEmpty(frame.Marker))
+                    {
+                        textBuffer.Append(frame.Marker);
+                    }
+
                     orderLog.Add("fld:toc-end");
                 }
 
@@ -1545,7 +1555,12 @@ namespace WordAddIn1
                 TocFrame frame = _tocFrames[i];
                 if (frame.Toc && !frame.Opened)
                 {
-                    textBuffer.Append(TocFieldStamp.Edge);
+                    frame.Marker = TocFieldStamp.TakeMarker();
+                    if (!string.IsNullOrEmpty(frame.Marker))
+                    {
+                        textBuffer.Append(frame.Marker);
+                    }
+
                     frame.Opened = true;
                 }
             }
@@ -1848,7 +1863,12 @@ namespace WordAddIn1
                     // 块级修订：w:ins 内可能含 w:p，纳入读回；w:del 为已删内容，跳过
                     else if (child.Name == w + "sdt" && TocFieldStamp.IsPlainTocGallery(child))
                     {
-                        result += TocFieldStamp.Edge.ToString();
+                        string marker = TocFieldStamp.TakeMarker();
+                        if (!string.IsNullOrEmpty(marker))
+                        {
+                            result += marker;
+                        }
+
                         XElement galleryContent = child.Element(w + "sdtContent");
                         if (galleryContent != null)
                         {
@@ -1856,7 +1876,10 @@ namespace WordAddIn1
                                 galleryContent, w, document, docPath, imageSaveDir, fileHash);
                         }
 
-                        result += TocFieldStamp.Edge.ToString();
+                        if (!string.IsNullOrEmpty(marker))
+                        {
+                            result += marker;
+                        }
                     }
                     else if (IsRevisionInsertion(child, w))
                     {

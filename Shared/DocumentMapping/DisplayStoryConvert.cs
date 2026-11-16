@@ -14,6 +14,9 @@ namespace WordAddIn1.DocumentMapping
         private static readonly Regex TocLine = new Regex(
             @"\[目录域 ewC_[A-Za-z0-9]{8,32}\]",
             RegexOptions.Compiled);
+        private static readonly Regex TocMark = new Regex(
+            @"<toc\s+id=""ewC_[A-Za-z0-9]{8,32}""\s*/>",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private static readonly Regex CodeStart = new Regex(
             @"\[(?:P|S)_[^\]]+?(?:-start| start)[^\]]*\]", RegexOptions.Compiled);
@@ -59,6 +62,7 @@ namespace WordAddIn1.DocumentMapping
             }
 
             string s = display.Replace(WordAddIn1.TocFieldStamp.Edge.ToString(), "");
+            s = TocMark.Replace(s, "");
             s = TocLine.Replace(s, "");
             s = CodeStart.Replace(s, "");
             s = CodeEnd.Replace(s, "");

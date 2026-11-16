@@ -110,6 +110,20 @@ namespace WordAddIn1
         }
 
         /// <summary>
+        /// 目录标记。不把紧跟的换行算进标记。
+        /// </summary>
+        private static int FindTocTagPosition(string text, int startPos)
+        {
+            if (string.IsNullOrEmpty(text) || startPos < 0 || startPos >= text.Length)
+            {
+                return -1;
+            }
+
+            Match match = TocFieldStamp.Marker.Match(text, startPos);
+            return match.Success ? match.Index : -1;
+        }
+
+        /// <summary>
         /// 查找 Chart 开始标签的位置（必须是 <Chart>）
         /// </summary>
         /// <param name="text">输入文本</param>
@@ -165,7 +179,7 @@ namespace WordAddIn1
         /// <returns>找到的开始标志信息（位置、类型、完整标签字符串），如果未找到返回 null</returns>
         private static (int position, int type, string fullTag)? FindStartCollectFlag(string text, int startPos)
         {
-            // 定义五个开始标志的正则表达式
+            // 开始标志：body、cell、</table>、image、chart，以及目录标记
             string bodyPattern = @"<body(?:\s+[^>]*)?>";
             string cellPattern = TableMarkupTags.OpenCellPattern;
             string tableClosePattern = @"</table\s*>";  // </table> 不再包含换行符
@@ -239,6 +253,15 @@ namespace WordAddIn1
                     type = 5; // </Chart>\r
                     fullTag = chartCloseMatch.Value;
                 }
+            }
+
+            // 目录标记。换行留在标记后面，不吃进标签。
+            int tocPos = FindTocTagPosition(text, startPos);
+            if (tocPos >= startPos && tocPos < minPos)
+            {
+                minPos = tocPos;
+                type = 6;
+                fullTag = TocFieldStamp.Marker.Match(text, tocPos).Value;
             }
 
             if (minPos != int.MaxValue)
@@ -364,9 +387,9 @@ namespace WordAddIn1
                     endType = 5; // <Chart>
                 }
             }
-            else if (startType == 4)
+            else if (startType == 4 || startType == 6)
             {
-                // 开始标志：<image />\r，结束标志：<table> 或 </cell> 或 </body> 或 <image />\r 或 <Chart>
+                // 开始标志：<image /> 或目录标记。结束标志含下一张图、下一个目录标记、表和正文边界。
                 int tablePos = FindTagPosition(text, "table", false, startPos);
                 int cellClosePos = TableMarkupTags.FindCloseCell(text, startPos);
                 int bodyClosePos = FindTagPosition(text, "body", true, startPos);
@@ -441,6 +464,13 @@ namespace WordAddIn1
                     minPos = chartPos;
                     endType = 5; // <Chart>
                 }
+            }
+
+            int tocEnd = FindTocTagPosition(text, startPos);
+            if (tocEnd >= startPos && tocEnd < minPos)
+            {
+                minPos = tocEnd;
+                endType = 6;
             }
 
             return minPos != int.MaxValue ? (minPos, endType) : (-1, -1);

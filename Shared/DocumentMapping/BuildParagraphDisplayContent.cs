@@ -70,40 +70,32 @@ namespace WordAddIn1.DocumentMapping
             IReadOnlyList<IReadOnlyList<string>> segsParagraphNames,
             IReadOnlyDictionary<string, string> nameToParagraphContent)
         {
-            return BuildCore(nonSegs, segsParagraphNames, nameToParagraphContent, false);
+            return BuildCore(nonSegs, segsParagraphNames, nameToParagraphContent);
         }
 
         public static string BuildAgent(
             IReadOnlyList<string> nonSegs,
             IReadOnlyList<IReadOnlyList<string>> segsParagraphNames,
-            IReadOnlyDictionary<string, string> nameToParagraphContent,
-            IReadOnlyList<IReadOnlyList<string>> segsParagraphFieldIds)
+            IReadOnlyDictionary<string, string> nameToParagraphContent)
         {
-            return BuildCore(nonSegs, segsParagraphNames, nameToParagraphContent, true, segsParagraphFieldIds);
+            return WordAddIn1.TocFieldStamp.CollapseMarked(
+                Build(nonSegs, segsParagraphNames, nameToParagraphContent));
         }
 
         private static string BuildCore(
             IReadOnlyList<string> nonSegs,
             IReadOnlyList<IReadOnlyList<string>> segsParagraphNames,
-            IReadOnlyDictionary<string, string> nameToParagraphContent,
-            bool forAgent,
-            IReadOnlyList<IReadOnlyList<string>> segsParagraphFieldIds = null)
+            IReadOnlyDictionary<string, string> nameToParagraphContent)
         {
             var displayParts = new List<string>();
             List<List<string>> publicSegs = BuildPublicSegs(segsParagraphNames);
             nonSegs = nonSegs ?? new List<string>();
-            string openId = null;
 
             for (int segIdx = 0; segIdx < publicSegs.Count; segIdx++)
             {
                 if (segIdx < nonSegs.Count)
                 {
-                    string nonSeg = nonSegs[segIdx] ?? "";
-                    displayParts.Add(nonSeg);
-                    if (nonSeg.Length > 0)
-                    {
-                        openId = null;
-                    }
+                    displayParts.Add(nonSegs[segIdx] ?? "");
                 }
 
                 IReadOnlyList<string> baseSeg = segsParagraphNames != null && segIdx < segsParagraphNames.Count
@@ -121,24 +113,6 @@ namespace WordAddIn1.DocumentMapping
 
                     paragraphContent = paragraphContent ?? "";
                     string publicCode = publicSegs[segIdx][i];
-                    IReadOnlyList<string> fieldSeg = forAgent
-                        && segsParagraphFieldIds != null
-                        && segIdx < segsParagraphFieldIds.Count
-                        ? segsParagraphFieldIds[segIdx]
-                        : null;
-                    string fieldId = fieldSeg != null && i < fieldSeg.Count ? fieldSeg[i] : null;
-                    if (!string.IsNullOrEmpty(fieldId))
-                    {
-                        if (!string.Equals(openId, fieldId, StringComparison.Ordinal))
-                        {
-                            segDisplayParts.Add("[目录域 " + fieldId + "]");
-                            openId = fieldId;
-                        }
-
-                        continue;
-                    }
-
-                    openId = null;
                     segDisplayParts.Add($"[{publicCode} start]{paragraphContent}[{publicCode} end]");
                 }
 

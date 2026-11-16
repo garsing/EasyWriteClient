@@ -74,21 +74,33 @@ namespace WordDocumentRoundtripTest
                 return;
             }
 
-            string edge = TocFieldStamp.Edge.ToString();
-            List<ParagraphBlock> empty = SplitTextByParagraphs.Split(edge + "\r");
+            string marker = TocFieldStamp.FormatMarker("ewC_abcdefgh");
+            List<ParagraphBlock> empty = ParasThroughSeg(marker + "\r");
             Ok(run, "tc-para-empty-keep",
                 empty.Count == 1 && empty[0].Text.Length == 0 && empty[0].TrailingCr,
                 "n=" + empty.Count);
-            List<ParagraphBlock> tail = SplitTextByParagraphs.Split("甲\r" + edge);
+            List<ParagraphBlock> tail = ParasThroughSeg("甲\r" + marker);
             Ok(run, "tc-para-tail-drop",
                 tail.Count == 1 && tail[0].Text == "甲",
                 "n=" + tail.Count + " t=" + (tail.Count > 0 ? tail[0].Text : ""));
             List<ParagraphBlock> blank = SplitTextByParagraphs.Split("\r");
             Ok(run, "tc-para-blank", blank.Count == 1 && blank[0].Text.Length == 0, "n=" + blank.Count);
-            List<ParagraphBlock> mid = SplitTextByParagraphs.Split("甲" + edge + "乙\r");
+            List<ParagraphBlock> mid = ParasThroughSeg("甲" + marker + "乙\r");
             Ok(run, "tc-para-mid",
-                mid.Count == 1 && mid[0].Text == "甲乙",
-                "n=" + mid.Count + " t=" + (mid.Count > 0 ? mid[0].Text : ""));
+                mid.Count == 2 && mid[0].Text == "甲" && mid[1].Text == "乙",
+                "n=" + mid.Count + " t=" + string.Join("|", mid.ConvertAll(block => block.Text)));
+        }
+
+        private static List<ParagraphBlock> ParasThroughSeg(string text)
+        {
+            var blocks = new List<ParagraphBlock>();
+            List<string> parts = WordDocumentExtractor.SplitTextByCellsForMapping(text, out List<int> _);
+            for (int i = 1; i < parts.Count; i += 2)
+            {
+                blocks.AddRange(SplitTextByParagraphs.Split(parts[i]));
+            }
+
+            return blocks;
         }
 
         private static void RunStandard(TestRun run, WdSession s)
@@ -137,7 +149,8 @@ namespace WordDocumentRoundtripTest
                     "again=" + (again.Success ? again.Groups[1].Value : ""));
                 Ok(run, "tc-id-shape", Token.IsMatch(name) || Token.IsMatch("[目录域 " + name + "]"), "name=" + name);
                 Ok(run, "tc-sent-hidden",
-                    (sent ?? "").IndexOf(TocFieldStamp.Edge) < 0 && (para ?? "").IndexOf(TocFieldStamp.Edge) < 0,
+                    (sent ?? "").IndexOf("<toc", StringComparison.Ordinal) < 0
+                    && (para ?? "").IndexOf("<toc", StringComparison.Ordinal) < 0,
                     "sent=" + sent);
                 Ok(run, "tc-sent-no-lone",
                     token.Success && (sent ?? "").IndexOf("歧义无法操作", StringComparison.Ordinal) < 0,
@@ -178,7 +191,7 @@ namespace WordDocumentRoundtripTest
                     && Outside(agent).IndexOf("\t", StringComparison.Ordinal) < 0,
                     "full=" + Brief(full) + " agent=" + Brief(agent));
                 Ok(run, "tc-fold-story",
-                    (agent ?? "").IndexOf(TocFieldStamp.Edge) < 0
+                    (agent ?? "").IndexOf("<toc", StringComparison.Ordinal) < 0
                     && (full ?? "").IndexOf("第一章", StringComparison.Ordinal) >= 0,
                     Brief(full));
                 string interior = FirstInteriorParagraph(s, path);

@@ -42,10 +42,12 @@ namespace WordAddIn1.DocumentMapping
                 var chunkAllParagraphNames = new List<string>();
 
                 int segMarkIdx = 0;
+                string openTocId = null;
                 for (int partIdx = 0; partIdx < chunkParts.Count; partIdx++)
                 {
                     if (partIdx % 2 == 0)
                     {
+                        openTocId = TocFieldStamp.ScanMarkers(chunkParts[partIdx], openTocId);
                         chunkNonSegs.Add(chunkParts[partIdx]);
                         continue;
                     }
@@ -54,7 +56,7 @@ namespace WordAddIn1.DocumentMapping
                     chunkSegMarksList.Add(segMark);
                     segMarkIdx++;
 
-                    SegMapResult segResult = MapSegTextToCodes(chunkParts[partIdx], segMark, store);
+                    SegMapResult segResult = MapSegTextToCodes(chunkParts[partIdx], segMark, store, openTocId);
                     chunkSegsSentenceNames.Add(segResult.SentenceNames);
                     chunkSegsParagraphNames.Add(segResult.ParagraphNames);
                     chunkSegsSentenceFieldIds.Add(segResult.SentenceFieldIds);
@@ -85,8 +87,7 @@ namespace WordAddIn1.DocumentMapping
                     BuildParagraphDisplayContent.BuildAgent(
                         chunkNonSegs,
                         chunkSegsParagraphNames,
-                        paragraphDisplayMap,
-                        chunkSegsParagraphFieldIds));
+                        paragraphDisplayMap));
             }
 
             mapped.NameToSentenceContentMap = ContentMapFromMappings(store.GetSentenceMappings());
@@ -174,18 +175,6 @@ namespace WordAddIn1.DocumentMapping
                     ? mapped.AllChunkSegsSentenceNames[c]
                     : new List<List<string>>();
                 string display = BuildSentenceDisplayContent.Build(nonSegs, segs, content, inoperable);
-                var occurrenceIds = new List<string>();
-                if (c < mapped.AllChunkSegsSentenceFieldIds.Count && mapped.AllChunkSegsSentenceFieldIds[c] != null)
-                {
-                    foreach (List<string> segIds in mapped.AllChunkSegsSentenceFieldIds[c])
-                    {
-                        if (segIds != null)
-                        {
-                            occurrenceIds.AddRange(segIds);
-                        }
-                    }
-                }
-
                 List<List<string>> geoSets = new List<List<string>>();
                 if (c < mapped.AllChunkSegNeedsGeometry.Count)
                 {
@@ -218,7 +207,7 @@ namespace WordAddIn1.DocumentMapping
                     }
                 }
 
-                mapped.ChunkDisplayContents.Add(TocFieldStamp.CollapseDisplay(display, occurrenceIds));
+                mapped.ChunkDisplayContents.Add(TocFieldStamp.CollapseMarked(display));
                 var flat = new List<string>();
                 foreach (List<string> seg in segs)
                 {
@@ -240,7 +229,7 @@ namespace WordAddIn1.DocumentMapping
             }
         }
 
-        public static SegMapResult MapSegTextToCodes(string segText, int segMark, IMappingStore store)
+        public static SegMapResult MapSegTextToCodes(string segText, int segMark, IMappingStore store, string tocId = null)
         {
             var result = new SegMapResult();
             if (store == null || string.IsNullOrEmpty(segText))
@@ -265,7 +254,6 @@ namespace WordAddIn1.DocumentMapping
 
             // Path S：对完整 seg 并行分句（保留段末 \r，不走去 \r 后的 block.Text）
             int sentenceOffset = 0;
-            var sentenceTexts = new List<string>();
             var sentenceParagraphIndex = new List<int>();
             foreach (string sentenceContent in SentenceSplitter.SplitTextBySentencesForDocument(segText))
             {
@@ -274,9 +262,8 @@ namespace WordAddIn1.DocumentMapping
                     continue;
                 }
 
-                sentenceTexts.Add(sentenceContent);
                 int sentencePara = FindParagraphIndexAtOffset(paragraphRanges, sentenceOffset);
-                string storedSentence = AutonumConvert.StripTags(sentenceContent).Replace(TocFieldStamp.Edge.ToString(), "");
+                string storedSentence = AutonumConvert.StripTags(sentenceContent);
                 var sPair = store.FindOrCreateSentence(storedSentence, segMark);
                 string sName = sPair.Item1;
                 RememberDisplayInner(store, sName, sentenceContent, storedSentence);
@@ -291,51 +278,26 @@ namespace WordAddIn1.DocumentMapping
                 }
             }
 
-            List<string> occurrenceIds = TocFieldStamp.MarkSeg(segText, result.SentenceNames, sentenceTexts);
-            result.SentenceFieldIds.AddRange(occurrenceIds);
-            while (result.SentenceFieldIds.Count < result.SentenceNames.Count)
-            {
-                result.SentenceFieldIds.Add(null);
-            }
-
-            var seen = new int[result.ParagraphNames.Count];
-            var bad = new bool[result.ParagraphNames.Count];
-            var paraIds = new string[result.ParagraphNames.Count];
+            bool insideToc = !string.IsNullOrEmpty(tocId);
             for (int s = 0; s < result.SentenceNames.Count; s++)
             {
-                int p = s < sentenceParagraphIndex.Count ? sentenceParagraphIndex[s] : -1;
-                if (p < 0 || p >= result.ParagraphNames.Count)
+                result.SentenceFieldIds.Add(insideToc ? tocId : null);
+                if (insideToc)
                 {
-                    continue;
-                }
-
-                seen[p]++;
-                string id = s < result.SentenceFieldIds.Count ? result.SentenceFieldIds[s] : null;
-                if (string.IsNullOrEmpty(id))
-                {
-                    bad[p] = true;
-                }
-                else if (paraIds[p] == null)
-                {
-                    paraIds[p] = id;
-                }
-                else if (!string.Equals(paraIds[p], id, StringComparison.Ordinal))
-                {
-                    bad[p] = true;
+                    TocFieldStamp.RememberInterior(result.SentenceNames[s]);
                 }
             }
 
             for (int p = 0; p < result.ParagraphNames.Count; p++)
             {
-                string id = seen[p] > 0 && !bad[p] ? paraIds[p] : null;
-                result.ParagraphFieldIds.Add(id);
-                if (!string.IsNullOrEmpty(id))
+                result.ParagraphFieldIds.Add(insideToc ? tocId : null);
+                if (insideToc)
                 {
                     TocFieldStamp.RememberInterior(result.ParagraphNames[p]);
                 }
             }
 
-            int storyLen = AutonumConvert.StripTags(segText.Replace(TocFieldStamp.Edge.ToString(), "")).Length;
+            int storyLen = AutonumConvert.StripTags(segText).Length;
             if (EasyWriteDiagnostics.IsEnabled(DebugCategory.DocumentMapping)
                 && (paragraphOffset != storyLen || sentenceOffset != storyLen))
             {
