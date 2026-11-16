@@ -225,7 +225,7 @@ namespace WordDocumentRoundtripTest
             }
 
             string path, id;
-            if (!Open(s, "第一章标题\r你好啊。", out path, out id) || !StyleFirst(s, path) || !AddToc(s, path, true) || !UpdateFields(s, path) || !PlantTocOn(s, path, "第一章标题"))
+            if (!Open(s, "第一章标题\r你好啊。", out path, out id) || !StyleFirst(s, path) || !AddToc(s, path, true) || !UpdateFields(s, path) || !PlantTocAtStart(s, path))
             {
                 Fail(run, "tc-id-notoc", "铺稿失败");
                 return;
@@ -233,13 +233,15 @@ namespace WordDocumentRoundtripTest
 
             try
             {
+                bool before = BookmarkExists(s, path, "_Toc245561084");
                 Match token = Token.Match(Sentence(s, id) ?? "");
                 string name = token.Success ? token.Groups[1].Value : "";
+                bool after = BookmarkExists(s, path, "_Toc245561084");
                 Ok(run, "tc-id-notoc",
                     token.Success && name.StartsWith("ewC_", StringComparison.Ordinal)
-                    && BookmarkExists(s, path, "_Toc245561084")
+                    && after
                     && !string.Equals(name, "_Toc245561084", StringComparison.Ordinal),
-                    name);
+                    name + " before=" + before + " after=" + after + " " + PlantNote + " marks=" + BookmarkNames(s, path));
             }
             finally
             {
@@ -254,10 +256,9 @@ namespace WordDocumentRoundtripTest
                 return;
             }
 
+            const string twoXml = "<pkg:package xmlns:pkg=\"http://schemas.microsoft.com/office/2006/xmlPackage\"><pkg:part pkg:name=\"/_rels/.rels\" pkg:contentType=\"application/vnd.openxmlformats-package.relationships+xml\"><pkg:xmlData><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/></Relationships></pkg:xmlData></pkg:part><pkg:part pkg:name=\"/word/document.xml\" pkg:contentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"><pkg:xmlData><w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body><w:p><w:r><w:fldChar w:fldCharType=\"begin\"/></w:r><w:r><w:instrText xml:space=\"preserve\"> TOC \\o \"1-3\" \\h \\z \\u </w:instrText></w:r><w:r><w:fldChar w:fldCharType=\"separate\"/></w:r><w:r><w:t>目录甲</w:t></w:r><w:r><w:fldChar w:fldCharType=\"end\"/></w:r></w:p><w:p><w:r><w:t>中间正文。</w:t></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType=\"begin\"/></w:r><w:r><w:instrText xml:space=\"preserve\"> TOC \\o \"1-3\" \\h \\z \\u </w:instrText></w:r><w:r><w:fldChar w:fldCharType=\"separate\"/></w:r><w:r><w:t>目录乙</w:t></w:r><w:r><w:fldChar w:fldCharType=\"end\"/></w:r></w:p><w:p><w:r><w:t>你好啊。</w:t></w:r></w:p></w:body></w:document></pkg:xmlData></pkg:part></pkg:package>";
             string path, id;
-            if (!Open(s, "第一章标题\r中间正文。\r你好啊。", out path, out id)
-                || !StyleFirst(s, path) || !AddToc(s, path, true) || !UpdateFields(s, path)
-                || !AddTocBefore(s, path, "你好啊") || !UpdateFields(s, path))
+            if (!Open(s, "占位。", out path, out id) || !InsertXml(s, path, twoXml))
             {
                 FailMany(run, "铺两份目录失败", "tc-id-two", "tc-fold-two", "tc-fold-disagree");
                 return;
@@ -1063,6 +1064,46 @@ namespace WordDocumentRoundtripTest
                 });
         }
 
+        private static string PlantNote;
+
+        private static bool PlantTocAtStart(WdSession s, string path)
+        {
+            PlantNote = "";
+            return s.IsWps
+                ? s.TryWpsDoc(path, doc =>
+                {
+                    try
+                    {
+                        object range = WdSession.ComGet(doc, "Content");
+                        WdSession.ComCall(range, "Collapse", 1);
+                        object bookmarks = WdSession.ComGet(doc, "Bookmarks");
+                        WdSession.ComCall(bookmarks, "Add", "_Toc245561084", range);
+                        return true;
+                    }
+                    catch (Exception ex)
+                    {
+                        PlantNote = ex.Message;
+                        return false;
+                    }
+                })
+                : s.OnWordDoc(path, doc =>
+                {
+                    try
+                    {
+                        Word.Range range = doc.Content.Duplicate;
+                        range.Collapse(Word.WdCollapseDirection.wdCollapseStart);
+                        object anchor = range;
+                        doc.Bookmarks.Add("_Toc245561084", ref anchor);
+                        return true;
+                    }
+                    catch (Exception ex)
+                    {
+                        PlantNote = ex.Message;
+                        return false;
+                    }
+                });
+        }
+
         private static bool PlantTocOn(WdSession s, string path, string contains)
         {
             return s.IsWps
@@ -1243,7 +1284,35 @@ namespace WordDocumentRoundtripTest
 
         private static bool BookmarkExists(WdSession s, string path, string name)
         {
-            return CountBookmarks(s, path, name) > 0;
+            bool found = false;
+            bool ok = s.IsWps
+                ? s.TryWpsDoc(path, doc =>
+                {
+                    object exists = WdSession.ComCall(WdSession.ComGet(doc, "Bookmarks"), "Exists", name);
+                    found = exists != null && Convert.ToBoolean(exists);
+                    return true;
+                })
+                : s.OnWordDoc(path, doc =>
+                {
+                    found = doc.Bookmarks.Exists(name);
+                    return true;
+                });
+            return ok && found;
+        }
+
+        private static string BookmarkNames(WdSession s, string path)
+        {
+            var names = new List<string>();
+            s.OnWordDoc(path, doc =>
+            {
+                foreach (Word.Bookmark bookmark in doc.Bookmarks)
+                {
+                    names.Add(bookmark.Name);
+                }
+
+                return true;
+            });
+            return string.Join(",", names);
         }
 
         private static int ParagraphCount(WdSession s, string path)
