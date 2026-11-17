@@ -119,8 +119,8 @@ namespace WordAddIn1
                 field = FindField(doc, id) ?? field;
             }
 
-            ApplyOverlays(doc, field, spec, reset: false);
-            return Ok(id, "已插入目录 " + id, TocXml.Write(spec, id, includeDefaults: false), LinesOf(doc, field, false));
+            List<Dictionary<string, object>> warnings = ApplyOverlays(doc, field, spec, reset: false);
+            return WithWarnings(Ok(id, "已插入目录 " + id, TocXml.Write(spec, id, includeDefaults: false), LinesOf(doc, field, false)), warnings);
         }
 
         private static ToolResult Get(Word.Document doc, TocHit hit)
@@ -257,9 +257,9 @@ namespace WordAddIn1
                 }
             }
 
-            ApplyOverlays(doc, hit.Field, current, current.Reset);
+            List<Dictionary<string, object>> warnings = ApplyOverlays(doc, hit.Field, current, current.Reset);
             AddBookmarkAtCode(doc, hit.Field, hit.Id);
-            return Ok(hit.Id, "已更新目录 " + hit.Id, TocXml.Write(current, hit.Id, includeDefaults: false), LinesOf(doc, hit.Field, false));
+            return WithWarnings(Ok(hit.Id, "已更新目录 " + hit.Id, TocXml.Write(current, hit.Id, includeDefaults: false), LinesOf(doc, hit.Field, false)), warnings);
         }
 
         private static ToolResult ReplacePlaceholder(Word.Document doc, TocHit hit, TocSpec patch)
@@ -299,8 +299,8 @@ namespace WordAddIn1
                 field = FindField(doc, hit.Id) ?? field;
             }
 
-            ApplyOverlays(doc, field, spec, spec.Reset);
-            return Ok(hit.Id, "已把占位目录换成目录域 " + hit.Id, TocXml.Write(spec, hit.Id, includeDefaults: false), LinesOf(doc, field, false));
+            List<Dictionary<string, object>> warnings = ApplyOverlays(doc, field, spec, spec.Reset);
+            return WithWarnings(Ok(hit.Id, "已把占位目录换成目录域 " + hit.Id, TocXml.Write(spec, hit.Id, includeDefaults: false), LinesOf(doc, field, false)), warnings);
         }
 
         private static ToolResult Delete(Word.Document doc, TocHit hit)
@@ -495,23 +495,24 @@ namespace WordAddIn1
             }
         }
 
-        private static void ApplyOverlays(Word.Document doc, Word.Field field, TocSpec spec, bool reset)
+        private static List<Dictionary<string, object>> ApplyOverlays(Word.Document doc, Word.Field field, TocSpec spec, bool reset)
         {
+            var warnings = new List<Dictionary<string, object>>();
             if (field == null)
             {
-                return;
+                return warnings;
             }
 
             if (reset)
             {
                 ClearDirect(doc, field);
-                return;
+                return warnings;
             }
 
             Word.Paragraph title = TitleParagraph(doc, field);
             if (title != null && spec.LevelsFormat.TryGetValue("title", out TocLevelFormat titleFormat))
             {
-                WriteLevel(title.Range, titleFormat);
+                WriteLevel(title.Range, titleFormat, warnings);
             }
 
             if (spec.WriteTabs)
@@ -527,12 +528,14 @@ namespace WordAddIn1
                     continue;
                 }
 
-                WriteLevel(paragraph.Range, format);
+                WriteLevel(paragraph.Range, format, warnings);
                 if (format.Font.ContainsKey("reflection"))
                 {
                     TocFormatTrace.Write("after WriteLevel Reflection.Type=" + ReadReflectionType(paragraph.Range));
                 }
             }
+
+            return warnings;
         }
 
         private static void EnsureLeaderTabs(Word.Document doc, Word.Field field, TocSpec spec)
@@ -574,21 +577,26 @@ namespace WordAddIn1
             }
         }
 
-        private static void WriteLevel(Word.Range range, TocLevelFormat format)
+        private static void WriteLevel(Word.Range range, TocLevelFormat format, List<Dictionary<string, object>> warnings)
         {
             if (format.Font.Count > 0)
             {
                 Dictionary<string, object> snapshot = FormatInheritHelper.BuildSnapshotFromCharFormat(format.Font);
                 FormatInheritHelper.ResetFormatWarnings();
                 FormatInheritHelper.ApplySnapshot(range, snapshot, charFormatOnly: true);
-                List<Dictionary<string, object>> warnings = FormatInheritHelper.TakeFormatWarnings();
-                if (warnings != null)
+                List<Dictionary<string, object>> taken = FormatInheritHelper.TakeFormatWarnings();
+                if (taken != null)
                 {
-                    foreach (Dictionary<string, object> warning in warnings)
+                    foreach (Dictionary<string, object> warning in taken)
                     {
                         warning.TryGetValue("key", out object key);
                         warning.TryGetValue("message", out object message);
                         TocFormatTrace.Write("char warning " + key + " " + message);
+                    }
+
+                    if (warnings != null)
+                    {
+                        warnings.AddRange(taken);
                     }
                 }
 
@@ -779,8 +787,23 @@ namespace WordAddIn1
             ReadEffectNumber(target, "glow", SafeFloat(() => font.Glow.Radius), "radius");
             ReadEffectNumber(target, "line", SafeFloat(() => font.Line.Weight), "weight");
             string reflectionNow = EnumName(() => font.Reflection.Type);
-            TocFormatTrace.Write("get Reflection.Type=" + (reflectionNow ?? "null"));
-            ReadEffect(target, "reflection", !string.IsNullOrEmpty(reflectionNow), reflectionNow);
+            float reflectionSize = SafeFloat(() => font.Reflection.Size);
+            TocFormatTrace.Write("get Reflection.Type=" + (reflectionNow ?? "null") + " Size=" + reflectionSize);
+            bool reflectionNone = string.IsNullOrEmpty(reflectionNow)
+                || reflectionNow.IndexOf("None", StringComparison.OrdinalIgnoreCase) >= 0
+                || reflectionNow.StartsWith("read-failed", StringComparison.Ordinal);
+            if (!reflectionNone)
+            {
+                target["reflection"] = new Dictionary<string, object> { ["type"] = reflectionNow };
+            }
+            else if (!float.IsNaN(reflectionSize) && reflectionSize > 0f && reflectionSize <= 100f)
+            {
+                target["reflection"] = new Dictionary<string, object>
+                {
+                    ["type"] = "msoReflectionTypeNone",
+                    ["size"] = reflectionSize
+                };
+            }
             ReadEffectNumber(target, "text_shadow", SafeFloat(() => font.TextShadow.OffsetX), "offset_x");
         }
 
@@ -1941,6 +1964,17 @@ namespace WordAddIn1
             {
                 return 9999999;
             }
+        }
+
+        private static ToolResult WithWarnings(ToolResult result, List<Dictionary<string, object>> warnings)
+        {
+            if (result != null && result.Success && warnings != null && warnings.Count > 0
+                && result.Data is Dictionary<string, object> data)
+            {
+                data["format_warnings"] = warnings;
+            }
+
+            return result;
         }
 
         private static ToolResult Ok(

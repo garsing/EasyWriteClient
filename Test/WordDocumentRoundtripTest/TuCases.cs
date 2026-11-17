@@ -573,6 +573,23 @@ namespace WordDocumentRoundtripTest
                         continue;
                     }
 
+                    if (item.Id == "tu-c-reflection")
+                    {
+                        ToolResult updated = Toc(channel, "update", id, item.Xml, null);
+                        string warn = updated == null || updated.Data == null
+                            ? ""
+                            : Newtonsoft.Json.JsonConvert.SerializeObject(updated.Data);
+                        ToolResult got = updated != null && updated.Success ? Toc(channel, "get", id, null, null) : null;
+                        string xml = got == null ? "" : (WdSession.Str(got, "xml") ?? "");
+                        Ok(run, item.Id,
+                            updated != null && updated.Success
+                            && warn.IndexOf("预设倒影", StringComparison.Ordinal) >= 0
+                            && xml.IndexOf("size=\"20\"", StringComparison.Ordinal) >= 0
+                            && xml.IndexOf("msoReflectionType1", StringComparison.Ordinal) < 0,
+                            warn + "\n" + xml);
+                        continue;
+                    }
+
                     if (item.Id == "tu-c-no-proofing" && session.IsWps)
                     {
                         ToolResult updated = Toc(channel, "update", id, item.Xml, null);

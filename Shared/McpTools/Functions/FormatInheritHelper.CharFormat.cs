@@ -421,14 +421,18 @@ namespace WordAddIn1
                 return;
             }
 
+            MsoReflectionType requestedType = MsoReflectionType.msoReflectionTypeNone;
+            bool requestedPreset = false;
             if (dictionary.TryGetValue("type", out var value2) && value2 != null)
             {
-                MsoReflectionType parsed = ParseEnum<MsoReflectionType>(value2);
+                requestedType = ParseEnum<MsoReflectionType>(value2);
+                requestedPreset = requestedType != MsoReflectionType.msoReflectionTypeNone
+                    && requestedType != MsoReflectionType.msoReflectionTypeMixed;
                 string before = SafeReflectionType(reflection);
                 try
                 {
-                    reflection.Type = parsed;
-                    TocFormatTrace.Write("reflection set type " + parsed + " before=" + before + " after=" + SafeReflectionType(reflection));
+                    reflection.Type = requestedType;
+                    TocFormatTrace.Write("reflection set type " + requestedType + " before=" + before + " after=" + SafeReflectionType(reflection));
                 }
                 catch (Exception ex)
                 {
@@ -459,12 +463,19 @@ namespace WordAddIn1
                     string typeBeforeSize = SafeReflectionType(reflection);
                     float sizeBefore = SafeReflectionSize(reflection);
                     reflection.Size = requested;
+                    string typeAfterSize = SafeReflectionType(reflection);
                     TocFormatTrace.Write(
                         "reflection size requested=" + requested
                         + " sizeBefore=" + sizeBefore
                         + " sizeAfter=" + SafeReflectionSize(reflection)
                         + " typeBeforeSize=" + typeBeforeSize
-                        + " typeAfterSize=" + SafeReflectionType(reflection));
+                        + " typeAfterSize=" + typeAfterSize);
+                    if (requestedPreset && !string.Equals(typeAfterSize, requestedType.ToString(), StringComparison.Ordinal))
+                    {
+                        NoteFormatWarning(
+                            "reflection",
+                            "预设倒影自带固定大小，同时指定大小后预设类型会被清掉。倒影类型没有留下，大小已写入。");
+                    }
                 }
                 catch (Exception ex)
                 {
