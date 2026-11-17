@@ -831,6 +831,8 @@ namespace WordAddIn1
                 return;
             }
 
+            bool watchReflection = format.ContainsKey("reflection");
+            string reflectionBeforeKey = null;
             foreach (string key in CharFormatCatalog.ApplyOrder)
             {
                 if (!format.ContainsKey(key))
@@ -846,6 +848,28 @@ namespace WordAddIn1
                 {
                     NoteFormatWarning(key, ex.Message);
                 }
+
+                if (!watchReflection)
+                {
+                    continue;
+                }
+
+                string reflectionNow;
+                try
+                {
+                    reflectionNow = range.Font.Reflection.Type.ToString();
+                }
+                catch (Exception ex)
+                {
+                    reflectionNow = "read-failed " + ex.Message;
+                }
+
+                if (reflectionBeforeKey != null && !string.Equals(reflectionBeforeKey, reflectionNow, StringComparison.Ordinal))
+                {
+                    TocFormatTrace.Write("reflection flipped after key " + key + " " + reflectionBeforeKey + " -> " + reflectionNow);
+                }
+
+                reflectionBeforeKey = reflectionNow;
             }
         }
 

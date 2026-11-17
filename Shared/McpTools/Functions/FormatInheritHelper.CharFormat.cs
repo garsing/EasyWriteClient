@@ -412,20 +412,69 @@ namespace WordAddIn1
         private static void WriteReflection(Microsoft.Office.Interop.Word.ReflectionFormat reflection, object value)
         {
             Dictionary<string, object> dictionary = MapOf(value);
-            if (reflection != null && dictionary != null)
+            TocFormatTrace.Write(
+                "reflection enter valueType=" + (value == null ? "null" : value.GetType().FullName)
+                + " map=" + (dictionary == null ? "null" : string.Join(",", dictionary.Keys))
+                + " reflectionNull=" + (reflection == null));
+            if (reflection == null || dictionary == null)
             {
-                if (dictionary.TryGetValue("type", out var value2) && value2 != null)
+                return;
+            }
+
+            if (dictionary.TryGetValue("type", out var value2) && value2 != null)
+            {
+                MsoReflectionType parsed = ParseEnum<MsoReflectionType>(value2);
+                string before = SafeReflectionType(reflection);
+                try
                 {
-                    reflection.Type = ParseEnum<MsoReflectionType>(value2);
+                    reflection.Type = parsed;
+                    TocFormatTrace.Write("reflection set type " + parsed + " before=" + before + " after=" + SafeReflectionType(reflection));
                 }
-                if (dictionary.TryGetValue("transparency", out var value3) && value3 != null)
+                catch (Exception ex)
+                {
+                    TocFormatTrace.Write("reflection set type failed before=" + before + " " + ex);
+                    throw;
+                }
+            }
+
+            if (dictionary.TryGetValue("transparency", out var value3) && value3 != null)
+            {
+                try
                 {
                     reflection.Transparency = ParseFloat(value3);
+                    TocFormatTrace.Write("reflection transparency=" + reflection.Transparency);
                 }
-                if (dictionary.TryGetValue("size", out var value4) && value4 != null)
+                catch (Exception ex)
+                {
+                    TocFormatTrace.Write("reflection transparency failed " + ex);
+                    throw;
+                }
+            }
+
+            if (dictionary.TryGetValue("size", out var value4) && value4 != null)
+            {
+                try
                 {
                     reflection.Size = ParseFloat(value4);
+                    TocFormatTrace.Write("reflection size=" + reflection.Size + " typeAfterSize=" + SafeReflectionType(reflection));
                 }
+                catch (Exception ex)
+                {
+                    TocFormatTrace.Write("reflection size failed " + ex);
+                    throw;
+                }
+            }
+        }
+
+        private static string SafeReflectionType(Microsoft.Office.Interop.Word.ReflectionFormat reflection)
+        {
+            try
+            {
+                return reflection.Type.ToString();
+            }
+            catch (Exception ex)
+            {
+                return "read-failed " + ex.GetType().Name + " " + ex.Message;
             }
         }
 

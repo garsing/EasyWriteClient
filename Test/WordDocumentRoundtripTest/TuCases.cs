@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
+using Newtonsoft.Json.Linq;
 using WordAddIn1;
 using Word = Microsoft.Office.Interop.Word;
 
@@ -365,10 +366,10 @@ namespace WordDocumentRoundtripTest
                     at.Success && body.StartsWith("P_", StringComparison.Ordinal) && display.Contains(WdSession.Str(at, "toc_id")),
                     at.Success ? display : at.Error);
 
-                string interior = InteriorCode(session, channel);
+                string interior = FirstInteriorParagraph(session, path);
                 if (interior.Length == 0)
                 {
-                    Fail(run, "tu-insert-interior", "段落 display 已收起，拿不到目录里面的段码");
+                    Fail(run, "tu-insert-interior", "没有读到目录里面的段码");
                 }
                 else
                 {
@@ -628,13 +629,13 @@ namespace WordDocumentRoundtripTest
                 return updated.Error ?? "更新失败";
             }
 
-            string body = WdSession.Str(updated, "xml");
-            if (body.Length > 0)
+            ToolResult got = Toc(channel, "get", id, null, null);
+            if (got == null || !got.Success)
             {
-                return body;
+                return got == null ? "没有回包" : (got.Error ?? "读失败");
             }
 
-            return WdSession.Str(Toc(channel, "get", id, null, null), "xml");
+            return WdSession.Str(got, "xml");
         }
 
         private static void CheckFail(
@@ -735,6 +736,14 @@ namespace WordDocumentRoundtripTest
                     }
 
                     WdSession.ComSet(paragraph, "Style", style);
+                    try
+                    {
+                        WdSession.ComSet(paragraph, "OutlineLevel", 1);
+                    }
+                    catch (Exception)
+                    {
+                    }
+
                     return true;
                 });
             }
@@ -752,6 +761,14 @@ namespace WordDocumentRoundtripTest
                     {
                         object style = doc.Styles[name];
                         doc.Paragraphs[1].set_Style(ref style);
+                        try
+                        {
+                            doc.Paragraphs[1].OutlineLevel = Word.WdOutlineLevel.wdOutlineLevel1;
+                        }
+                        catch (Exception)
+                        {
+                        }
+
                         return true;
                     }
                     catch (Exception)
@@ -915,23 +932,35 @@ namespace WordDocumentRoundtripTest
             return codes;
         }
 
-        private static string InteriorCode(WdSession session, string channel)
+        private static string FirstInteriorParagraph(WdSession session, string path)
         {
-            ToolResult got = DesktopToolPipe.Call(
-                "F_get_curr_doc_chunk_paragraph_display_content",
-                new Dictionary<string, object> { ["channel_id"] = channel, ["chunk_idx"] = 1 });
-            string text = got != null && got.Success
-                ? WdSession.Str(got, "paragraph_display_content")
-                : "";
-            int head = text.IndexOf("<toc", StringComparison.Ordinal);
-            int tail = text.LastIndexOf("<toc", StringComparison.Ordinal);
-            if (head < 0 || tail <= head)
+            string found = "";
+            if (session.IsWps)
             {
-                return "";
+                session.TryWpsDoc(path, doc =>
+                {
+                    Word.Document wordDoc = doc as Word.Document;
+                    if (wordDoc == null)
+                    {
+                        return false;
+                    }
+
+                    WordDocumentExtractor.ProcessDocument(wordDoc, ProcessDocumentOptions.ForProcessActions("locate"));
+                    found = TocFieldStamp.FirstInteriorParagraph() ?? "";
+                    return true;
+                });
+            }
+            else
+            {
+                session.OnWordDoc(path, doc =>
+                {
+                    WordDocumentExtractor.ProcessDocument(doc, ProcessDocumentOptions.ForProcessActions("locate"));
+                    found = TocFieldStamp.FirstInteriorParagraph() ?? "";
+                    return true;
+                });
             }
 
-            Match match = ParaCode.Match(text.Substring(head, tail - head));
-            return match.Success ? match.Value : "";
+            return found;
         }
 
         private static string LineText(ToolResult result)
@@ -943,11 +972,22 @@ namespace WordDocumentRoundtripTest
             }
 
             var buffer = new List<string>();
-            if (raw is IEnumerable list && !(raw is string))
+            if (raw is JArray array)
+            {
+                foreach (JToken row in array)
+                {
+                    buffer.Add(row["text"]?.ToString() ?? "");
+                }
+            }
+            else if (raw is IEnumerable list && !(raw is string))
             {
                 foreach (object row in list)
                 {
-                    if (row is IDictionary map && map.Contains("text"))
+                    if (row is JObject obj)
+                    {
+                        buffer.Add(obj["text"]?.ToString() ?? "");
+                    }
+                    else if (row is IDictionary map && map.Contains("text"))
                     {
                         buffer.Add(Convert.ToString(map["text"]) ?? "");
                     }
