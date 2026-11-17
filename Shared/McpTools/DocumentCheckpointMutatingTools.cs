@@ -24,6 +24,7 @@ namespace WordAddIn1
             "F_apply_table_data_from_xml",
             "F_optimize_table_display",
             "F_delete_table",
+            "F_toc",
             "F_create_chart_from_xml",
             "F_apply_chart_from_xml",
             "F_delete_chart",
@@ -56,6 +57,23 @@ namespace WordAddIn1
             if (string.IsNullOrEmpty(toolName) || !MutatingToolNames.Contains(toolName))
             {
                 return false;
+            }
+
+            if (string.Equals(toolName, "F_toc", StringComparison.Ordinal))
+            {
+                string action = null;
+                if (parameters != null && parameters.TryGetValue("action", out object raw) && raw != null)
+                {
+                    action = Convert.ToString(raw);
+                }
+
+                if (string.IsNullOrWhiteSpace(action))
+                {
+                    return false;
+                }
+
+                action = action.Trim().ToLowerInvariant();
+                return action == "insert" || action == "update" || action == "delete" || action == "reset";
             }
 
             if (string.Equals(toolName, "F_excel_image", StringComparison.Ordinal))
@@ -196,6 +214,8 @@ namespace WordAddIn1
                     return F_ExcelImageTool.TryGetContractParseFailure(args, out failure);
                 case "F_excel_sort_filter":
                     return F_ExcelSortFilterTool.TryGetContractParseFailure(args, out failure);
+                case "F_toc":
+                    return F_TocTool.TryGetContractParseFailure(args, out failure);
                 case "F_manage_excel_sheet":
                     return F_ManageExcelSheetTool.TryGetContractParseFailure(args, out failure);
                 default:

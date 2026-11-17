@@ -103,6 +103,7 @@ namespace WordAddIn1
                 { "table.extractFormat", "F_extract_table_format" },
                 { "table.optimizeDisplay", "F_optimize_table_display" },
                 { "table.delete", "F_delete_table" },
+                { "document.toc", "F_toc" },
                 { "table.applySourceFormat", "F_apply_source_table_format" },
                 { "chart.createFromXml", "F_create_chart_from_xml" },
                 { "chart.extractXml", "F_extract_chart_xml" },

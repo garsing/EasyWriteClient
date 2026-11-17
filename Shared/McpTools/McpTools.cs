@@ -38,6 +38,7 @@ namespace WordAddIn1
             // F_ApplyTableRowValuesTool.Register(toolRegistry, wordApplication);
             F_OptimizeTableDisplayTool.Register(toolRegistry, wordApplication);
             F_DeleteTableTool.Register(toolRegistry, wordApplication);
+            F_TocTool.Register(toolRegistry, wordApplication);
             F_CreateChartFromXmlTool.Register(toolRegistry, wordApplication);
             F_ExtractChartXmlTool.Register(toolRegistry, wordApplication);
             F_ApplyChartFromXmlTool.Register(toolRegistry, wordApplication);
