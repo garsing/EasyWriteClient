@@ -33,7 +33,7 @@ namespace WordAddIn1
 
     /// <summary>
     /// 一份目录的域指令、结果文字和这一份结果上的直接格式。
-    /// 样式名仍是文档共用的「目录 1」到「目录 9」、「目录标题」。
+    /// 目录 1–9 和目录标题仍是文档共用的内置样式。标题按 wdStyleTocHeading 取，本地名可能是「目录标题」「TOC 标题」或 TOC Heading。
     /// </summary>
     public static class TocEditor
     {
@@ -148,7 +148,7 @@ namespace WordAddIn1
 
             if (!string.IsNullOrEmpty(spec.Bookmark))
             {
-                if (!TryBookmarkToCodes(doc, spec.Bookmark, out string from, out string to, out error))
+                if (!TryBookmarkToCodes(doc, hit.Field, spec.Bookmark, out string from, out string to, out error))
                 {
                     return Fail(error ?? "范围已经不在");
                 }
@@ -1011,7 +1011,7 @@ namespace WordAddIn1
             Word.Range at = doc.Range(pos, pos);
             at.InsertBefore(body + "\r");
             Word.Paragraph paragraph = doc.Range(pos, pos).Paragraphs[1];
-            TrySetParagraphStyle(paragraph, "目录标题", "TOC 标题", "TOC Heading");
+            ApplyTitleStyle(paragraph);
         }
 
         private static string FindBookmarkAt(Word.Document doc, int start)
@@ -1072,7 +1072,7 @@ namespace WordAddIn1
             }
 
             paragraph.Range.Text = (text ?? "") + "\r";
-            TrySetStyle(paragraph.Range, "目录标题", "TOC Heading");
+            ApplyTitleStyle(paragraph);
         }
 
         private static void DeleteTitle(Word.Document doc, Word.Field field)
@@ -1115,11 +1115,7 @@ namespace WordAddIn1
                 return null;
             }
 
-            string name = StyleName(paragraph);
-            if (name != null
-                && (name.IndexOf("目录标题", StringComparison.Ordinal) >= 0
-                    || name.IndexOf("TOC 标题", StringComparison.OrdinalIgnoreCase) >= 0
-                    || string.Equals(name, "TOC Heading", StringComparison.OrdinalIgnoreCase)))
+            if (IsTitleStyle(paragraph))
             {
                 return paragraph;
             }
@@ -1169,6 +1165,7 @@ namespace WordAddIn1
 
         private static bool TryBookmarkToCodes(
             Word.Document doc,
+            Word.Field field,
             string bookmark,
             out string from,
             out string to,
@@ -1194,9 +1191,25 @@ namespace WordAddIn1
                 return false;
             }
 
-            from = CodeOfParagraph(mark.Range.Paragraphs[1]);
-            Word.Paragraphs paragraphs = mark.Range.Paragraphs;
-            to = CodeOfParagraph(paragraphs[paragraphs.Count]);
+            Word.Paragraph first = null;
+            Word.Paragraph last = null;
+            foreach (Word.Paragraph paragraph in mark.Range.Paragraphs)
+            {
+                if (OverlapsFieldResult(field, paragraph))
+                {
+                    continue;
+                }
+
+                if (first == null)
+                {
+                    first = paragraph;
+                }
+
+                last = paragraph;
+            }
+
+            from = CodeOfParagraph(first);
+            to = CodeOfParagraph(last);
             if (string.IsNullOrEmpty(from) || string.IsNullOrEmpty(to))
             {
                 error = "范围已经不在";
@@ -1206,6 +1219,26 @@ namespace WordAddIn1
             return true;
         }
 
+        private static bool OverlapsFieldResult(Word.Field field, Word.Paragraph paragraph)
+        {
+            if (field == null || paragraph == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                Word.Range result = field.Result;
+                int start = paragraph.Range.Start;
+                int end = paragraph.Range.End;
+                return start < result.End && end > result.Start;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
         private static string CodeOfParagraph(Word.Paragraph paragraph)
         {
             if (paragraph == null)
@@ -1213,8 +1246,9 @@ namespace WordAddIn1
                 return null;
             }
 
-            string text = (paragraph.Range.Text ?? "").TrimEnd('\r', '\a', '\n', '\u0007');
-            if (text.Length == 0)
+            string raw = paragraph.Range.Text ?? "";
+            string trimmed = raw.TrimEnd('\r', '\a', '\n', '\u0007');
+            if (trimmed.Length == 0)
             {
                 return null;
             }
@@ -1222,7 +1256,7 @@ namespace WordAddIn1
             string found = null;
             foreach (IReadOnlyList<string> mapping in DocumentState.ParagraphNameMapping)
             {
-                if (mapping.Count < 3 || mapping[2] != text)
+                if (mapping.Count < 3 || !SameParagraphText(mapping[2], raw, trimmed))
                 {
                     continue;
                 }
@@ -1236,6 +1270,21 @@ namespace WordAddIn1
             }
 
             return found;
+        }
+
+        private static bool SameParagraphText(string stored, string raw, string trimmed)
+        {
+            if (stored == null)
+            {
+                return false;
+            }
+
+            if (stored == raw || stored == trimmed)
+            {
+                return true;
+            }
+
+            return stored.TrimEnd('\r', '\a', '\n', '\u0007') == trimmed;
         }
 
         private static void ForgetRangeBookmark(Word.Document doc, string name)
@@ -1491,18 +1540,74 @@ namespace WordAddIn1
             }
         }
 
-        private static void TrySetStyle(Word.Range range, params string[] names)
+        private static void ApplyTitleStyle(Word.Paragraph paragraph)
         {
-            foreach (string name in names)
+            if (paragraph == null)
+            {
+                return;
+            }
+
+            Word.Style builtin = TocHeadingStyle(paragraph.Range.Document);
+            if (builtin != null)
             {
                 try
                 {
-                    range.set_Style(name);
+                    object style = builtin;
+                    paragraph.set_Style(ref style);
                     return;
                 }
                 catch (Exception)
                 {
                 }
+            }
+
+            TrySetParagraphStyle(paragraph, "目录标题", "TOC 标题", "TOC Heading");
+        }
+
+        private static bool IsTitleStyle(Word.Paragraph paragraph)
+        {
+            Word.Style style = paragraph == null ? null : paragraph.get_Style() as Word.Style;
+            Word.Style builtin = paragraph == null ? null : TocHeadingStyle(paragraph.Range.Document);
+            if (style != null && builtin != null && SameStyle(style, builtin))
+            {
+                return true;
+            }
+
+            string name = StyleName(paragraph);
+            return name != null
+                && (name.IndexOf("目录标题", StringComparison.Ordinal) >= 0
+                    || name.IndexOf("TOC 标题", StringComparison.OrdinalIgnoreCase) >= 0
+                    || string.Equals(name, "TOC Heading", StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static Word.Style TocHeadingStyle(Word.Document doc)
+        {
+            if (doc == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                return doc.Styles[Word.WdBuiltinStyle.wdStyleTocHeading];
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private static bool SameStyle(Word.Style left, Word.Style right)
+        {
+            try
+            {
+                string localLeft = left.NameLocal ?? "";
+                string localRight = right.NameLocal ?? "";
+                return localLeft.Length > 0 && string.Equals(localLeft, localRight, StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception)
+            {
+                return false;
             }
         }
 
