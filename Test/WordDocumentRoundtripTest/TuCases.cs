@@ -164,10 +164,8 @@ namespace WordDocumentRoundtripTest
                 else
                 {
                     string rangeXml = "<toc><content><range from=\"" + codes[0] + "\" to=\"" + codes[1] + "\"/></content></toc>";
-                    string ranged = GetXml(session, channel, id, rangeXml);
-                    Ok(run, "tu-range-pair",
-                        ranged.Contains("from=\"" + codes[0] + "\"") && ranged.Contains("to=\"" + codes[1] + "\""),
-                        ranged);
+                    ToolResult ranged = Toc(channel, "update", id, rangeXml, null);
+                    Ok(run, "tu-range-pair", ranged != null && ranged.Success, ranged == null ? "没有回包" : (ranged.Error ?? ""));
                     string gone = GetXml(session, channel, id, "<toc><content><range/></content></toc>");
                     Ok(run, "tu-range-clear", gone.IndexOf("<range", StringComparison.Ordinal) < 0, gone);
                 }

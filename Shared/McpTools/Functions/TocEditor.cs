@@ -148,7 +148,7 @@ namespace WordAddIn1
 
             if (!string.IsNullOrEmpty(spec.Bookmark))
             {
-                if (!TryBookmarkToCodes(doc, hit.Field, spec.Bookmark, out string from, out string to, out error))
+                if (!TryBookmarkToCodes(doc, spec.Bookmark, out string from, out string to, out error))
                 {
                     return Fail(error ?? "范围已经不在");
                 }
@@ -1165,7 +1165,6 @@ namespace WordAddIn1
 
         private static bool TryBookmarkToCodes(
             Word.Document doc,
-            Word.Field field,
             string bookmark,
             out string from,
             out string to,
@@ -1191,25 +1190,9 @@ namespace WordAddIn1
                 return false;
             }
 
-            Word.Paragraph first = null;
-            Word.Paragraph last = null;
-            foreach (Word.Paragraph paragraph in mark.Range.Paragraphs)
-            {
-                if (OverlapsFieldResult(field, paragraph))
-                {
-                    continue;
-                }
-
-                if (first == null)
-                {
-                    first = paragraph;
-                }
-
-                last = paragraph;
-            }
-
-            from = CodeOfParagraph(first);
-            to = CodeOfParagraph(last);
+            Word.Paragraphs paragraphs = mark.Range.Paragraphs;
+            from = CodeOfParagraph(paragraphs[1]);
+            to = CodeOfParagraph(paragraphs[paragraphs.Count]);
             if (string.IsNullOrEmpty(from) || string.IsNullOrEmpty(to))
             {
                 error = "范围已经不在";
@@ -1219,26 +1202,6 @@ namespace WordAddIn1
             return true;
         }
 
-        private static bool OverlapsFieldResult(Word.Field field, Word.Paragraph paragraph)
-        {
-            if (field == null || paragraph == null)
-            {
-                return false;
-            }
-
-            try
-            {
-                Word.Range result = field.Result;
-                int start = paragraph.Range.Start;
-                int end = paragraph.Range.End;
-                return start < result.End && end > result.Start;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-        }
-
         private static string CodeOfParagraph(Word.Paragraph paragraph)
         {
             if (paragraph == null)
@@ -1246,9 +1209,8 @@ namespace WordAddIn1
                 return null;
             }
 
-            string raw = paragraph.Range.Text ?? "";
-            string trimmed = raw.TrimEnd('\r', '\a', '\n', '\u0007');
-            if (trimmed.Length == 0)
+            string text = (paragraph.Range.Text ?? "").TrimEnd('\r', '\a', '\n', '\u0007');
+            if (text.Length == 0)
             {
                 return null;
             }
@@ -1256,7 +1218,7 @@ namespace WordAddIn1
             string found = null;
             foreach (IReadOnlyList<string> mapping in DocumentState.ParagraphNameMapping)
             {
-                if (mapping.Count < 3 || !SameParagraphText(mapping[2], raw, trimmed))
+                if (mapping.Count < 3 || mapping[2] != text)
                 {
                     continue;
                 }
@@ -1270,21 +1232,6 @@ namespace WordAddIn1
             }
 
             return found;
-        }
-
-        private static bool SameParagraphText(string stored, string raw, string trimmed)
-        {
-            if (stored == null)
-            {
-                return false;
-            }
-
-            if (stored == raw || stored == trimmed)
-            {
-                return true;
-            }
-
-            return stored.TrimEnd('\r', '\a', '\n', '\u0007') == trimmed;
         }
 
         private static void ForgetRangeBookmark(Word.Document doc, string name)
