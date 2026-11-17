@@ -455,14 +455,34 @@ namespace WordAddIn1
             {
                 try
                 {
-                    reflection.Size = ParseFloat(value4);
-                    TocFormatTrace.Write("reflection size=" + reflection.Size + " typeAfterSize=" + SafeReflectionType(reflection));
+                    float requested = ParseFloat(value4);
+                    string typeBeforeSize = SafeReflectionType(reflection);
+                    float sizeBefore = SafeReflectionSize(reflection);
+                    reflection.Size = requested;
+                    TocFormatTrace.Write(
+                        "reflection size requested=" + requested
+                        + " sizeBefore=" + sizeBefore
+                        + " sizeAfter=" + SafeReflectionSize(reflection)
+                        + " typeBeforeSize=" + typeBeforeSize
+                        + " typeAfterSize=" + SafeReflectionType(reflection));
                 }
                 catch (Exception ex)
                 {
                     TocFormatTrace.Write("reflection size failed " + ex);
                     throw;
                 }
+            }
+        }
+
+        private static float SafeReflectionSize(Microsoft.Office.Interop.Word.ReflectionFormat reflection)
+        {
+            try
+            {
+                return reflection.Size;
+            }
+            catch (Exception)
+            {
+                return float.NaN;
             }
         }
 
