@@ -2307,6 +2307,31 @@ namespace WordAddIn1
                 target[attribute.Name.LocalName] = attribute.Value;
             }
 
+            foreach (XElement child in element.Elements())
+            {
+                if (!character && child.Name.LocalName == "tab_stops")
+                {
+                    continue;
+                }
+
+                if (character)
+                {
+                    if (Array.IndexOf(CharFormatCatalog.ApplyOrder, child.Name.LocalName) < 0)
+                    {
+                        error = "不认识的字符格式 " + child.Name.LocalName;
+                        return false;
+                    }
+                }
+                else if (!ParaFormatCatalog.IsKnownKey(child.Name.LocalName)
+                    || child.Name.LocalName == "paragraph_style")
+                {
+                    error = "不认识的段落格式 " + child.Name.LocalName;
+                    return false;
+                }
+
+                target[child.Name.LocalName] = NodeValue(child);
+            }
+
             if (character)
             {
                 return true;
@@ -2342,6 +2367,33 @@ namespace WordAddIn1
 
             target["tab_stops"] = rows;
             return true;
+        }
+
+        private static object NodeValue(XElement element)
+        {
+            bool nested = element.HasAttributes || element.HasElements;
+            if (!nested)
+            {
+                return element.Value ?? "";
+            }
+
+            var row = new Dictionary<string, object>(StringComparer.Ordinal);
+            foreach (XAttribute attribute in element.Attributes())
+            {
+                row[attribute.Name.LocalName] = attribute.Value;
+            }
+
+            foreach (XElement child in element.Elements())
+            {
+                row[child.Name.LocalName] = NodeValue(child);
+            }
+
+            if (row.Count == 0)
+            {
+                return element.Value ?? "";
+            }
+
+            return row;
         }
 
         private static string MapTabAlign(string value)
