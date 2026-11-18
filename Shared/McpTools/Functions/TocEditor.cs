@@ -246,8 +246,10 @@ namespace WordAddIn1
                 }
                 else if (TitleText(doc, hit.Field) == null)
                 {
+                    LogTitleSpot("before-title", doc, hit.Field);
                     InsertTitleBefore(doc, hit.Id, patch.Title);
                     hit.Field = FindField(doc, hit.Id) ?? hit.Field;
+                    LogTitleSpot("after-insert", doc, hit.Field);
                     current.HasTitle = true;
                     current.Title = patch.Title;
                 }
@@ -260,6 +262,11 @@ namespace WordAddIn1
             }
 
             List<Dictionary<string, object>> warnings = ApplyOverlays(doc, hit.Field, current, current.Reset);
+            if (patch.HasTitle)
+            {
+                LogTitleSpot("after-overlay", doc, hit.Field);
+            }
+
             AddBookmarkAtCode(doc, hit.Field, hit.Id);
             return WithWarnings(Ok(hit.Id, "已更新目录 " + hit.Id, TocXml.Write(current, hit.Id, includeDefaults: false), LinesOf(doc, hit.Field, false)), warnings);
         }
@@ -1078,6 +1085,52 @@ namespace WordAddIn1
             InsertTitleBefore(doc, id, text);
         }
 
+        private static void LogTitleSpot(string tag, Word.Document doc, Word.Field field)
+        {
+            try
+            {
+                int code = field == null ? -1 : field.Code.Start;
+                int begin = code - 1;
+                string recognized = TitleParagraph(doc, field) == null ? "no" : "yes";
+                string line = tag + " code=" + code + " begin=" + begin + " recognized=" + recognized;
+                int shown = 0;
+                foreach (Word.Paragraph paragraph in doc.Paragraphs)
+                {
+                    if (shown >= 5)
+                    {
+                        break;
+                    }
+
+                    shown++;
+                    string text = (paragraph.Range.Text ?? "").Replace("\r", "").Replace("\a", "");
+                    if (text.Length > 12)
+                    {
+                        text = text.Substring(0, 12);
+                    }
+
+                    int drop = -1;
+                    try
+                    {
+                        drop = (int)paragraph.DropCap.Position;
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    line += " | " + paragraph.Range.Start + "-" + paragraph.Range.End
+                        + " " + StyleName(paragraph)
+                        + " drop=" + drop
+                        + " " + text;
+                }
+
+                TocFormatTrace.Write(line);
+            }
+            catch (Exception ex)
+            {
+                TocFormatTrace.Write(tag + " log-failed " + ex.Message);
+            }
+        }
+
         private static void InsertTitleBefore(Word.Document doc, string bookmarkId, string text)
         {
             Word.Bookmark mark = doc.Bookmarks[bookmarkId];
@@ -1088,10 +1141,54 @@ namespace WordAddIn1
             }
 
             string body = text ?? "";
+            Word.Paragraph lead = DropFragmentBefore(doc, pos);
+            if (lead != null)
+            {
+                int start = lead.Range.Start;
+                lead.Range.InsertParagraphBefore();
+                Word.Paragraph created = doc.Range(start, start).Paragraphs[1];
+                if (body.Length > 0)
+                {
+                    created.Range.InsertBefore(body);
+                }
+
+                ApplyTitleStyle(created);
+                return;
+            }
+
             Word.Range at = doc.Range(pos, pos);
             at.InsertBefore(body + "\r");
             Word.Paragraph paragraph = doc.Range(pos, pos).Paragraphs[1];
             ApplyTitleStyle(paragraph);
+        }
+
+        private static Word.Paragraph DropFragmentBefore(Word.Document doc, int fieldBegin)
+        {
+            if (fieldBegin <= doc.Content.Start)
+            {
+                return null;
+            }
+
+            Word.Paragraph adjacent = doc.Range(fieldBegin - 1, fieldBegin - 1).Paragraphs[1];
+            if (adjacent == null || adjacent.Range.End > fieldBegin + 1 || IsTitleStyle(adjacent) || !HasDropCap(adjacent))
+            {
+                return null;
+            }
+
+            return adjacent;
+        }
+
+        private static bool HasDropCap(Word.Paragraph paragraph)
+        {
+            try
+            {
+                return paragraph != null && paragraph.DropCap != null
+                    && paragraph.DropCap.Position != Word.WdDropPosition.wdDropNone;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
 
         private static string FindBookmarkAt(Word.Document doc, int start)
@@ -1198,6 +1295,18 @@ namespace WordAddIn1
             if (IsTitleStyle(paragraph))
             {
                 return paragraph;
+            }
+
+            if (HasDropCap(paragraph) && paragraph.Range.Start > doc.Content.Start)
+            {
+                Word.Paragraph prior = doc.Range(paragraph.Range.Start - 1, paragraph.Range.Start - 1).Paragraphs[1];
+                if (prior != null
+                    && prior.Range.Start < paragraph.Range.Start
+                    && prior.Range.End <= paragraph.Range.Start + 1
+                    && IsTitleStyle(prior))
+                {
+                    return prior;
+                }
             }
 
             return null;

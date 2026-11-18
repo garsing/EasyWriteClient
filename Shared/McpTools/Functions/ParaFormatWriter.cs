@@ -967,25 +967,56 @@ namespace WordAddIn1
             foreach (Word.Paragraph paragraph in range.Paragraphs)
             {
                 Word.DropCap target = paragraph.DropCap;
+                int positionBefore = (int)target.Position;
+                int linesBefore = target.LinesToDrop;
                 if (drop.ContainsKey("position"))
                 {
-                    target.Position = ParseDropPosition(drop["position"]?.ToString());
+                    Word.WdDropPosition position = ParseDropPosition(drop["position"]?.ToString());
+                    if (target.Position != position)
+                    {
+                        target.Position = position;
+                    }
                 }
 
                 if (drop.ContainsKey("lines"))
                 {
-                    target.LinesToDrop = Convert.ToInt32(drop["lines"], CultureInfo.InvariantCulture);
+                    int lines = Convert.ToInt32(drop["lines"], CultureInfo.InvariantCulture);
+                    if (target.LinesToDrop != lines)
+                    {
+                        target.LinesToDrop = lines;
+                    }
                 }
 
                 if (drop.ContainsKey("font_name"))
                 {
-                    target.FontName = drop["font_name"]?.ToString() ?? "";
+                    string fontName = drop["font_name"]?.ToString() ?? "";
+                    if (!string.Equals(target.FontName ?? "", fontName, StringComparison.Ordinal))
+                    {
+                        target.FontName = fontName;
+                    }
                 }
 
                 if (drop.ContainsKey("distance"))
                 {
-                    target.DistanceFromText = ToFloat(drop["distance"]);
+                    float distance = ToFloat(drop["distance"]);
+                    if (Math.Abs(target.DistanceFromText - distance) > 0.05f)
+                    {
+                        target.DistanceFromText = distance;
+                    }
                 }
+
+                string snippet = (paragraph.Range.Text ?? "").Replace("\r", "").Replace("\a", "");
+                if (snippet.Length > 8)
+                {
+                    snippet = snippet.Substring(0, 8);
+                }
+
+                TocFormatTrace.Write(
+                    "drop-cap " + paragraph.Range.Start + "-" + paragraph.Range.End
+                    + " before=" + positionBefore + "/" + linesBefore
+                    + " after=" + (int)target.Position + "/" + target.LinesToDrop
+                    + " ask=" + (drop.ContainsKey("position") ? drop["position"] : "")
+                    + " " + snippet);
             }
         }
 
