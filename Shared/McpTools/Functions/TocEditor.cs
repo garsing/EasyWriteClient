@@ -559,7 +559,8 @@ namespace WordAddIn1
                     spec.LevelsFormat[level] = format;
                 }
 
-                if (format.Paragraph.ContainsKey("tab_stops"))
+                if (format.Paragraph.TryGetValue("tab_stops", out object existing)
+                    && TrySetRightTabLeader(existing, LeaderEnum(spec.Leader)))
                 {
                     continue;
                 }
@@ -575,6 +576,30 @@ namespace WordAddIn1
                     }
                 };
             }
+        }
+
+        private static bool TrySetRightTabLeader(object tabs, string leader)
+        {
+            if (!(tabs is List<Dictionary<string, object>> rows) || rows.Count == 0)
+            {
+                return false;
+            }
+
+            bool found = false;
+            foreach (Dictionary<string, object> row in rows)
+            {
+                row.TryGetValue("alignment", out object alignment);
+                string align = alignment == null ? "" : alignment.ToString();
+                if (align.IndexOf("Right", StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    continue;
+                }
+
+                row["leader"] = leader;
+                found = true;
+            }
+
+            return found;
         }
 
         private static void WriteLevel(Word.Range range, TocLevelFormat format, List<Dictionary<string, object>> warnings)
@@ -2605,8 +2630,9 @@ namespace WordAddIn1
                 spec.OmitPages = "1-9";
             }
 
-            spec.PageNumbers = string.IsNullOrEmpty(spec.OmitPages);
-            spec.HasPageNumbers = !spec.PageNumbers;
+            bool hideAllPages = string.Equals(spec.OmitPages, "1-9", StringComparison.Ordinal);
+            spec.PageNumbers = string.IsNullOrEmpty(spec.OmitPages) || !hideAllPages;
+            spec.HasPageNumbers = !string.IsNullOrEmpty(spec.OmitPages);
             string styles = Quoted(text, "t");
             if (!string.IsNullOrEmpty(styles))
             {

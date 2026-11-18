@@ -212,13 +212,13 @@ namespace WordDocumentRoundtripTest
                     "<toc><format><pageNumbers show=\"false\"/></format></toc>", "show=\"false\"");
                 OkXml(run, session, channel, id, "tu-page-49",
                     "<toc><format><pageNumbers levels=\"4-9\" show=\"false\"/></format></toc>", "levels=\"4-9\"");
-                OkXml(run, session, channel, id, "tu-align-after",
-                    "<toc><format><align>after</align></format></toc>", "after");
                 OkLeader(run, session, channel, id, "tu-leader-none", "none", "wdTabLeaderSpaces");
                 OkLeader(run, session, channel, id, "tu-leader-dash", "dash", "wdTabLeaderDashes");
                 OkLeader(run, session, channel, id, "tu-leader-line", "line", "wdTabLeaderLines");
                 OkLeader(run, session, channel, id, "tu-leader-heavy", "heavy", "wdTabLeaderHeavy");
                 OkLeader(run, session, channel, id, "tu-leader-middle", "middleDot", "wdTabLeaderMiddleDot");
+                OkXml(run, session, channel, id, "tu-align-after",
+                    "<toc><format><align>after</align></format></toc>", "after");
                 OkXml(run, session, channel, id, "tu-hyper-off",
                     "<toc><format><hyperlink>false</hyperlink></format></toc>", "<hyperlink>false</hyperlink>");
                 OkXml(run, session, channel, id, "tu-web-off",
@@ -627,7 +627,8 @@ namespace WordDocumentRoundtripTest
 
             string got = GetXml(session, channel, id, "<toc><format><leader>" + name + "</leader></format></toc>");
             Ok(run, caseId,
-                got.IndexOf(name, StringComparison.Ordinal) >= 0 || got.IndexOf(enumName, StringComparison.Ordinal) >= 0,
+                got.IndexOf("leader=\"" + enumName + "\"", StringComparison.Ordinal) >= 0
+                || got.IndexOf("<leader>" + name + "</leader>", StringComparison.Ordinal) >= 0,
                 got);
         }
 
