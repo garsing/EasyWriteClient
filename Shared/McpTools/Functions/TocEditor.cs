@@ -512,7 +512,13 @@ namespace WordAddIn1
             Word.Paragraph title = TitleParagraph(doc, field);
             if (title != null && spec.LevelsFormat.TryGetValue("title", out TocLevelFormat titleFormat))
             {
-                WriteLevel(title.Range, titleFormat, warnings);
+                Word.Range titleRange = title.Range.Duplicate;
+                if (titleRange.End > titleRange.Start + 1)
+                {
+                    titleRange.MoveEnd(Word.WdUnits.wdCharacter, -1);
+                }
+
+                WriteLevel(titleRange, titleFormat, warnings);
             }
 
             if (spec.WriteTabs)
@@ -1937,16 +1943,29 @@ namespace WordAddIn1
 
             string texture = EnumName(() => mine.Texture);
             string styleTexture = style == null ? null : EnumName(() => style.Texture);
-            if (string.IsNullOrEmpty(texture) || string.Equals(texture, styleTexture, StringComparison.Ordinal))
+            string background = WordColorToHex(SafeInt(() => (int)mine.BackgroundPatternColor));
+            string styleBackground = style == null ? null : WordColorToHex(SafeInt(() => (int)style.BackgroundPatternColor));
+            bool textureDiffers = !string.IsNullOrEmpty(texture)
+                && !string.Equals(texture, styleTexture, StringComparison.Ordinal);
+            bool backgroundDiffers = !string.IsNullOrEmpty(background)
+                && !string.Equals(background, styleBackground, StringComparison.Ordinal);
+            if (!textureDiffers && !backgroundDiffers)
             {
                 return;
             }
 
-            target[key] = new Dictionary<string, object>
+            var shading = new Dictionary<string, object>();
+            if (textureDiffers)
             {
-                ["texture"] = texture,
-                ["background_pattern_color"] = WordColorToHex(SafeInt(() => (int)mine.BackgroundPatternColor)) ?? ""
-            };
+                shading["texture"] = texture;
+                shading["background_pattern_color"] = background ?? "";
+            }
+            else
+            {
+                shading["background_pattern_color"] = background;
+            }
+
+            target[key] = shading;
         }
 
         private static void ReadColorObject(Dictionary<string, object> target, string key, int rgb, int styleRgb)

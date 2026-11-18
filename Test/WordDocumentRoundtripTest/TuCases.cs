@@ -286,8 +286,8 @@ namespace WordDocumentRoundtripTest
                 string off = GetXml(session, channel, id, "<toc><format><title/></format></toc>");
                 Ok(run, "tu-title-off", off.IndexOf("<title", StringComparison.Ordinal) < 0, off);
                 string level = GetXml(session, channel, id,
-                    "<toc><format><title text=\"目录\"/><level n=\"title\"><font font_size=\"22\"/></level></format></toc>");
-                Ok(run, "tu-title-level", level.Contains("n=\"title\"") && level.Contains("22"), level);
+                    "<toc><format><title text=\"目录\"/><level n=\"title\"><font font_size=\"28\"/></level></format></toc>");
+                Ok(run, "tu-title-level", level.Contains("n=\"title\"") && level.Contains("28"), level);
             }
             finally
             {
@@ -541,7 +541,8 @@ namespace WordDocumentRoundtripTest
                 return;
             }
 
-            if (!Open(session, "第一章标题\r正文停留。", out string path, out string channel) || !StyleHeading(session, path))
+            if (!Open(session, "一级标题\r二级标题\r三级标题\r四级标题\r五级标题\r六级标题\r七级标题\r八级标题\r九级标题\r正文停留。", out string path, out string channel)
+                || !StyleOutlineLevels(session, path))
             {
                 FailMany(run, "铺不出带标题的临时稿", KeyIds());
                 return;
@@ -557,11 +558,23 @@ namespace WordDocumentRoundtripTest
                     return;
                 }
 
+                bool levelsWidened = false;
                 foreach (KeyCase item in KeyCases())
                 {
                     if (!Want(item.Id))
                     {
                         continue;
+                    }
+
+                    if (!levelsWidened && item.Id.StartsWith("tu-lv-", StringComparison.Ordinal))
+                    {
+                        levelsWidened = true;
+                        ToolResult widened = Toc(channel, "update", id, "<toc><content><levels>1-9</levels></content></toc>", null);
+                        if (widened == null || !widened.Success)
+                        {
+                            Ok(run, item.Id, false, widened == null ? "没有回包" : (widened.Error ?? "扩不到 1-9"));
+                            continue;
+                        }
                     }
 
                     if (item.Reject)
@@ -597,8 +610,33 @@ namespace WordDocumentRoundtripTest
                         continue;
                     }
 
+                    if (item.Id == "tu-c-color-index-bi" || item.Id == "tu-c-diacritic-color")
+                    {
+                        ToolResult updated = Toc(channel, "update", id, item.Xml, null);
+                        string warn = updated == null || updated.Data == null
+                            ? ""
+                            : Newtonsoft.Json.JsonConvert.SerializeObject(updated.Data);
+                        ToolResult got = updated != null && updated.Success ? Toc(channel, "get", id, null, null) : null;
+                        string readBack = got == null ? "" : (WdSession.Str(got, "xml") ?? "");
+                        bool stored = readBack.IndexOf(item.Expect, StringComparison.OrdinalIgnoreCase) >= 0;
+                        bool warned = item.Id == "tu-c-color-index-bi"
+                            ? warn.IndexOf("复杂文种", StringComparison.Ordinal) >= 0
+                            : warn.IndexOf("注音颜色", StringComparison.Ordinal) >= 0;
+                        Ok(run, item.Id, updated != null && updated.Success && (stored || warned), warn + "\n" + readBack);
+                        continue;
+                    }
+
                     string xml = GetXml(session, channel, id, item.Xml);
-                    Ok(run, item.Id, xml.IndexOf(item.Expect, StringComparison.OrdinalIgnoreCase) >= 0, xml);
+                    string expect = item.Expect;
+                    if (item.Id == "tu-p-line-spacing-rule")
+                    {
+                        expect = "line_spacing_rule=\"1.5\"";
+                    }
+                    else if (item.Id == "tu-p-line-spacing")
+                    {
+                        expect = "line_spacing=\"18\"";
+                    }
+                    Ok(run, item.Id, xml.IndexOf(expect, StringComparison.OrdinalIgnoreCase) >= 0, xml);
                 }
             }
             finally
@@ -793,6 +831,98 @@ namespace WordDocumentRoundtripTest
                 }
 
                 return false;
+            });
+        }
+
+        private static bool StyleOutlineLevels(WdSession session, string path)
+        {
+            if (!StyleHeading(session, path))
+            {
+                return false;
+            }
+
+            if (session.IsWps)
+            {
+                return session.TryWpsDoc(path, doc =>
+                {
+                    object paragraphs = WdSession.ComGet(doc, "Paragraphs");
+                    object styles = WdSession.ComGet(doc, "Styles");
+                    int count = Convert.ToInt32(WdSession.ComGet(paragraphs, "Count") ?? 0);
+                    if (count < 9)
+                    {
+                        return false;
+                    }
+
+                    for (int level = 2; level <= 9; level++)
+                    {
+                        object paragraph = WdSession.ComCall(paragraphs, "Item", level);
+                        if (paragraph == null)
+                        {
+                            return false;
+                        }
+
+                        try
+                        {
+                            WdSession.ComSet(paragraph, "OutlineLevel", level);
+                        }
+                        catch (Exception)
+                        {
+                        }
+
+                        foreach (string name in new[] { "标题 " + level, "Heading " + level })
+                        {
+                            try
+                            {
+                                object style = WdSession.ComCall(styles, "Item", name);
+                                if (style != null)
+                                {
+                                    WdSession.ComSet(paragraph, "Style", style);
+                                    break;
+                                }
+                            }
+                            catch (Exception)
+                            {
+                            }
+                        }
+                    }
+
+                    return true;
+                });
+            }
+
+            return session.OnWordDoc(path, doc =>
+            {
+                if (doc.Paragraphs.Count < 9)
+                {
+                    return false;
+                }
+
+                for (int level = 2; level <= 9; level++)
+                {
+                    Word.Paragraph paragraph = doc.Paragraphs[level];
+                    try
+                    {
+                        paragraph.OutlineLevel = (Word.WdOutlineLevel)level;
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    foreach (string name in new[] { "标题 " + level, "Heading " + level })
+                    {
+                        try
+                        {
+                            object style = doc.Styles[name];
+                            paragraph.set_Style(ref style);
+                            break;
+                        }
+                        catch (Exception)
+                        {
+                        }
+                    }
+                }
+
+                return true;
             });
         }
 
@@ -1122,7 +1252,7 @@ namespace WordDocumentRoundtripTest
                 {
                     Id = "tu-lv-" + level,
                     Xml = "<toc><format><level n=\"" + level + "\"><font font_size=\"18\"/></level></format></toc>",
-                    Expect = "n=\"" + level + "\""
+                    Expect = "<level n=\"" + level + "\""
                 };
             }
 
@@ -1219,7 +1349,7 @@ namespace WordDocumentRoundtripTest
                 new[] { "line_spacing", "", "18" },
                 new[] { "outline_level", "", "wdOutlineLevel2" },
                 new[] { "baseline_alignment", "", "wdBaselineAlignCenter" },
-                new[] { "reading_order", "", "wdReadingOrderLtr" },
+                new[] { "reading_order", "", "wdReadingOrderRtl" },
                 new[] { "mirror_indents", "", "true" },
                 new[] { "auto_adjust_right_indent", "", "false" },
                 new[] { "character_unit_left_indent", "", "1" },

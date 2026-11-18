@@ -698,7 +698,7 @@ namespace WordAddIn1
 
         internal static Dictionary<string, object> NormalizeLineSpacingPair(string rule, double lineSpacing)
         {
-            string normalizedRule = string.IsNullOrEmpty(rule) ? "single" : rule;
+            string normalizedRule = MapLineSpacingRule(rule);
             switch (normalizedRule)
             {
                 case "single":
@@ -733,6 +733,34 @@ namespace WordAddIn1
                     return Pair(normalizedRule, Math.Round(lineSpacing, 1));
                 default:
                     return Pair("single", 1.0);
+            }
+        }
+
+        private static string MapLineSpacingRule(string rule)
+        {
+            switch ((rule ?? "").Trim().ToLowerInvariant())
+            {
+                case "":
+                case "single":
+                case "wdlinespacesingle":
+                    return "single";
+                case "1.5":
+                case "wdlinespace1pt5":
+                    return "1.5";
+                case "double":
+                case "wdlinespacedouble":
+                    return "double";
+                case "multiple":
+                case "wdlinespacemultiple":
+                    return "multiple";
+                case "exact":
+                case "wdlinespaceexactly":
+                    return "exact";
+                case "at_least":
+                case "wdlinespaceatleast":
+                    return "at_least";
+                default:
+                    return rule ?? "single";
             }
         }
 

@@ -82,13 +82,41 @@ namespace WordAddIn1
                 font.UnderlineColor = ConvertRgbToWdColor(value?.ToString() ?? "");
                 break;
             case "diacritic_color":
-                font.DiacriticColor = ConvertRgbToWdColor(value?.ToString() ?? "");
+                WdColor diacritic = ConvertRgbToWdColor(value?.ToString() ?? "");
+                try
+                {
+                    font.DiacriticColor = diacritic;
+                    int actual = (int)font.DiacriticColor & 0xFFFFFF;
+                    if (actual != ((int)diacritic & 0xFFFFFF))
+                    {
+                        NoteFormatWarning("diacritic_color", "注音颜色没有留在这段文字上。");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    NoteFormatWarning("diacritic_color", "注音颜色没有留在这段文字上。" + ex.Message);
+                }
+
                 break;
             case "color_index":
                 font.ColorIndex = ParseEnum<WdColorIndex>(value);
                 break;
             case "color_index_bi":
-                font.ColorIndexBi = ParseEnum<WdColorIndex>(value);
+                WdColorIndex colorIndexBi = ParseEnum<WdColorIndex>(value);
+                try
+                {
+                    font.ColorIndexBi = colorIndexBi;
+                    WdColorIndex readBack = font.ColorIndexBi;
+                    if (readBack != colorIndexBi)
+                    {
+                        NoteFormatWarning("color_index_bi", "这段文字没有复杂文种，Word 不单独保留 color_index_bi。");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    NoteFormatWarning("color_index_bi", "这段文字没有复杂文种，Word 不单独保留 color_index_bi。" + ex.Message);
+                }
+
                 break;
             case "text_color":
                 WriteColorFormat(font.TextColor, value);

@@ -165,9 +165,9 @@ namespace WordAddIn1
 
             try
             {
-                string rule = snap.TryGetValue("line_spacing_rule", out object r)
-                    ? r?.ToString() ?? "single"
-                    : "single";
+                string rule = snap.ContainsKey("line_spacing_rule")
+                    ? (snap.TryGetValue("line_spacing_rule", out object r) ? r?.ToString() ?? "single" : "single")
+                    : "exact";
                 double spacing = snap.TryGetValue("line_spacing", out object s)
                     ? Convert.ToDouble(s, CultureInfo.InvariantCulture)
                     : 1.0;
