@@ -493,7 +493,33 @@ namespace WordAddIn1
 
             try
             {
-                field.Update();
+                try
+                {
+                    string head = "";
+                    try
+                    {
+                        head = field.Result.Paragraphs[1].Range.Text ?? "";
+                        head = head.Replace("\r", " ").Replace("\n", " ");
+                        if (head.Length > 40)
+                        {
+                            head = head.Substring(0, 40);
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        head = "read-failed";
+                    }
+
+                    TocFormatTrace.Write("field-update head=[" + head + "]");
+                    field.Update();
+                    TocFormatTrace.Write("field-update ok");
+                }
+                catch (Exception ex)
+                {
+                    TocFormatTrace.Write("field-update failed " + ex.Message);
+                    throw;
+                }
+
                 RebuildTableOfContents(field);
             }
             finally
