@@ -265,6 +265,24 @@ namespace WordAddIn1
                 break;
             case "no_proofing":
                 range.NoProofing = TriInt(value);
+                if (ReadBool(value))
+                {
+                    int proof = 0;
+                    try
+                    {
+                        proof = range.NoProofing;
+                    }
+                    catch (Exception)
+                    {
+                        proof = 0;
+                    }
+
+                    if (proof != 1 && proof != -1)
+                    {
+                        throw new InvalidOperationException("no_proofing 没有留在这段文字上。");
+                    }
+                }
+
                 break;
             case "fit_text_width":
                 range.FitTextWidth = ParseFloat(value);

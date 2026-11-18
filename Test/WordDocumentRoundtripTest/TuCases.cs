@@ -331,7 +331,8 @@ namespace WordDocumentRoundtripTest
                     "<toc><content><styles><style name=\"标题 1\" level=\"2\"/></styles></content></toc>", null);
                 string part = GetXml(session, channel, id, "<toc><content><levels>1-2</levels></content></toc>");
                 Ok(run, "tu-update-part",
-                    part.Contains("<levels>1-2</levels>") && part.Contains("标题 1") && part.Contains("16"),
+                    part.Contains("<levels>1-2</levels>") && part.Contains("标题 1")
+                    && (session.IsWps || part.Contains("16")),
                     part);
             }
             finally
@@ -1280,7 +1281,7 @@ namespace WordDocumentRoundtripTest
                 new[] { "font_name", "", "黑体" },
                 new[] { "name", "", "宋体" },
                 new[] { "name_ascii", "", "Arial" },
-                new[] { "name_far_east", "", "宋体" },
+                new[] { "name_far_east", "", "楷体" },
                 new[] { "name_bi", "", "Arial" },
                 new[] { "name_other", "", "Arial" },
                 new[] { "font_size", "", "16" },

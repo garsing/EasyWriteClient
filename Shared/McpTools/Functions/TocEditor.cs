@@ -268,6 +268,12 @@ namespace WordAddIn1
             }
 
             AddBookmarkAtCode(doc, hit.Field, hit.Id);
+            string blocked = FormatBlocked(warnings);
+            if (blocked != null)
+            {
+                return Fail(blocked);
+            }
+
             return WithWarnings(Ok(hit.Id, "已更新目录 " + hit.Id, TocXml.Write(current, hit.Id, includeDefaults: false), LinesOf(doc, hit.Field, false)), warnings);
         }
 
@@ -779,9 +785,24 @@ namespace WordAddIn1
         {
             var format = new TocLevelFormat();
             Word.Style style = paragraph.get_Style() as Word.Style;
-            Word.Font font = paragraph.Range.Font;
+            Word.Range text = paragraph.Range;
+            try
+            {
+                Word.Range trimmed = paragraph.Range.Duplicate;
+                if (trimmed.End > trimmed.Start)
+                {
+                    trimmed.MoveEnd(Word.WdUnits.wdCharacter, -1);
+                }
+
+                text = trimmed;
+            }
+            catch (Exception)
+            {
+            }
+
+            Word.Font font = text.Font;
             Word.Font styleFont = style == null ? null : style.Font;
-            DiffFont(format.Font, font, styleFont);
+            DiffFont(format.Font, paragraph.Range, font, styleFont);
             ReadFontDetail(format.Font, paragraph.Range, font, styleFont);
             Word.ParagraphFormat para = paragraph.Range.ParagraphFormat;
             Word.ParagraphFormat stylePara = style == null ? null : style.ParagraphFormat;
@@ -819,10 +840,11 @@ namespace WordAddIn1
                 return;
             }
 
-            DiffText(target, "name", SafeString(() => font.Name), style == null ? null : SafeString(() => style.Name));
-            DiffText(target, "name_ascii", SafeString(() => font.NameAscii), style == null ? null : SafeString(() => style.NameAscii));
-            DiffText(target, "name_bi", SafeString(() => font.NameBi), style == null ? null : SafeString(() => style.NameBi));
-            DiffText(target, "name_other", SafeString(() => font.NameOther), style == null ? null : SafeString(() => style.NameOther));
+            DiffText(target, "name", FontName(range, font, style, item => item.Name), style == null ? null : SafeString(() => style.Name));
+            DiffText(target, "name_ascii", FontName(range, font, style, item => item.NameAscii), style == null ? null : SafeString(() => style.NameAscii));
+            DiffText(target, "name_far_east", FontName(range, font, style, item => item.NameFarEast), style == null ? null : SafeString(() => style.NameFarEast));
+            DiffText(target, "name_bi", FontName(range, font, style, item => item.NameBi), style == null ? null : SafeString(() => style.NameBi));
+            DiffText(target, "name_other", FontName(range, font, style, item => item.NameOther), style == null ? null : SafeString(() => style.NameOther));
             DiffFloat(target, "size_bi", SafeFloat(() => font.SizeBi), style == null ? float.NaN : SafeFloat(() => style.SizeBi));
             DiffColor(target, "font_color", SafeInt(() => (int)font.Color), style == null ? 9999999 : SafeInt(() => (int)style.Color));
             DiffText(target, "color_index", EnumName(() => font.ColorIndex), style == null ? null : EnumName(() => style.ColorIndex));
@@ -879,29 +901,29 @@ namespace WordAddIn1
             bool reflectionNone = string.IsNullOrEmpty(reflectionNow)
                 || reflectionNow.IndexOf("None", StringComparison.OrdinalIgnoreCase) >= 0
                 || reflectionNow.StartsWith("read-failed", StringComparison.Ordinal);
-            if (!reflectionNone)
+            bool reflectionSizeSet = !float.IsNaN(reflectionSize) && reflectionSize > 0f && reflectionSize <= 100f;
+            if (!reflectionNone || reflectionSizeSet)
             {
-                target["reflection"] = new Dictionary<string, object> { ["type"] = reflectionNow };
-            }
-            else if (!float.IsNaN(reflectionSize) && reflectionSize > 0f && reflectionSize <= 100f)
-            {
-                target["reflection"] = new Dictionary<string, object>
+                var reflection = new Dictionary<string, object>();
+                reflection["type"] = reflectionNone ? "msoReflectionTypeNone" : reflectionNow;
+                if (reflectionSizeSet)
                 {
-                    ["type"] = "msoReflectionTypeNone",
-                    ["size"] = reflectionSize
-                };
+                    reflection["size"] = reflectionSize;
+                }
+
+                target["reflection"] = reflection;
             }
             ReadEffectNumber(target, "text_shadow", SafeFloat(() => font.TextShadow.OffsetX), "offset_x");
         }
 
-        private static void DiffFont(Dictionary<string, object> target, Word.Font font, Word.Font style)
+        private static void DiffFont(Dictionary<string, object> target, Word.Range range, Word.Font font, Word.Font style)
         {
             if (font == null)
             {
                 return;
             }
 
-            string name = SafeString(() => font.NameFarEast);
+            string name = FontName(range, font, style, item => item.NameFarEast);
             string styleName = style == null ? null : SafeString(() => style.NameFarEast);
             if (!string.IsNullOrEmpty(name) && !string.Equals(name, styleName, StringComparison.Ordinal))
             {
@@ -1741,6 +1763,63 @@ namespace WordAddIn1
             }
 
             TrySetParagraphStyle(paragraph, "目录标题", "TOC 标题", "TOC Heading");
+            if (IsTitleStyle(paragraph))
+            {
+                return;
+            }
+
+            Word.Style created = EnsureTocHeadingStyle(paragraph.Range.Document);
+            if (created == null)
+            {
+                return;
+            }
+
+            try
+            {
+                object style = created;
+                paragraph.set_Style(ref style);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static Word.Style EnsureTocHeadingStyle(Word.Document doc)
+        {
+            if (doc == null)
+            {
+                return null;
+            }
+
+            foreach (string name in new[] { "目录标题", "TOC 标题", "TOC Heading" })
+            {
+                try
+                {
+                    return doc.Styles[name];
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            try
+            {
+                object type = Word.WdStyleType.wdStyleTypeParagraph;
+                Word.Style style = doc.Styles.Add("目录标题", ref type);
+                try
+                {
+                    style.ParagraphFormat.OutlineLevel = Word.WdOutlineLevel.wdOutlineLevelBodyText;
+                }
+                catch (Exception)
+                {
+                }
+
+                return style;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
 
         private static bool IsTitleStyle(Word.Paragraph paragraph)
@@ -2052,6 +2131,79 @@ namespace WordAddIn1
                 && name != "9999999";
         }
 
+        private static string ReadTrimmedFont(Word.Range range, Func<Word.Font, string> read)
+        {
+            if (range == null)
+            {
+                return "";
+            }
+
+            try
+            {
+                Word.Range trimmed = range.Duplicate;
+                if (trimmed.End > trimmed.Start)
+                {
+                    trimmed.MoveEnd(Word.WdUnits.wdCharacter, -1);
+                }
+
+                return SafeString(() => read(trimmed.Font));
+            }
+            catch (Exception)
+            {
+                return "";
+            }
+        }
+
+        private static string FontName(Word.Range range, Word.Font font, Word.Font style, Func<Word.Font, string> read)
+        {
+            string styleValue = style == null ? "" : SafeString(() => read(style));
+            string trimmed = ReadTrimmedFont(range, read);
+            if (Differs(trimmed, styleValue))
+            {
+                return trimmed;
+            }
+
+            string value = font == null ? "" : SafeString(() => read(font));
+            if (Differs(value, styleValue))
+            {
+                return value;
+            }
+
+            if (range == null)
+            {
+                return "";
+            }
+
+            try
+            {
+                foreach (Word.Range word in range.Words)
+                {
+                    string text = word.Text ?? "";
+                    if (text.Trim('\r', '\a', '\t', ' ').Length == 0)
+                    {
+                        continue;
+                    }
+
+                    string wordValue = SafeString(() => read(word.Font));
+                    if (Differs(wordValue, styleValue))
+                    {
+                        return wordValue;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return "";
+        }
+
+        private static bool Differs(string value, string styleValue)
+        {
+            return !string.IsNullOrEmpty(value)
+                && !string.Equals(value, styleValue, StringComparison.Ordinal);
+        }
+
         private static void DiffText(Dictionary<string, object> target, string key, string value, string style)
         {
             if (string.IsNullOrEmpty(value) || value.IndexOf("Undefined", StringComparison.Ordinal) >= 0 || value == "9999999")
@@ -2228,7 +2380,8 @@ namespace WordAddIn1
         {
             string mine = EnumName(() => font.Borders.OutsideLineStyle);
             string other = style == null ? null : EnumName(() => style.Borders.OutsideLineStyle);
-            if (string.IsNullOrEmpty(mine) || mine.IndexOf("None", StringComparison.Ordinal) >= 0 || string.Equals(mine, other, StringComparison.Ordinal))
+            if (string.IsNullOrEmpty(mine) || mine == "9999999" || mine.IndexOf("Undefined", StringComparison.Ordinal) >= 0
+                || mine.IndexOf("None", StringComparison.Ordinal) >= 0 || string.Equals(mine, other, StringComparison.Ordinal))
             {
                 return;
             }
@@ -2302,6 +2455,29 @@ namespace WordAddIn1
             {
                 return 9999999;
             }
+        }
+
+        private static string FormatBlocked(List<Dictionary<string, object>> warnings)
+        {
+            if (warnings == null)
+            {
+                return null;
+            }
+
+            foreach (Dictionary<string, object> warning in warnings)
+            {
+                warning.TryGetValue("key", out object key);
+                if (!string.Equals(key as string, "no_proofing", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                warning.TryGetValue("message", out object message);
+                string text = message as string;
+                return string.IsNullOrEmpty(text) ? "no_proofing 没有留在这段文字上。" : text;
+            }
+
+            return null;
         }
 
         private static ToolResult WithWarnings(ToolResult result, List<Dictionary<string, object>> warnings)
@@ -2653,26 +2829,44 @@ namespace WordAddIn1
             "text_color"
         };
 
+        private static readonly string[] CoupledFontNames =
+        {
+            "font_name",
+            "name",
+            "name_ascii",
+            "name_far_east",
+            "name_bi",
+            "name_other"
+        };
+
         private static void DropCoupledColorsMissingFromPatch(
             Dictionary<string, object> current,
             Dictionary<string, object> patch)
         {
-            bool patchSetsColor = false;
-            foreach (string name in CoupledTextColors)
+            DropCoupledKeysMissingFromPatch(current, patch, CoupledTextColors);
+        }
+
+        private static void DropCoupledKeysMissingFromPatch(
+            Dictionary<string, object> current,
+            Dictionary<string, object> patch,
+            string[] keys)
+        {
+            bool patchSets = false;
+            foreach (string name in keys)
             {
                 if (patch.ContainsKey(name))
                 {
-                    patchSetsColor = true;
+                    patchSets = true;
                     break;
                 }
             }
 
-            if (!patchSetsColor)
+            if (!patchSets)
             {
                 return;
             }
 
-            foreach (string name in CoupledTextColors)
+            foreach (string name in keys)
             {
                 if (!patch.ContainsKey(name))
                 {
@@ -2815,6 +3009,7 @@ namespace WordAddIn1
                     }
 
                     DropCoupledColorsMissingFromPatch(mine.Font, pair.Value.Font);
+                    DropCoupledKeysMissingFromPatch(mine.Font, pair.Value.Font, CoupledFontNames);
 
                     foreach (KeyValuePair<string, object> key in pair.Value.Paragraph)
                     {
