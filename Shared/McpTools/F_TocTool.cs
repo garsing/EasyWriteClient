@@ -67,7 +67,6 @@ namespace WordAddIn1
                 }
                 catch (Exception ex)
                 {
-                    TocFormatTrace.Write("tool-failed " + ex);
                     System.Diagnostics.Debug.WriteLine("[F_toc] 执行失败: " + ex.Message);
                     return new ToolResult { Success = false, Error = "执行失败: " + ex.Message };
                 }

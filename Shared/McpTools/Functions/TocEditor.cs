@@ -493,33 +493,7 @@ namespace WordAddIn1
 
             try
             {
-                try
-                {
-                    string head = "";
-                    try
-                    {
-                        head = field.Result.Paragraphs[1].Range.Text ?? "";
-                        head = head.Replace("\r", " ").Replace("\n", " ");
-                        if (head.Length > 40)
-                        {
-                            head = head.Substring(0, 40);
-                        }
-                    }
-                    catch (Exception)
-                    {
-                        head = "read-failed";
-                    }
-
-                    TocFormatTrace.Write("field-update head=[" + head + "]");
-                    field.Update();
-                    TocFormatTrace.Write("field-update ok");
-                }
-                catch (Exception ex)
-                {
-                    TocFormatTrace.Write("field-update failed " + ex.Message);
-                    throw;
-                }
-
+                field.Update();
                 RebuildTableOfContents(field);
             }
             finally
@@ -616,6 +590,11 @@ namespace WordAddIn1
 
             foreach (Word.Paragraph paragraph in field.Result.Paragraphs)
             {
+                if (SkipFieldCodeParagraph(field, paragraph))
+                {
+                    continue;
+                }
+
                 string level = LevelKey(StyleName(paragraph));
                 if (level == null || !spec.LevelsFormat.TryGetValue(level, out TocLevelFormat format))
                 {
@@ -630,6 +609,29 @@ namespace WordAddIn1
             }
 
             return warnings;
+        }
+
+        private static bool SkipFieldCodeParagraph(Word.Field field, Word.Paragraph paragraph)
+        {
+            if (paragraph == null || paragraph.Range == null)
+            {
+                return true;
+            }
+
+            try
+            {
+                string text = paragraph.Range.Text ?? "";
+                if (text.IndexOf("TOC", StringComparison.OrdinalIgnoreCase) >= 0
+                    && text.IndexOf("\\o", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return false;
         }
 
         private static void EnsureLeaderTabs(Word.Document doc, Word.Field field, TocSpec spec)
@@ -1491,6 +1493,43 @@ namespace WordAddIn1
         }
 
         private static string AddBookmarkAtCode(Word.Document doc, Word.Field field, string id)
+        {
+            try
+            {
+                return StampBookmark(doc, field, id);
+            }
+            catch (Exception ex)
+            {
+                TocFormatTrace.Write("bookmark retry " + ex.Message);
+                Word.Field fresh = FindField(doc, id);
+                if (fresh == null || ReferenceEquals(fresh, field))
+                {
+                    fresh = FirstTocField(doc);
+                }
+
+                if (fresh == null || ReferenceEquals(fresh, field))
+                {
+                    return id;
+                }
+
+                return StampBookmark(doc, fresh, id);
+            }
+        }
+
+        private static Word.Field FirstTocField(Word.Document doc)
+        {
+            foreach (Word.Field candidate in doc.Fields)
+            {
+                if (IsTocField(candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
+        }
+
+        private static string StampBookmark(Word.Document doc, Word.Field field, string id)
         {
             Word.Range point = field.Code.Duplicate;
             point.Collapse(Word.WdCollapseDirection.wdCollapseStart);
