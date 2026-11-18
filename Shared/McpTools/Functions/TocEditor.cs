@@ -2536,6 +2536,42 @@ namespace WordAddIn1
             return true;
         }
 
+        private static readonly string[] CoupledTextColors =
+        {
+            "font_color",
+            "color_index",
+            "color_index_bi",
+            "text_color"
+        };
+
+        private static void DropCoupledColorsMissingFromPatch(
+            Dictionary<string, object> current,
+            Dictionary<string, object> patch)
+        {
+            bool patchSetsColor = false;
+            foreach (string name in CoupledTextColors)
+            {
+                if (patch.ContainsKey(name))
+                {
+                    patchSetsColor = true;
+                    break;
+                }
+            }
+
+            if (!patchSetsColor)
+            {
+                return;
+            }
+
+            foreach (string name in CoupledTextColors)
+            {
+                if (!patch.ContainsKey(name))
+                {
+                    current.Remove(name);
+                }
+            }
+        }
+
         public static bool Merge(TocSpec current, TocSpec patch, out string error)
         {
             error = null;
@@ -2668,6 +2704,8 @@ namespace WordAddIn1
                     {
                         mine.Font[key.Key] = key.Value;
                     }
+
+                    DropCoupledColorsMissingFromPatch(mine.Font, pair.Value.Font);
 
                     foreach (KeyValuePair<string, object> key in pair.Value.Paragraph)
                     {

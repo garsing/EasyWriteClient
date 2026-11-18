@@ -872,24 +872,6 @@ namespace WordAddIn1
                 reflectionBeforeKey = reflectionNow;
             }
 
-            if (format.ContainsKey("color_index_bi"))
-            {
-                try
-                {
-                    Word.WdColorIndex wanted = ParseEnum<Word.WdColorIndex>(format["color_index_bi"]);
-                    range.Font.ColorIndexBi = wanted;
-                    int actual = (int)range.Document.Range(range.Start, range.End).Font.ColorIndexBi;
-                    if (actual != (int)wanted)
-                    {
-                        NoteFormatWarning("color_index_bi", "这段文字没有复杂文种，Word 不单独保留 color_index_bi。");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    NoteFormatWarning("color_index_bi", "这段文字没有复杂文种，Word 不单独保留 color_index_bi。" + ex.Message);
-                }
-            }
-
             if (whole != null && format.ContainsKey("highlight_color_index"))
             {
                 try
