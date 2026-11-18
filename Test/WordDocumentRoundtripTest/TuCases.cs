@@ -1290,7 +1290,7 @@ namespace WordDocumentRoundtripTest
                 new[] { "color_index_bi", "", "wdBlue" },
                 new[] { "text_color", "<text_color rgb=\"#FF0000\"/>", "FF0000" },
                 new[] { "underline_color", "", "#0000FF" },
-                new[] { "diacritic_color", "", "#00FF00" },
+                new[] { "diacritic_color", "", "#FF00FF" },
                 new[] { "is_bold", "", "true" },
                 new[] { "bold_bi", "", "true" },
                 new[] { "is_italic", "", "true" },

@@ -40,6 +40,13 @@ namespace WordAddIn1
             return list;
         }
 
+        private static int ReadFreshDiacritic(Range range)
+        {
+            Document doc = range.Document;
+            Range fresh = doc.Range(range.Start, range.End);
+            return (int)fresh.Font.DiacriticColor & 0xFFFFFF;
+        }
+
         private static void ApplyCharFormatKey(Range range, string key, object value)
         {
             Font font = range.Font;
@@ -85,8 +92,29 @@ namespace WordAddIn1
                 WdColor diacritic = ConvertRgbToWdColor(value?.ToString() ?? "");
                 try
                 {
+                    Style paragraphStyle = null;
+                    int styleBefore = int.MinValue;
+                    try
+                    {
+                        paragraphStyle = range.Paragraphs[1].get_Style() as Style;
+                        if (paragraphStyle != null)
+                        {
+                            styleBefore = (int)paragraphStyle.Font.DiacriticColor;
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        paragraphStyle = null;
+                    }
+
                     font.DiacriticColor = diacritic;
-                    int actual = (int)font.DiacriticColor & 0xFFFFFF;
+                    if (paragraphStyle != null && styleBefore != int.MinValue
+                        && (int)paragraphStyle.Font.DiacriticColor != styleBefore)
+                    {
+                        paragraphStyle.Font.DiacriticColor = (WdColor)styleBefore;
+                    }
+
+                    int actual = ReadFreshDiacritic(range);
                     if (actual != ((int)diacritic & 0xFFFFFF))
                     {
                         NoteFormatWarning("diacritic_color", "注音颜色没有留在这段文字上。");

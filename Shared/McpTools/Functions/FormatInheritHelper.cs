@@ -825,12 +825,12 @@ namespace WordAddIn1
         private static void ApplyCharFormat(Word.Range range, Dictionary<string, object> format)
         {
             // 含段落标记时，后面的 Font.Bold 会把已打上的字符底纹清掉，或把底纹收成段落底纹。
+            Word.Range whole = range;
             range = TrimTrailingMarks(range);
             if (range == null || format == null)
             {
                 return;
             }
-
             bool watchReflection = format.ContainsKey("reflection");
             string reflectionBeforeKey = null;
             foreach (string key in CharFormatCatalog.ApplyOrder)
@@ -870,6 +870,41 @@ namespace WordAddIn1
                 }
 
                 reflectionBeforeKey = reflectionNow;
+            }
+
+            if (format.ContainsKey("color_index_bi"))
+            {
+                try
+                {
+                    Word.WdColorIndex wanted = ParseEnum<Word.WdColorIndex>(format["color_index_bi"]);
+                    range.Font.ColorIndexBi = wanted;
+                    int actual = (int)range.Document.Range(range.Start, range.End).Font.ColorIndexBi;
+                    if (actual != (int)wanted)
+                    {
+                        NoteFormatWarning("color_index_bi", "这段文字没有复杂文种，Word 不单独保留 color_index_bi。");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    NoteFormatWarning("color_index_bi", "这段文字没有复杂文种，Word 不单独保留 color_index_bi。" + ex.Message);
+                }
+            }
+
+            if (whole != null && format.ContainsKey("highlight_color_index"))
+            {
+                try
+                {
+                    Word.WdColorIndex highlight = ParseEnum<Word.WdColorIndex>(format["highlight_color_index"]);
+                    whole.HighlightColorIndex = highlight;
+                    foreach (Word.Range word in whole.Words)
+                    {
+                        word.HighlightColorIndex = highlight;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    NoteFormatWarning("highlight_color_index", ex.Message);
+                }
             }
         }
 

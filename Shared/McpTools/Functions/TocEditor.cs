@@ -232,6 +232,8 @@ namespace WordAddIn1
             {
                 hit.Field.Code.Text = " " + TocXml.BuildInstruction(current) + " ";
                 UpdateField(hit.Field);
+                hit.Field = RefreshField(doc, hit.Field, hit.Id);
+                AddBookmarkAtCode(doc, hit.Field, hit.Id);
             }
 
             if (patch.HasTitle)
@@ -479,6 +481,7 @@ namespace WordAddIn1
             try
             {
                 field.Update();
+                RebuildTableOfContents(field);
             }
             finally
             {
@@ -492,6 +495,52 @@ namespace WordAddIn1
                     {
                     }
                 }
+            }
+        }
+
+        private static void RebuildTableOfContents(Word.Field field)
+        {
+            try
+            {
+                Word.Document doc = field.Code.Document;
+                if (doc == null || doc.TablesOfContents.Count < 1)
+                {
+                    return;
+                }
+
+                int codeStart = field.Code.Start;
+                int resultStart = field.Result.Start;
+                int resultEnd = field.Result.End;
+                Word.TableOfContents matched = null;
+                foreach (Word.TableOfContents toc in doc.TablesOfContents)
+                {
+                    Word.Range range = toc.Range;
+                    if (range == null)
+                    {
+                        continue;
+                    }
+
+                    bool coversCode = codeStart >= range.Start && codeStart <= range.End;
+                    bool coversResult = resultStart <= range.End && resultEnd >= range.Start;
+                    if (coversCode || coversResult)
+                    {
+                        matched = toc;
+                        break;
+                    }
+                }
+
+                if (matched == null && doc.TablesOfContents.Count == 1)
+                {
+                    matched = doc.TablesOfContents[1];
+                }
+
+                if (matched != null)
+                {
+                    matched.Update();
+                }
+            }
+            catch (Exception)
+            {
             }
         }
 
@@ -802,7 +851,7 @@ namespace WordAddIn1
             DiffText(target, "number_spacing", EnumName(() => font.NumberSpacing), style == null ? null : EnumName(() => style.NumberSpacing));
             DiffText(target, "stylistic_set", EnumName(() => font.StylisticSet), style == null ? null : EnumName(() => style.StylisticSet));
             DiffTri(target, "contextual_alternates", SafeInt(() => font.ContextualAlternates), style == null ? 9999999 : SafeInt(() => style.ContextualAlternates));
-            DiffText(target, "highlight_color_index", EnumName(() => range.HighlightColorIndex), null);
+            DiffText(target, "highlight_color_index", HighlightName(range), null);
             DiffText(target, "language_id", EnumName(() => range.LanguageID), null);
             DiffText(target, "language_id_far_east", EnumName(() => range.LanguageIDFarEast), null);
             int proof = SafeInt(() => range.NoProofing);
@@ -1316,6 +1365,49 @@ namespace WordAddIn1
             }
         }
 
+        private static Word.Field RefreshField(Word.Document doc, Word.Field field, string id)
+        {
+            Word.Field found = FindField(doc, id);
+            if (found != null)
+            {
+                return found;
+            }
+
+            int hint = -1;
+            try
+            {
+                hint = field == null ? -1 : field.Code.Start;
+            }
+            catch (Exception)
+            {
+                hint = -1;
+            }
+
+            Word.Field only = null;
+            int count = 0;
+            foreach (Word.Field candidate in doc.Fields)
+            {
+                if (!IsTocField(candidate))
+                {
+                    continue;
+                }
+
+                count++;
+                only = candidate;
+                if (hint >= 0 && Math.Abs(candidate.Code.Start - hint) <= 5)
+                {
+                    return candidate;
+                }
+            }
+
+            if (count == 1)
+            {
+                return only;
+            }
+
+            return field;
+        }
+
         private static Word.Field FindField(Word.Document doc, string id)
         {
             Word.Bookmark mark = null;
@@ -1808,6 +1900,47 @@ namespace WordAddIn1
             }
 
             return "none";
+        }
+
+        private static string HighlightName(Word.Range range)
+        {
+            string whole = EnumName(() => range.HighlightColorIndex);
+            if (HighlightDefined(whole) && whole.IndexOf("NoHighlight", StringComparison.Ordinal) < 0)
+            {
+                return whole;
+            }
+
+            string fallback = HighlightDefined(whole) ? whole : null;
+            try
+            {
+                foreach (Word.Range word in range.Words)
+                {
+                    string name = EnumName(() => word.HighlightColorIndex);
+                    if (!HighlightDefined(name))
+                    {
+                        continue;
+                    }
+
+                    if (name.IndexOf("NoHighlight", StringComparison.Ordinal) < 0)
+                    {
+                        return name;
+                    }
+
+                    fallback = fallback ?? name;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return fallback;
+        }
+
+        private static bool HighlightDefined(string name)
+        {
+            return !string.IsNullOrEmpty(name)
+                && name.IndexOf("Undefined", StringComparison.Ordinal) < 0
+                && name != "9999999";
         }
 
         private static void DiffText(Dictionary<string, object> target, string key, string value, string style)
@@ -2539,6 +2672,12 @@ namespace WordAddIn1
                     foreach (KeyValuePair<string, object> key in pair.Value.Paragraph)
                     {
                         mine.Paragraph[key.Key] = key.Value;
+                    }
+
+                    if (pair.Value.Paragraph.ContainsKey("line_spacing")
+                        && !pair.Value.Paragraph.ContainsKey("line_spacing_rule"))
+                    {
+                        mine.Paragraph.Remove("line_spacing_rule");
                     }
                 }
             }
