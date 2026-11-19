@@ -107,6 +107,11 @@ namespace WordAddIn1
                 FillWordClassicBools(trimmed, runs);
             }
 
+            foreach (Dictionary<string, object> format in RunFormats(runs))
+            {
+                CharFormatCatalog.OmitReadDefaults(format);
+            }
+
             return true;
         }
 
@@ -164,7 +169,6 @@ namespace WordAddIn1
                     format["engrave"] = true;
                 }
 
-                CharFormatCatalog.OmitReadDefaults(format);
             }
         }
 
@@ -292,7 +296,6 @@ namespace WordAddIn1
                     format["stylistic_set"] = stylisticName;
                 }
 
-                CharFormatCatalog.OmitReadDefaults(format);
             }
         }
 

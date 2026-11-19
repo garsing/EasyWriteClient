@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using WordAddIn1.DocumentMapping.CodeResolve;
 
 namespace WordAddIn1
 {
@@ -651,6 +652,289 @@ namespace WordAddIn1
             }
 
             return null;
+        }
+
+        public sealed class StyledSpan
+        {
+            public string Text;
+            public int Start;
+            public int End;
+            public string Code;
+            public string TextValue;
+            public bool HasIndex;
+            public int TextIndex;
+            public bool ParagraphLink;
+        }
+
+        public static string StripCodeMarks(string display, out int[] origin)
+        {
+            var chars = new StringBuilder();
+            var map = new List<int>();
+            int i = 0;
+            string source = display ?? "";
+            while (i < source.Length)
+            {
+                int mark = CodeMarkLength(source, i);
+                if (mark > 0)
+                {
+                    i += mark;
+                    continue;
+                }
+
+                chars.Append(source[i]);
+                map.Add(i);
+                i++;
+            }
+
+            origin = map.ToArray();
+            return chars.ToString();
+        }
+
+        public static List<StyledSpan> CollectStyled(
+            string display,
+            XElement body,
+            IList<StructureStyleRecord> styles,
+            out string error)
+        {
+            var spans = new List<StyledSpan>();
+            error = null;
+            if (string.IsNullOrEmpty(display))
+            {
+                error = "没有句子 display。请先 F_get_document_content。";
+                return spans;
+            }
+
+            if (body == null)
+            {
+                error = "OOXML 没有正文。";
+                return spans;
+            }
+
+            var byId = Index(styles);
+            StructureStyleRecord bodyStyle = null;
+            if (styles != null)
+            {
+                foreach (StructureStyleRecord row in styles)
+                {
+                    if (row.Structure == "body")
+                    {
+                        bodyStyle = row;
+                        break;
+                    }
+                }
+            }
+
+            BuildStory(body, byId, bodyStyle, new List<bool>(), out List<Piece> pieces);
+            string stripped = StripCodeMarks(display, out int[] origin);
+            List<SentenceSlot> slots = SentenceSlots(display, new int[0]);
+            foreach (Piece piece in pieces)
+            {
+                string shown = TrimMark(piece.Text);
+                if (shown.Length == 0 || piece.Ordinal < 1 || piece.Style == null)
+                {
+                    continue;
+                }
+
+                if (piece.Style.Structure == "body" && piece.Scope == "paragraph")
+                {
+                    continue;
+                }
+
+                int at = NthIndex(stripped, shown, piece.Ordinal);
+                if (at < 0 || at >= origin.Length)
+                {
+                    continue;
+                }
+
+                SentenceSlot slot = SlotAt(slots, origin[at]);
+                string code = slot == null ? null : slot.Code;
+                string sentence = "";
+                int sentStart = at;
+                int sentEnd = stripped.Length;
+                int paraIndex = 1;
+                if (slot != null)
+                {
+                    sentStart = FirstAtOrAfter(origin, slot.Start);
+                    sentEnd = FirstAtOrAfter(origin, slot.End);
+                    if (sentStart < 0)
+                    {
+                        sentStart = at;
+                    }
+
+                    if (sentEnd < sentStart)
+                    {
+                        sentEnd = stripped.Length;
+                    }
+
+                    sentence = sentEnd > sentStart
+                        ? stripped.Substring(sentStart, sentEnd - sentStart)
+                        : "";
+                }
+                else if (!TrySentenceOnParagraphDisplay(display, origin[at], shown, out code, out sentence, out paraIndex))
+                {
+                    continue;
+                }
+
+                bool whole = piece.Scope == "paragraph" && TrimMark(sentence) == shown;
+                var span = new StyledSpan
+                {
+                    Text = shown,
+                    Start = at,
+                    End = at + shown.Length,
+                    Code = code,
+                    ParagraphLink = piece.Scope == "paragraph"
+                };
+                if (!whole)
+                {
+                    span.TextValue = shown;
+                    int index = slot != null
+                        ? OccurrenceIn(stripped, sentStart, sentEnd, shown, at)
+                        : paraIndex;
+                    if (index > 1)
+                    {
+                        span.HasIndex = true;
+                        span.TextIndex = index;
+                    }
+                }
+
+                spans.Add(span);
+            }
+
+            return spans;
+        }
+
+        private static readonly Regex ParagraphOpen = new Regex(
+            @"\[(P_[0-9A-Za-z_]+)(?:-start| start)[^\]]*\]",
+            RegexOptions.Compiled);
+
+        private static bool TrySentenceOnParagraphDisplay(
+            string display,
+            int raw,
+            string shown,
+            out string code,
+            out string sentence,
+            out int index)
+        {
+            code = null;
+            sentence = "";
+            index = 1;
+            Match open = null;
+            foreach (Match match in ParagraphOpen.Matches(display ?? ""))
+            {
+                if (match.Index > raw)
+                {
+                    break;
+                }
+
+                open = match;
+            }
+
+            if (open == null)
+            {
+                return false;
+            }
+
+            string paragraphCode = open.Groups[1].Value;
+            int body = open.Index + open.Length;
+            int close = MarkerEnd(display, paragraphCode, body);
+            if (close < 0 || raw < body || raw >= close)
+            {
+                return false;
+            }
+
+            IReadOnlyList<string> sentences = ParagraphCodeResolver.ExpandParagraphToSentenceCodes(paragraphCode);
+            if (sentences.Count == 0)
+            {
+                return false;
+            }
+
+            int offset = raw - body;
+            string between = display.Substring(body, Math.Min(close - body, offset + 1));
+            if (between.StartsWith("[in_table=", StringComparison.Ordinal))
+            {
+                int tag = between.IndexOf(']');
+                if (tag >= 0)
+                {
+                    offset -= tag + 1;
+                }
+            }
+
+            if (offset < 0)
+            {
+                return false;
+            }
+
+            int cursor = 0;
+            foreach (string one in sentences)
+            {
+                string stored = DocumentState.GetSentenceContent(one) ?? "";
+                bool inside = offset < cursor + stored.Length || one == sentences[sentences.Count - 1];
+                if (!inside)
+                {
+                    cursor += stored.Length;
+                    continue;
+                }
+
+                if (stored.Length == 0)
+                {
+                    return false;
+                }
+
+                code = one;
+                sentence = stored;
+                int local = offset - cursor;
+                int found = local >= 0 && local <= stored.Length ? OccurrenceAt(stored, shown, local) : 0;
+                index = found > 0 ? found : 1;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static int MarkerEnd(string display, string paragraphCode, int from)
+        {
+            int spaced = display.IndexOf("[" + paragraphCode + " end]", from, StringComparison.Ordinal);
+            int hyphen = display.IndexOf("[" + paragraphCode + "-end]", from, StringComparison.Ordinal);
+            if (spaced < 0)
+            {
+                return hyphen;
+            }
+
+            if (hyphen < 0)
+            {
+                return spaced;
+            }
+
+            return Math.Min(spaced, hyphen);
+        }
+
+        private static int CodeMarkLength(string display, int i)
+        {
+            if (i + 3 >= display.Length || display[i] != '[')
+            {
+                return 0;
+            }
+
+            if ((display[i + 1] != 'S' && display[i + 1] != 'P') || display[i + 2] != '_')
+            {
+                return 0;
+            }
+
+            int end = display.IndexOf(']', i);
+            return end < 0 ? 0 : end - i + 1;
+        }
+
+        private static int FirstAtOrAfter(int[] origin, int raw)
+        {
+            for (int i = 0; i < origin.Length; i++)
+            {
+                if (origin[i] >= raw)
+                {
+                    return i;
+                }
+            }
+
+            return origin.Length;
         }
 
         private sealed class Piece

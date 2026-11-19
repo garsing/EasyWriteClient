@@ -154,9 +154,12 @@ namespace WordDocumentRoundtripTest
 
         public ToolResult DocumentStructure(Dictionary<string, object> args)
         {
-            return DesktopToolPipe.Call(
-                "F_document_structure",
-                args ?? new Dictionary<string, object>());
+            args = args ?? new Dictionary<string, object>();
+            string action = args.ContainsKey("action") ? (args["action"]?.ToString() ?? "") : "";
+            string tool = action == "list_styles" || action == "customize"
+                ? "F_document_style"
+                : "F_document_style_apply";
+            return DesktopToolPipe.Call(tool, args);
         }
 
         public ToolResult ApplyPageSetup(Dictionary<string, object> args)
