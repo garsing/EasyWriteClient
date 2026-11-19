@@ -1567,7 +1567,9 @@ namespace WordDocumentRoundtripTest
                     !OkFlag(missStructure) && Blob(missStructure, "structure") && !StyleHas(s, path, "第一句甲", HeadingNames),
                     Dump(missStructure));
                 JObject missCode = One(s, id, Map("action", "apply", "structure", "heading_1"));
-                Ok(run, "ds-more-missing-code", !OkFlag(missCode) && Blob(missCode, "target_codes"), Dump(missCode));
+                Ok(run, "ds-more-missing-code",
+                    !OkFlag(missCode) && Blob(missCode, "codes 为空") && !StyleHas(s, path, "第一句甲", HeadingNames),
+                    Dump(missCode));
                 JObject empty = Act(s, id, Map("action", "apply", "items", new List<Dictionary<string, object>>()));
                 Ok(run, "ds-more-empty-items", !OkFlag(empty) && Blob(empty, "没有套上"), Dump(empty));
                 JObject secondApply = One(s, id, Map("action", "apply", "target_codes", second, "structure", "heading_1"));
