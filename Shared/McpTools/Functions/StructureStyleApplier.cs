@@ -26,44 +26,64 @@ namespace WordAddIn1
             }
 
             string code = plan.Code;
-            string scope = plan.Scope;
             List<string> warnings = plan.Warnings;
-            try
+            Word.Range range = plan.Range;
+            var paragraphs = new List<Word.Paragraph>();
+            foreach (Word.Paragraph paragraph in range.Paragraphs)
             {
-                Word.Range range = plan.Range;
-                Word.Paragraph paragraph = range.Paragraphs[1];
-                if (style.Support == "both" && scope == "paragraph")
+                if (Intersects(range, paragraph))
                 {
-                    ResetFont(ParagraphText(paragraph));
-                    paragraph.Format.Reset();
-                    SetStyle(doc, paragraph.Range, Names(style, false), false);
+                    paragraphs.Add(paragraph);
                 }
-                else if (style.Support == "both" && style.Structure == "body")
+            }
+
+            if (paragraphs.Count == 0)
+            {
+                return Fail("定位失败。");
+            }
+
+            int fullCount = 0;
+            int partialCount = 0;
+            foreach (Word.Paragraph paragraph in paragraphs)
+            {
+                if (CoversWhole(range, paragraph))
                 {
-                    range.Font.Reset();
-                }
-                else if (style.Support == "both")
-                {
-                    range.Font.Reset();
-                    if (string.IsNullOrEmpty(style.CharacterStyleName))
-                    {
-                        WriteRunText(range, style.TextFormat);
-                    }
-                    else
-                    {
-                        SetStyle(doc, range, Names(style, true), true);
-                    }
-                }
-                else if (style.Support == "paragraph")
-                {
-                    paragraph.Format.Reset();
-                    SetStyle(doc, paragraph.Range, Names(style, false), false);
+                    fullCount++;
                 }
                 else
                 {
-                    Word.Range target = scope == "paragraph" ? ParagraphText(paragraph) : range;
-                    target.Font.Reset();
-                    SetStyle(doc, target, Names(style, true), true);
+                    partialCount++;
+                }
+            }
+
+            bool paragraphStyle = style.Support == "both" || style.Support == "paragraph";
+            if (style.Support == "paragraph" && fullCount == 0)
+            {
+                return Done(code, style, "text", warnings, ParagraphSkippedNote);
+            }
+
+            try
+            {
+                foreach (Word.Paragraph paragraph in paragraphs)
+                {
+                    if (CoversWhole(range, paragraph))
+                    {
+                        ApplyWhole(doc, style, paragraph);
+                    }
+                }
+
+                foreach (Word.Paragraph paragraph in paragraphs)
+                {
+                    if (CoversWhole(range, paragraph))
+                    {
+                        continue;
+                    }
+
+                    Word.Range slice = Slice(doc, range, paragraph);
+                    if (slice != null)
+                    {
+                        ApplySlice(doc, style, slice);
+                    }
                 }
             }
             catch (Exception ex)
@@ -71,7 +91,17 @@ namespace WordAddIn1
                 return Fail(ex.Message);
             }
 
-            string note = scope == "text" && style.Support == "both" ? CharacterApplyNote : null;
+            string scope = partialCount == 0 ? "paragraph" : "text";
+            string note = null;
+            if (paragraphStyle && fullCount == 0)
+            {
+                note = CharacterApplyNote;
+            }
+            else if (paragraphStyle && partialCount > 0)
+            {
+                note = MixedParagraphNote;
+            }
+
             return Done(code, style, scope, warnings, note);
         }
 
@@ -81,7 +111,6 @@ namespace WordAddIn1
             public Dictionary<string, object> Finished;
             public StructureStyleRecord Style;
             public string Code;
-            public string Scope;
             public List<string> Warnings;
             public Word.Range Range;
         }
@@ -109,18 +138,7 @@ namespace WordAddIn1
             }
 
             string code = Arg(item, "target_codes");
-            if (string.IsNullOrWhiteSpace(code) || code.IndexOf(',') >= 0)
-            {
-                plan.Finished = Fail("target_codes 须是一个句子码。");
-                return plan;
-            }
-
-            if (TocFieldStamp.IsInterior(code))
-            {
-                plan.Finished = Fail(TocFieldStamp.InteriorMessage);
-                return plan;
-            }
-
+            List<string> codes = SplitCodes(code);
             string sibling = TextSpanArg.RejectSiblingIndex(item);
             if (sibling != null)
             {
@@ -144,29 +162,17 @@ namespace WordAddIn1
                 }
             }
 
-            string scope = Arg(item, "scope");
-            if (string.IsNullOrEmpty(scope))
-            {
-                scope = span == null ? "paragraph" : "text";
-            }
-
             InsertTargetLocatorHelper.ResolveRangeResult located = InsertTargetLocatorHelper.TryResolveCodeSpan(
                 doc,
-                new[] { code.Trim() },
+                codes,
                 null,
                 InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
-                false,
+                ParagraphCodes(codes),
                 disallowBackendApi,
                 span);
             if (located == null || !located.Success || located.Range == null)
             {
                 plan.Finished = Fail(located == null ? "定位失败。" : located.Error);
-                return plan;
-            }
-
-            if (style != null && style.Support == "paragraph" && scope == "text")
-            {
-                plan.Finished = Done(code, style, scope, warnings, ParagraphSkippedNote);
                 return plan;
             }
 
@@ -179,10 +185,133 @@ namespace WordAddIn1
             plan.WillWrite = true;
             plan.Style = style;
             plan.Code = code;
-            plan.Scope = scope;
             plan.Warnings = warnings;
             plan.Range = located.Range;
             return plan;
+        }
+
+        private static List<string> SplitCodes(string raw)
+        {
+            var codes = new List<string>();
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return codes;
+            }
+
+            foreach (string part in raw.Split(','))
+            {
+                string code = part.Trim();
+                if (code.Length > 0)
+                {
+                    codes.Add(code);
+                }
+            }
+
+            return codes;
+        }
+
+        private static bool ParagraphCodes(List<string> codes)
+        {
+            if (codes == null || codes.Count == 0)
+            {
+                return false;
+            }
+
+            foreach (string code in codes)
+            {
+                if (!FormatContextHelper.IsParagraphCode(code))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool Intersects(Word.Range range, Word.Paragraph paragraph)
+        {
+            if (range == null || paragraph == null || paragraph.Range == null)
+            {
+                return false;
+            }
+
+            return paragraph.Range.Start < range.End && paragraph.Range.End > range.Start;
+        }
+
+        private static bool CoversWhole(Word.Range range, Word.Paragraph paragraph)
+        {
+            int paraStart = paragraph.Range.Start;
+            int paraEnd = paragraph.Range.End;
+            int contentEnd = paraEnd > paraStart ? paraEnd - 1 : paraStart;
+            return range.Start <= paraStart && range.End >= contentEnd;
+        }
+
+        private static Word.Range Slice(Word.Document doc, Word.Range range, Word.Paragraph paragraph)
+        {
+            int paraStart = paragraph.Range.Start;
+            int paraEnd = paragraph.Range.End;
+            int contentEnd = paraEnd > paraStart ? paraEnd - 1 : paraStart;
+            int start = Math.Max(range.Start, paraStart);
+            int end = Math.Min(range.End, contentEnd);
+            if (end <= start)
+            {
+                return null;
+            }
+
+            return doc.Range(start, end);
+        }
+
+        private static void ApplyWhole(Word.Document doc, StructureStyleRecord style, Word.Paragraph paragraph)
+        {
+            if (style.Support == "both")
+            {
+                ResetFont(ParagraphText(paragraph));
+                paragraph.Format.Reset();
+                SetStyle(doc, paragraph.Range, Names(style, false), false);
+            }
+            else if (style.Support == "paragraph")
+            {
+                paragraph.Format.Reset();
+                SetStyle(doc, paragraph.Range, Names(style, false), false);
+            }
+            else
+            {
+                Word.Range target = ParagraphText(paragraph);
+                target.Font.Reset();
+                SetStyle(doc, target, Names(style, true), true);
+            }
+        }
+
+        private static void ApplySlice(Word.Document doc, StructureStyleRecord style, Word.Range slice)
+        {
+            if (style.Support == "paragraph")
+            {
+                return;
+            }
+
+            if (style.Support == "both" && style.Structure == "body")
+            {
+                slice.Font.Reset();
+                return;
+            }
+
+            if (style.Support == "both")
+            {
+                slice.Font.Reset();
+                if (string.IsNullOrEmpty(style.CharacterStyleName))
+                {
+                    WriteRunText(slice, style.TextFormat);
+                }
+                else
+                {
+                    SetStyle(doc, slice, Names(style, true), true);
+                }
+
+                return;
+            }
+
+            slice.Font.Reset();
+            SetStyle(doc, slice, Names(style, true), true);
         }
 
         private static bool HostHasStyle(Word.Document doc, string structure)
@@ -258,6 +387,9 @@ namespace WordAddIn1
 
         private const string ParagraphSkippedNote =
             "段落格式没有发生作用。这次只盖住了段里的一截，没有整段。要想段落格式生效，需要套整段。没有字符格式可套，所以这次套用什么也不会发生。";
+
+        private const string MixedParagraphNote =
+            "段落格式只在盖住完整的段落上生效。半截不生效。要想半截的段落格式生效，需要套整段。";
 
         private static Dictionary<string, object> Done(
             string code,
