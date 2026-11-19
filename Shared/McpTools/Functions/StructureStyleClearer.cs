@@ -288,7 +288,7 @@ namespace WordAddIn1
                 }
 
                 object styleRef = found;
-                paragraph.Range.set_Style(ref styleRef);
+                paragraph.set_Style(ref styleRef);
             }
         }
 

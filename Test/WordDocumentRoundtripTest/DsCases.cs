@@ -13,7 +13,7 @@ namespace WordDocumentRoundtripTest
     /// <summary>样式工具。对照 docs/测试/word测试/样式工具。铺稿用 COM，列出和套用走 F_document_structure。</summary>
     internal static class DsCases
     {
-        public const int Target = 91;
+        public const int Target = 105;
 
         private static readonly string[] HeadingNames = { "标题 1", "heading 1", "Heading 1" };
         private static readonly string[] HeadingCharNames = { "标题 1 字符", "heading 1 Char", "Heading 1 Char" };
@@ -55,6 +55,8 @@ namespace WordDocumentRoundtripTest
             RunCatalog(run, s);
             RunSpans(run, s);
             RunApply(run, s);
+            RunLocate(run, s);
+            RunClear(run, s);
             RunEdit(run, s);
             RunMore(run, s);
             RunToc(run, s);
@@ -429,6 +431,319 @@ namespace WordDocumentRoundtripTest
                     painted && one != null && Eq(one, "structure", "超链接") && Eq(one, "scope", "text")
                     && Obj(one, "text_format") != null && Obj(one, "paragraph_format") == null,
                     painted ? Dump(one) : "铺超链接失败");
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunLocate(TestRun run, WdSession s)
+        {
+            if (Want("ds-loc-two", "ds-loc-gap", "ds-loc-text-two")) RunLocateSentences(run, s);
+            if (Want("ds-loc-p")) RunLocateParagraph(run, s);
+            if (Want("ds-loc-half")) RunLocateHalf(run, s);
+        }
+
+        private static void RunLocateSentences(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "甲段。\r乙段。\r丙段。", out path, out id))
+            {
+                FailMany(run, "铺连续套用稿失败", "ds-loc-two", "ds-loc-gap", "ds-loc-text-two");
+                return;
+            }
+
+            try
+            {
+                string body = Content(s, id);
+                string jia = Sent(body, "甲段");
+                string yi = Sent(body, "乙段");
+                string bing = Sent(body, "丙段");
+                JObject two = One(s, id, Map("action", "apply", "target_codes", jia + "," + yi, "structure", "heading_1"));
+                Ok(run, "ds-loc-two",
+                    OkFlag(two) && StyleHas(s, path, "甲段。", HeadingNames) && StyleHas(s, path, "乙段。", HeadingNames)
+                    && !StyleHas(s, path, "丙段。", HeadingNames),
+                    Dump(two));
+                body = Content(s, id);
+                jia = Sent(body, "甲段");
+                yi = Sent(body, "乙段");
+                bing = Sent(body, "丙段");
+                JObject gap = One(s, id, Map("action", "apply", "target_codes", jia + "," + bing, "structure", "heading_2"));
+                Ok(run, "ds-loc-gap",
+                    OkFlag(gap) && StyleHas(s, path, "甲段。", Heading2Names) && StyleHas(s, path, "丙段。", Heading2Names)
+                    && StyleHas(s, path, "乙段。", HeadingNames),
+                    Dump(gap));
+                body = Content(s, id);
+                jia = Sent(body, "甲段");
+                yi = Sent(body, "乙段");
+                JObject text = One(s, id, Map("action", "apply", "target_codes", jia + "," + yi, "structure", "heading_9", "text", "甲"));
+                Ok(run, "ds-loc-text-two",
+                    !OkFlag(text) && Blob(text, "恰好一个") && !StyleHas(s, path, "甲段。", Heading9Names),
+                    Dump(text));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunLocateParagraph(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "段甲不动。\r段乙套上。", out path, out id))
+            {
+                FailMany(run, "铺段落码套用稿失败", "ds-loc-p");
+                return;
+            }
+
+            try
+            {
+                string paragraphs = ParagraphContent(s, id);
+                string code = ParaCode(paragraphs, "段乙套上");
+                JObject applied = One(s, id, Map("action", "apply", "target_codes", code, "structure", "heading_1"));
+                Ok(run, "ds-loc-p",
+                    code.StartsWith("P_", StringComparison.Ordinal) && OkFlag(applied)
+                    && StyleHas(s, path, "段乙套上。", HeadingNames) && !StyleHas(s, path, "段甲不动。", HeadingNames),
+                    Dump(applied));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunLocateHalf(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "前半句。后半句。", out path, out id))
+            {
+                FailMany(run, "铺半截套用稿失败", "ds-loc-half");
+                return;
+            }
+
+            try
+            {
+                string body = Content(s, id);
+                string first = Sent(body, "前半句");
+                string second = Sent(body, "后半句");
+                JObject applied = One(s, id, Map("action", "apply", "target_codes", first, "structure", "heading_1"));
+                bool headingChar = HostHasStyle(s, path, HeadingCharNames);
+                bool split = first.StartsWith("S_", StringComparison.Ordinal) && second.StartsWith("S_", StringComparison.Ordinal) && first != second;
+                Ok(run, "ds-loc-half",
+                    split && OkFlag(applied) && !StyleHas(s, path, "前半句", HeadingNames) && StyleIs(s, path, "前半句", BodyNames)
+                    && (!headingChar || (SliceHas(s, path, "前半句。后半句。", "前半", HeadingCharNames)
+                        && !SliceHas(s, path, "前半句。后半句。", "后半", HeadingCharNames))),
+                    Dump(applied) + " codes=" + first + "," + second);
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunClear(TestRun run, WdSession s)
+        {
+            if (Want("ds-clear-char")) RunClearChar(run, s);
+            if (Want("ds-clear-para", "ds-clear-keep")) RunClearParagraph(run, s);
+            if (Want("ds-clear-half")) RunClearHalf(run, s);
+            if (Want("ds-clear-gap")) RunClearGap(run, s);
+            if (Want("ds-clear-all", "ds-clear-all-mix")) RunClearAll(run, s);
+            if (Want("ds-clear-empty")) RunClearEmpty(run, s);
+            if (Want("ds-clear-def")) RunClearDefinition(run, s);
+        }
+
+        private static void RunClearChar(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "只清好字", out path, out id))
+            {
+                FailMany(run, "铺清除字符稿失败", "ds-clear-char");
+                return;
+            }
+
+            try
+            {
+                bool painted = PaintSlice(s, path, "只清好字", "好", LinkNames);
+                string body = Content(s, id);
+                string code = Sent(body, "只清好字");
+                JObject data = Act(s, id, Map("action", "clear", "target_codes", code, "text", "好"));
+                JObject item = First(Arr(data, "cleared"));
+                Ok(run, "ds-clear-char",
+                    painted && OkFlag(item) && Blob(item, "好")
+                    && !SliceHas(s, path, "只清好字", "好", LinkNames)
+                    && !SliceHas(s, path, "只清好字", "字", LinkNames),
+                    Dump(data));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunClearParagraph(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "整段标题。\r加粗留着。", out path, out id))
+            {
+                FailMany(run, "铺清除段落稿失败", "ds-clear-para", "ds-clear-keep");
+                return;
+            }
+
+            try
+            {
+                bool heading = PaintParagraph(s, path, "整段标题。", HeadingNames);
+                bool keep = PaintParagraph(s, path, "加粗留着。", HeadingNames) && PaintBold(s, path, "加粗留着。", "留");
+                string body = Content(s, id);
+                JObject para = Act(s, id, Map("action", "clear", "target_codes", Sent(body, "整段标题")));
+                JObject paraItem = First(Arr(para, "cleared"));
+                Ok(run, "ds-clear-para",
+                    heading && OkFlag(paraItem) && StyleIs(s, path, "整段标题。", BodyNames),
+                    Dump(para));
+                body = Content(s, id);
+                JObject bold = Act(s, id, Map("action", "clear", "target_codes", Sent(body, "加粗留着")));
+                JObject boldItem = First(Arr(bold, "cleared"));
+                Ok(run, "ds-clear-keep",
+                    keep && OkFlag(boldItem) && StyleIs(s, path, "加粗留着。", BodyNames) && Bold(s, path, "加粗留着。", "留"),
+                    Dump(bold));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunClearHalf(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "前半句。后半句。", out path, out id))
+            {
+                FailMany(run, "铺半截清除稿失败", "ds-clear-half");
+                return;
+            }
+
+            try
+            {
+                bool heading = PaintParagraph(s, path, "前半句", HeadingNames);
+                string body = Content(s, id);
+                string first = Sent(body, "前半句");
+                string second = Sent(body, "后半句");
+                JObject data = Act(s, id, Map("action", "clear", "target_codes", first));
+                JObject item = First(Arr(data, "cleared"));
+                JArray cleared = item == null ? new JArray() : Arr(item, "cleared");
+                Ok(run, "ds-clear-half",
+                    heading && first != second && OkFlag(item) && cleared.Count == 0
+                    && StyleHas(s, path, "前半句", HeadingNames),
+                    Dump(data));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunClearGap(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "清甲。\r留乙。\r清丙。", out path, out id))
+            {
+                FailMany(run, "铺跳段清除稿失败", "ds-clear-gap");
+                return;
+            }
+
+            try
+            {
+                bool painted = PaintParagraph(s, path, "清甲。", HeadingNames)
+                    && PaintParagraph(s, path, "留乙。", HeadingNames)
+                    && PaintParagraph(s, path, "清丙。", HeadingNames);
+                string body = Content(s, id);
+                JObject data = Act(s, id, Map(
+                    "action", "clear",
+                    "target_codes", Sent(body, "清甲") + "," + Sent(body, "清丙")));
+                JObject item = First(Arr(data, "cleared"));
+                Ok(run, "ds-clear-gap",
+                    painted && OkFlag(item)
+                    && StyleIs(s, path, "清甲。", BodyNames)
+                    && StyleHas(s, path, "留乙。", HeadingNames)
+                    && StyleIs(s, path, "清丙。", BodyNames),
+                    Dump(data));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunClearAll(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "全部甲。\r全部乙。", out path, out id))
+            {
+                FailMany(run, "铺全部清除稿失败", "ds-clear-all", "ds-clear-all-mix");
+                return;
+            }
+
+            try
+            {
+                bool painted = PaintParagraph(s, path, "全部甲。", HeadingNames) && PaintParagraph(s, path, "全部乙。", HeadingNames);
+                string body = Content(s, id);
+                JObject mixed = Act(s, id, Map("action", "clear", "all", true, "target_codes", Sent(body, "全部甲")));
+                Ok(run, "ds-clear-all-mix",
+                    !OkFlag(mixed) && Blob(mixed, "不能和定位") && StyleHas(s, path, "全部甲。", HeadingNames),
+                    Dump(mixed));
+                JObject all = Act(s, id, Map("action", "clear", "all", true));
+                Ok(run, "ds-clear-all",
+                    painted && OkFlag(all)
+                    && StyleIs(s, path, "全部甲。", BodyNames) && StyleIs(s, path, "全部乙。", BodyNames),
+                    Dump(all));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunClearEmpty(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "没有样式。", out path, out id))
+            {
+                FailMany(run, "铺空清除稿失败", "ds-clear-empty");
+                return;
+            }
+
+            try
+            {
+                string body = Content(s, id);
+                JObject data = Act(s, id, Map("action", "clear", "target_codes", Sent(body, "没有样式")));
+                JObject item = First(Arr(data, "cleared"));
+                JArray cleared = item == null ? new JArray() : Arr(item, "cleared");
+                Ok(run, "ds-clear-empty",
+                    OkFlag(item) && cleared.Count == 0 && StyleIs(s, path, "没有样式。", BodyNames),
+                    Dump(data));
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static void RunClearDefinition(TestRun run, WdSession s)
+        {
+            string path, id;
+            if (!Open(s, "定义不删。", out path, out id))
+            {
+                FailMany(run, "铺样式定义稿失败", "ds-clear-def");
+                return;
+            }
+
+            try
+            {
+                ToolResult result = DesktopToolPipe.Call("F_document_style", Map("action", "clear", "channel_id", id));
+                JObject data = Parse(result) ?? new JObject();
+                data["_success"] = result != null && result.Success;
+                data["_error"] = result == null ? "" : (result.Error ?? "");
+                Ok(run, "ds-clear-def", !OkFlag(data) && Blob(data, "样式定义不能删"), Dump(data));
             }
             finally
             {
@@ -977,8 +1292,13 @@ namespace WordDocumentRoundtripTest
                 Ok(run, "ds-apply-miss-index", !OkFlag(index) && OnlyBuiltinStyleFill(before, FullXml(s, path)), Dump(index));
                 JObject unknown = One(s, id, Map("action", "apply", "target_codes", code, "structure", "没有这种样式"));
                 Ok(run, "ds-apply-unknown", !OkFlag(unknown) && OnlyBuiltinStyleFill(before, FullXml(s, path)), Dump(unknown));
-                JObject two = One(s, id, Map("action", "apply", "target_codes", code + ",S_abc12", "structure", "heading_1"));
-                Ok(run, "ds-apply-one-code", !OkFlag(two), Dump(two));
+                string paragraphs = ParagraphContent(s, id);
+                string paragraph = ParaCode(paragraphs, "对不上甲");
+                JObject mixed = One(s, id, Map("action", "apply", "target_codes", code + "," + paragraph, "structure", "heading_1"));
+                Ok(run, "ds-apply-one-code",
+                    paragraph.StartsWith("P_", StringComparison.Ordinal)
+                    && !OkFlag(mixed) && Blob(mixed, "混用") && !StyleHas(s, path, "对不上甲", HeadingNames),
+                    Dump(mixed));
             }
             finally
             {
@@ -1186,7 +1506,9 @@ namespace WordDocumentRoundtripTest
                     Dump(heading9));
                 Ok(run, "ds-more-one-heading", headingCount == 1, "heading_1=" + headingCount);
                 JObject bad = Act(s, id, "list_foo");
-                Ok(run, "ds-more-action-bad", !OkFlag(bad) && Blob(bad, "action 须是"), Dump(bad));
+                Ok(run, "ds-more-action-bad",
+                    !OkFlag(bad) && Blob(bad, "action 须是") && Blob(bad, "clear") && !Blob(bad, "list_styles"),
+                    Dump(bad));
                 JObject emphasis = Find(styles, "明显强调");
                 bool emphasisBuiltin = HostHasStyle(s, path, "明显强调", "Intense Emphasis");
                 Ok(run, "ds-more-emphasis-plain",
@@ -2030,6 +2352,29 @@ namespace WordDocumentRoundtripTest
         {
             ToolResult got = s.GetContent(id, "sentence");
             return got.Success ? WdSession.Str(got, "document_content") : "";
+        }
+
+        private static string ParaCode(string body, string text)
+        {
+            if (string.IsNullOrEmpty(body) || string.IsNullOrEmpty(text))
+            {
+                return "";
+            }
+
+            int at = body.IndexOf(text, StringComparison.Ordinal);
+            if (at < 0)
+            {
+                return "";
+            }
+
+            int mark = body.LastIndexOf("[P_", at, StringComparison.Ordinal);
+            if (mark < 0)
+            {
+                return "";
+            }
+
+            Match m = Regex.Match(body.Substring(mark), @"\[(P_[0-9A-Za-z_]+)(?:-start| start)");
+            return m.Success ? m.Groups[1].Value : "";
         }
 
         private static string Sent(string body, string text)
