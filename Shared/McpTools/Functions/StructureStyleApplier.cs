@@ -27,13 +27,17 @@ namespace WordAddIn1
 
             string code = plan.Code;
             List<string> warnings = plan.Warnings;
-            Word.Range range = plan.Range;
             var paragraphs = new List<Word.Paragraph>();
-            foreach (Word.Paragraph paragraph in range.Paragraphs)
+            var owners = new List<Word.Range>();
+            foreach (Word.Range range in plan.Ranges)
             {
-                if (Intersects(range, paragraph))
+                foreach (Word.Paragraph paragraph in range.Paragraphs)
                 {
-                    paragraphs.Add(paragraph);
+                    if (Intersects(range, paragraph))
+                    {
+                        paragraphs.Add(paragraph);
+                        owners.Add(range);
+                    }
                 }
             }
 
@@ -44,9 +48,9 @@ namespace WordAddIn1
 
             int fullCount = 0;
             int partialCount = 0;
-            foreach (Word.Paragraph paragraph in paragraphs)
+            for (int i = 0; i < paragraphs.Count; i++)
             {
-                if (CoversWhole(range, paragraph))
+                if (CoversWhole(owners[i], paragraphs[i]))
                 {
                     fullCount++;
                 }
@@ -64,22 +68,22 @@ namespace WordAddIn1
 
             try
             {
-                foreach (Word.Paragraph paragraph in paragraphs)
+                for (int i = 0; i < paragraphs.Count; i++)
                 {
-                    if (CoversWhole(range, paragraph))
+                    if (CoversWhole(owners[i], paragraphs[i]))
                     {
-                        ApplyWhole(doc, style, paragraph);
+                        ApplyWhole(doc, style, paragraphs[i]);
                     }
                 }
 
-                foreach (Word.Paragraph paragraph in paragraphs)
+                for (int i = 0; i < paragraphs.Count; i++)
                 {
-                    if (CoversWhole(range, paragraph))
+                    if (CoversWhole(owners[i], paragraphs[i]))
                     {
                         continue;
                     }
 
-                    Word.Range slice = Slice(doc, range, paragraph);
+                    Word.Range slice = Slice(doc, owners[i], paragraphs[i]);
                     if (slice != null)
                     {
                         ApplySlice(doc, style, slice);
@@ -112,7 +116,7 @@ namespace WordAddIn1
             public StructureStyleRecord Style;
             public string Code;
             public List<string> Warnings;
-            public Word.Range Range;
+            public List<Word.Range> Ranges;
         }
 
         private static ApplyPlan Plan(
@@ -152,6 +156,13 @@ namespace WordAddIn1
                 warnings.Add("套用忽略 text_format 和 paragraph_format，按样式定义套。");
             }
 
+            bool narrowing = TextSpanArg.HasNarrowingText(item);
+            if (narrowing && codes.Count != 1)
+            {
+                plan.Finished = Fail(TextSpanArg.SingleCodeError);
+                return plan;
+            }
+
             TextSpan span = null;
             if (item != null && item.ContainsKey("text"))
             {
@@ -162,18 +173,54 @@ namespace WordAddIn1
                 }
             }
 
-            InsertTargetLocatorHelper.ResolveRangeResult located = InsertTargetLocatorHelper.TryResolveCodeSpan(
-                doc,
-                codes,
-                null,
-                InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
-                ParagraphCodes(codes),
-                disallowBackendApi,
-                span);
-            if (located == null || !located.Success || located.Range == null)
+            bool anyP = false;
+            bool anyS = false;
+            foreach (string one in codes)
             {
-                plan.Finished = Fail(located == null ? "定位失败。" : located.Error);
+                if (FormatContextHelper.IsParagraphCode(one))
+                {
+                    anyP = true;
+                }
+                else if (FormatContextHelper.IsSentenceCode(one))
+                {
+                    anyS = true;
+                }
+            }
+
+            if (anyP && anyS)
+            {
+                plan.Finished = Fail("同一项混用 S_ 与 P_，未套用");
                 return plan;
+            }
+
+            bool paragraph = ParagraphCodes(codes);
+            string snapshot = paragraph
+                ? DocumentState.ParagraphSegSnapshot
+                : DocumentState.SegSnapshot;
+            List<List<string>> runs = FormatApplyBatchCompiler.SplitRuns(codes, snapshot);
+            if (runs.Count == 0)
+            {
+                runs.Add(codes);
+            }
+
+            var ranges = new List<Word.Range>();
+            foreach (List<string> run in runs)
+            {
+                InsertTargetLocatorHelper.ResolveRangeResult located = InsertTargetLocatorHelper.TryResolveCodeSpan(
+                    doc,
+                    run,
+                    null,
+                    InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
+                    paragraph,
+                    disallowBackendApi,
+                    span);
+                if (located == null || !located.Success || located.Range == null)
+                {
+                    plan.Finished = Fail(located == null ? "定位失败。" : located.Error);
+                    return plan;
+                }
+
+                ranges.Add(located.Range);
             }
 
             if (style == null)
@@ -186,7 +233,7 @@ namespace WordAddIn1
             plan.Style = style;
             plan.Code = code;
             plan.Warnings = warnings;
-            plan.Range = located.Range;
+            plan.Ranges = ranges;
             return plan;
         }
 
