@@ -253,10 +253,11 @@ namespace WordAddIn1
             }
         }
 
-        private const string CharacterApplyNote = "由于是字符套用，所以段落格式没有发生作用。";
+        private const string CharacterApplyNote =
+            "段落格式没有发生作用。这次只盖住了段里的一截，没有整段。要想段落格式生效，需要套整段。";
 
         private const string ParagraphSkippedNote =
-            "由于是字符套用，所以段落格式没有发生作用。字符范围套到了只有段落格式的样式上，没有字符格式可套，所以这次套用什么也不会发生。";
+            "段落格式没有发生作用。这次只盖住了段里的一截，没有整段。要想段落格式生效，需要套整段。没有字符格式可套，所以这次套用什么也不会发生。";
 
         private static Dictionary<string, object> Done(
             string code,
