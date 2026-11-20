@@ -493,12 +493,20 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 使用状态机算法处理文本，按顺序提取 seg（只提取内容，不计算位置）
+        /// 使用状态机算法处理文本，按顺序提取 seg，并记下每段在文本中的起止位置。
         /// </summary>
         /// <param name="text">输入文本</param>
         /// <param name="segs">seg 列表（输出参数，只存储内容）</param>
         /// <param name="segMarks">seg 标记列表（输出参数，1表示cell类型，0表示其他类型）</param>
-        private static void ExtractSegsWithStateMachine(string text, List<string> segs, List<int> segMarks = null, bool detailLog = false)
+        /// <param name="segStarts">与 segs 对齐的起点（含），文本坐标</param>
+        /// <param name="segEnds">与 segs 对齐的终点（不含），文本坐标</param>
+        private static void ExtractSegsWithStateMachine(
+            string text,
+            List<string> segs,
+            List<int> segMarks = null,
+            bool detailLog = false,
+            List<int> segStarts = null,
+            List<int> segEnds = null)
         {
             if (string.IsNullOrEmpty(text))
             {
@@ -577,6 +585,16 @@ namespace WordAddIn1
                             {
                                 segMarks.Add(mark);
                             }
+
+                            if (segStarts != null)
+                            {
+                                segStarts.Add(startCollectPos);
+                            }
+
+                            if (segEnds != null)
+                            {
+                                segEnds.Add(text.Length);
+                            }
                             ExtractDetailLog(detailLog, $"[ExtractSegsWithStateMachine] ✅ 添加 seg（未找到结束标志，剩余全部内容），开始类型: {currentStartFlagType}，标记: {mark}，当前 seg 数量: {segs.Count}");
                         }
                         break;
@@ -595,6 +613,17 @@ namespace WordAddIn1
                         {
                             segMarks.Add(mark);
                         }
+
+                        if (segStarts != null)
+                        {
+                            segStarts.Add(startCollectPos);
+                        }
+
+                        if (segEnds != null)
+                        {
+                            segEnds.Add(endFlagPos);
+                        }
+
                         string markReason = "";
                         if (currentStartFlagType == 2 && endFlagType == 2)
                         {
@@ -679,12 +708,15 @@ namespace WordAddIn1
 
             // 第二步：用<body></body>包裹文本，以便状态机算法能够正确识别开始收集标志
             // 注意：状态机算法会从<body>标签之后开始收集，所以提取的seg不包含<body>和</body>标签
-            string wrappedText = $"<body>{text}</body>";
+            const string bodyOpen = "<body>";
+            string wrappedText = bodyOpen + text + "</body>";
 
-            // 第三步：使用状态机算法按顺序提取所有 seg（只存储内容，不计算位置）
+            // 第三步：状态机按顺序抠 seg，并留下在包裹文本里的起止位置
             var segContents = new List<string>();
             var tempSegMarks = new List<int>();
-            ExtractSegsWithStateMachine(wrappedText, segContents, tempSegMarks, detailLog);
+            var segStarts = new List<int>();
+            var segEnds = new List<int>();
+            ExtractSegsWithStateMachine(wrappedText, segContents, tempSegMarks, detailLog, segStarts, segEnds);
             
             // 保存 seg 标记
             segMarks = tempSegMarks;
@@ -695,53 +727,49 @@ namespace WordAddIn1
                 return new List<string> { text };
             }
             
-            // 第四步：按顺序"切蛋糕"的方式分割文本
-            // 把所有文本拿出来，用 seg 按顺序切分，seg 之间的部分就是非 seg
-            // 注意：无论 seg 在文本中出现多少次，都只取第一次出现的位置来切分
+            // 第四步：按状态机记下的位置切。标签是两段之间的原文，不再用正文 IndexOf
             var parts = new List<string>();
-            string remainingText = text;  // 剩余待处理的文本
-            
-            foreach (string segContent in segContents)
+            var keptMarks = new List<int>();
+            int cursor = 0;
+            int spanCount = Math.Min(segStarts.Count, segEnds.Count);
+            for (int i = 0; i < spanCount; i++)
             {
-                // 在剩余文本中查找当前 seg（从开头开始，IndexOf 会返回第一次出现的位置）
-                // 无论 seg 在 remainingText 中出现多少次，都只取第一次出现的位置
-                int segPos = remainingText.IndexOf(segContent, 0);
-                
-                if (segPos < 0)
+                int start = segStarts[i] - bodyOpen.Length;
+                int end = segEnds[i] - bodyOpen.Length;
+                if (start < cursor)
                 {
-                    // 如果找不到，记录调试信息
-                    ExtractDetailLog(detailLog, $"[SplitTextByCells] ⚠️ 无法找到 seg（长度: {segContent.Length}）: {TextUtils.EscapeNewlinesForDb(segContent.Substring(0, Math.Min(50, segContent.Length)))}");
-                    ExtractDetailLog(detailLog, $"[SplitTextByCells] 剩余文本（前100字符）: {TextUtils.EscapeNewlinesForDb(remainingText.Substring(0, Math.Min(100, remainingText.Length)))}");
+                    start = cursor;
+                }
+
+                if (end > text.Length)
+                {
+                    end = text.Length;
+                }
+
+                if (end <= start)
+                {
+                    ExtractDetailLog(detailLog, "[SplitTextByCells] ⚠️ seg 位置无效，跳过 index=" + i);
                     continue;
                 }
-                
-                // seg 之前的部分作为非 seg（使用第一次出现的位置）
-                if (segPos > 0)
+
+                parts.Add(text.Substring(cursor, start - cursor));
+                parts.Add(text.Substring(start, end - start));
+                if (i < tempSegMarks.Count)
                 {
-                    string nonSeg = remainingText.Substring(0, segPos);
-                    parts.Add(nonSeg);  // 添加非 seg
-                }
-                else
-                {
-                    // 如果 segPos == 0，说明剩余文本一开始就是 seg，添加空字符串作为非 seg
-                    parts.Add("");
+                    keptMarks.Add(tempSegMarks[i]);
                 }
 
-                // 添加 seg 内容
-                parts.Add(segContent);
-
-                // 更新剩余文本为 seg 之后的部分（从第一次出现的位置之后开始）
-                remainingText = remainingText.Substring(segPos + segContent.Length);
+                cursor = end;
             }
 
-            // 添加最后一个 seg 之后的内容（非 seg）
-            if (!string.IsNullOrEmpty(remainingText))
+            segMarks = keptMarks;
+
+            if (cursor < text.Length)
             {
-                parts.Add(remainingText);
+                parts.Add(text.Substring(cursor));
             }
             else if (parts.Count > 0 && parts.Count % 2 == 0)
             {
-                // 如果剩余文本为空但前面有 seg，需要添加空字符串作为非 seg
                 parts.Add("");
             }
 
