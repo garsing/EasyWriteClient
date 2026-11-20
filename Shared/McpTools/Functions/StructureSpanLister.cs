@@ -59,6 +59,11 @@ namespace WordAddIn1
 
             foreach (Piece piece in pieces)
             {
+                if (piece.Style != null && piece.Style.Structure == "body")
+                {
+                    continue;
+                }
+
                 string shown = TrimMark(piece.Text);
                 if (shown.Length == 0 || piece.Ordinal < 1)
                 {

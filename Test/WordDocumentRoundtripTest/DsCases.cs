@@ -265,11 +265,10 @@ namespace WordDocumentRoundtripTest
                     && Obj(head, "text_format") != null && Obj(head, "paragraph_format") == null),
                     painted ? Dump(head) : "铺标题 1 字符失败");
                 Ok(run, "ds-span-body-rest",
-                    !headingChar || (rest != null && Eq(rest, "structure", "body") && Eq(rest, "scope", "paragraph")
-                    && Obj(rest, "text_format") != null && Obj(rest, "paragraph_format") != null),
+                    !headingChar || rest == null,
                     Dump(rest));
                 Ok(run, "ds-span-two",
-                    !headingChar || (head != null && rest != null && Str(head, "target_codes") == Str(rest, "target_codes")
+                    !headingChar || (head != null && rest == null && spans.Count == 1
                     && Str(head, "target_codes").StartsWith("S_", StringComparison.Ordinal)
                     && body.IndexOf(Str(head, "target_codes"), StringComparison.Ordinal) >= 0),
                     Dump(head) + " / " + Dump(rest));
@@ -292,10 +291,8 @@ namespace WordDocumentRoundtripTest
             try
             {
                 Content(s, id);
-                JObject one = First(Arr(Act(s, id, "list_spans"), "spans"));
-                Ok(run, "ds-span-whole-omit",
-                    one != null && Eq(one, "structure", "body") && Eq(one, "scope", "paragraph") && one["text"] == null,
-                    Dump(one));
+                JArray whole = Arr(Act(s, id, "list_spans"), "spans");
+                Ok(run, "ds-span-whole-omit", whole.Count == 0, Dump(whole));
             }
             finally
             {
@@ -318,8 +315,8 @@ namespace WordDocumentRoundtripTest
                 Content(s, id);
                 JArray spans = Arr(Act(s, id, "list_spans"), "spans");
                 Ok(run, "ds-span-direct-color",
-                    painted && spans.Count == 1 && Dump(First(spans)).IndexOf("FF0000", StringComparison.OrdinalIgnoreCase) < 0,
-                    painted ? Dump(First(spans)) : "涂红失败");
+                    painted && spans.Count == 0 && Dump(spans).IndexOf("FF0000", StringComparison.OrdinalIgnoreCase) < 0,
+                    painted ? Dump(spans) : "涂红失败");
             }
             finally
             {
@@ -820,8 +817,11 @@ namespace WordDocumentRoundtripTest
                 JArray spans = Arr(Act(s, id, "list_spans"), "spans");
                 string bodyCode = Sent(body, "你好啊");
                 bool leaked = SpanHasTab(spans);
+                string headingCode = Sent(body, "第一章标题");
                 Ok(run, "ds-toc-spans",
-                    bodyCode.StartsWith("S_", StringComparison.Ordinal) && SpanByCode(spans, bodyCode) != null && !leaked,
+                    bodyCode.StartsWith("S_", StringComparison.Ordinal) && SpanByCode(spans, bodyCode) == null
+                    && headingCode.StartsWith("S_", StringComparison.Ordinal) && SpanByCode(spans, headingCode) != null
+                    && !leaked,
                     "code=" + bodyCode + " leaked=" + leaked + " " + Dump(spans));
 
                 string paras = ParagraphContent(s, id);
@@ -948,7 +948,7 @@ namespace WordDocumentRoundtripTest
                 JArray spans = Arr(Act(s, id, "list_spans"), "spans");
                 string code = Sent(body, "目录后正文");
                 Ok(run, "ds-span-toc-skip",
-                    field && code.StartsWith("S_", StringComparison.Ordinal) && SpanByCode(spans, code) != null
+                    field && code.StartsWith("S_", StringComparison.Ordinal) && SpanByCode(spans, code) == null
                     && body.IndexOf("目录后正文", StringComparison.Ordinal) >= 0,
                     field ? Dump(spans) : "目录域没插上");
             }
@@ -971,11 +971,14 @@ namespace WordDocumentRoundtripTest
             {
                 bool picture = s.InsertPicture(path);
                 bool typed = s.AppendText(path, "\r图后字。");
+                bool painted = PaintParagraph(s, path, "图后字。", HeadingNames);
                 string body = Content(s, id);
                 JArray spans = Arr(Act(s, id, "list_spans"), "spans");
                 string code = Sent(body, "图后字");
+                JObject hit = SpanByCode(spans, code);
                 Ok(run, "ds-span-image",
-                    picture && typed && code.StartsWith("S_", StringComparison.Ordinal) && SpanByCode(spans, code) != null
+                    picture && typed && painted && code.StartsWith("S_", StringComparison.Ordinal)
+                    && hit != null && Eq(hit, "structure", "heading_1")
                     && body.IndexOf("图后字", StringComparison.Ordinal) >= 0,
                     picture ? Dump(spans) : "插图失败");
             }
@@ -996,6 +999,7 @@ namespace WordDocumentRoundtripTest
 
             try
             {
+                bool painted = PaintParagraph(s, path, "将对不上", HeadingNames);
                 string body = Content(s, id);
                 string keepCode = Sent(body, "还在的句子");
                 bool changed = ReplaceText(s, path, "将对不上", "已经改掉");
@@ -1011,7 +1015,8 @@ namespace WordDocumentRoundtripTest
                 }
 
                 Ok(run, "ds-span-miss",
-                    changed && Blob(listed, "对不上") && !invented && SpanByCode(Arr(listed, "spans"), keepCode) != null,
+                    painted && changed && Blob(listed, "对不上") && !invented
+                    && SpanByCode(Arr(listed, "spans"), keepCode) == null,
                     changed ? blob : "改字失败");
             }
             finally
@@ -1044,7 +1049,9 @@ namespace WordDocumentRoundtripTest
                 }
 
                 string code = Sent(body, "有字");
-                Ok(run, "ds-span-empty", spans.Count >= 1 && !empty && SpanByCode(spans, code) != null, Dump(spans));
+                Ok(run, "ds-span-empty",
+                    code.StartsWith("S_", StringComparison.Ordinal) && spans.Count == 0 && !empty && SpanByCode(spans, code) == null,
+                    Dump(spans));
             }
             finally
             {
@@ -1655,10 +1662,9 @@ namespace WordDocumentRoundtripTest
                 JObject spanA = SpanByCode(spans, codeA);
                 JObject spanB = SpanByCode(spans, codeB);
                 Ok(run, "ds-more-span-two",
-                    spanA != null && spanB != null && codeA != codeB
-                    && Eq(spanA, "structure", "body") && Eq(spanB, "structure", "body")
-                    && Eq(spanA, "scope", "paragraph") && Eq(spanB, "scope", "paragraph"),
-                    Dump(spanA) + " / " + Dump(spanB));
+                    codeA.StartsWith("S_", StringComparison.Ordinal) && codeB.StartsWith("S_", StringComparison.Ordinal)
+                    && codeA != codeB && spanA == null && spanB == null && spans.Count == 0,
+                    Dump(spans));
                 JObject h2 = One(s, id, Map("action", "apply", "target_codes", codeB, "structure", "heading_2"));
                 JObject afterH2 = SpanByCode(Arr(Act(s, id, "list_spans"), "spans"), codeB);
                 Ok(run, "ds-more-span-h2",
