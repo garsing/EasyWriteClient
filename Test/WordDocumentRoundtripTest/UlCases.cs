@@ -477,11 +477,11 @@ namespace WordDocumentRoundtripTest
 
         private static void RunTable(TestRun run, WdSession s)
         {
-            if (Want("ul-table-miss", "ul-table-gone", "ul-insert-table", "ul-del-table", "ul-comment-table"))
+            if (Want("ul-table-miss", "ul-table-gone", "ul-insert-table", "ul-del-table"))
             {
                 if (!Open(s, "正文留着。", out string path, out string id, out _))
                 {
-                    FailMany(run, "铺表稿失败", "ul-table-miss", "ul-table-gone", "ul-insert-table", "ul-del-table", "ul-comment-table");
+                    FailMany(run, "铺表稿失败", "ul-table-miss", "ul-table-gone", "ul-insert-table", "ul-del-table");
                 }
                 else
                 {
@@ -542,23 +542,6 @@ namespace WordDocumentRoundtripTest
                                 Dump(wr) + " body=" + Strip(after));
                         }
 
-                        if (Want("ul-comment-table"))
-                        {
-                            body = Body(s, id);
-                            tableId = TableId(body);
-                            ToolResult wr = s.ProcessComments(id, new List<Dictionary<string, object>>
-                            {
-                                new Dictionary<string, object>
-                                {
-                                    ["type"] = "add",
-                                    ["text"] = "表后点。",
-                                    ["target"] = new Dictionary<string, object> { ["table"] = tableId }
-                                }
-                            });
-                            bool pin = CommentAtTableEnd(s, path);
-                            Ok(run, "ul-comment-table", wr.Success && pin, Dump(wr) + " pin=" + pin);
-                        }
-
                         if (Want("ul-del-table"))
                         {
                             body = Body(s, id);
@@ -575,6 +558,37 @@ namespace WordDocumentRoundtripTest
                                 && after.IndexOf("正文留着。", StringComparison.Ordinal) >= 0,
                                 Dump(wr) + " body=" + Strip(after));
                         }
+                    }
+                    finally
+                    {
+                        s.CloseDocByPath(path);
+                    }
+                }
+            }
+
+            if (Want("ul-comment-table"))
+            {
+                if (!Open(s, "正文留着。", out string path, out string id, out _))
+                {
+                    Fail(run, "ul-comment-table", "铺表稿失败");
+                }
+                else
+                {
+                    try
+                    {
+                        s.CreateTableFromXml(TableArgs(id, WriteXml(GridXml("格内原文。", "", "备注", ""))));
+                        string tableId = TableId(Body(s, id));
+                        ToolResult wr = s.ProcessComments(id, new List<Dictionary<string, object>>
+                        {
+                            new Dictionary<string, object>
+                            {
+                                ["type"] = "add",
+                                ["text"] = "表后点。",
+                                ["target"] = new Dictionary<string, object> { ["table"] = tableId }
+                            }
+                        });
+                        bool pin = CommentAtTableEnd(s, path);
+                        Ok(run, "ul-comment-table", wr.Success && pin, Dump(wr) + " pin=" + pin);
                     }
                     finally
                     {
@@ -657,13 +671,13 @@ namespace WordDocumentRoundtripTest
 
         private static void RunCallers(TestRun run, WdSession s)
         {
-            if (Want("ul-replace-span", "ul-insert-end", "ul-comment-sent", "ul-text-slice", "ul-text-two", "ul-apply-part", "ul-apply-ok"))
+            if (Want("ul-replace-span", "ul-insert-end", "ul-comment-sent", "ul-text-slice", "ul-text-two", "ul-apply-part"))
             {
                 if (!Open(s, "甲句定位。\r乙句定位。", out string path, out string id, out string body))
                 {
                     FailMany(run, "铺稿失败",
                         "ul-replace-span", "ul-insert-end", "ul-comment-sent", "ul-text-slice",
-                        "ul-text-two", "ul-apply-part", "ul-apply-ok");
+                        "ul-text-two", "ul-apply-part");
                 }
                 else
                 {
@@ -788,16 +802,32 @@ namespace WordDocumentRoundtripTest
                                 !applied.Success && !jiaStyled && !yiStyled,
                                 Dump(applied) + " jia=" + jiaStyled + " yi=" + yiStyled);
                         }
+                    }
+                    finally
+                    {
+                        s.CloseDocByPath(path);
+                    }
+                }
+            }
 
-                        if (Want("ul-apply-ok"))
-                        {
-                            ToolResult applied = Apply(s, id, jia + "," + yi, "heading_1");
-                            bool jiaStyled = StyleHas(s, path, "甲句定位。", HeadingNames);
-                            bool yiStyled = StyleHas(s, path, "乙句定位。", HeadingNames);
-                            Ok(run, "ul-apply-ok",
-                                applied.Success && jiaStyled && yiStyled,
-                                Dump(applied) + " jia=" + jiaStyled + " yi=" + yiStyled);
-                        }
+            if (Want("ul-apply-ok"))
+            {
+                if (!Open(s, "甲句定位。\r乙句定位。", out string path, out string id, out string body))
+                {
+                    Fail(run, "ul-apply-ok", "铺稿失败");
+                }
+                else
+                {
+                    try
+                    {
+                        string jia = Sent(body, "甲句定位");
+                        string yi = Sent(body, "乙句定位");
+                        ToolResult applied = Apply(s, id, jia + "," + yi, "heading_1");
+                        bool jiaStyled = StyleHas(s, path, "甲句定位。", HeadingNames);
+                        bool yiStyled = StyleHas(s, path, "乙句定位。", HeadingNames);
+                        Ok(run, "ul-apply-ok",
+                            applied.Success && jiaStyled && yiStyled,
+                            Dump(applied) + " jia=" + jiaStyled + " yi=" + yiStyled);
                     }
                     finally
                     {
