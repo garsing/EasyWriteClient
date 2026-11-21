@@ -123,7 +123,7 @@ namespace WordAddIn1
 
             if (action == "list_spans")
             {
-                Dictionary<string, object> listed = StructureSpanLister.List(ReadDisplay(), body, styles);
+                Dictionary<string, object> listed = StructureSpanLister.List(ReadLocateDisplay(), body, styles);
                 bool ok = listed.ContainsKey("ok") && listed["ok"] is bool bit && bit;
                 return new ToolResult
                 {
@@ -212,7 +212,7 @@ namespace WordAddIn1
                 return new ToolResult { Success = false, Error = "all 不能和定位一起用。" };
             }
 
-            string display = ReadDisplay();
+            string display = ReadLocateDisplay();
             if (all)
             {
                 Dictionary<string, object> one = StructureStyleClearer.ClearAll(
@@ -325,6 +325,29 @@ namespace WordAddIn1
             }
 
             return string.Join("", parts);
+        }
+
+        internal static string ReadLocateDisplay()
+        {
+            ProcessDocumentCacheEntry cache = DocumentState.LastProcessCache;
+            if (cache != null && cache.ChunkInfo != null && cache.ChunkInfo.Count > 0)
+            {
+                var sb = new StringBuilder();
+                foreach (WordDocumentExtractor.ChunkInfo chunk in cache.ChunkInfo)
+                {
+                    if (chunk != null && !string.IsNullOrEmpty(chunk.LocateDisplayContent))
+                    {
+                        sb.Append(chunk.LocateDisplayContent);
+                    }
+                }
+
+                if (sb.Length > 0)
+                {
+                    return sb.ToString();
+                }
+            }
+
+            return "";
         }
 
         internal static string ReadDisplay()

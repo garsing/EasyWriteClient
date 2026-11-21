@@ -36,6 +36,7 @@ namespace WordAddIn1.DocumentMapping
         public Dictionary<string, string> SentenceToParagraph { get; set; } = new Dictionary<string, string>();
         public Dictionary<string, List<string>> ParagraphToSentences { get; set; } = new Dictionary<string, List<string>>();
         public List<string> ChunkDisplayContents { get; set; } = new List<string>();
+        public List<string> ChunkLocateDisplayContents { get; set; } = new List<string>();
         public List<string> ChunkParagraphDisplayContents { get; set; } = new List<string>();
         public List<string> ChunkParagraphAgentDisplays { get; set; } = new List<string>();
         public List<List<string>> AllChunkParagraphNames { get; set; } = new List<List<string>>();

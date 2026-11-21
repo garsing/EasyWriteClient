@@ -1,13 +1,12 @@
 using System;
 using System.Collections.Generic;
-using System.Text;
 using System.Xml.Linq;
 using WordAddIn1.DocumentMapping.CodeResolve;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
-    /// <summary>断开套用。先在去掉码的 display 上决定断哪一截，再查找 Range。</summary>
+    /// <summary>断开套用。在没收起的句子 display 上决定断哪一截，再查找 Range。</summary>
     public static class StructureStyleClearer
     {
         public static Dictionary<string, object> ClearItem(
@@ -45,14 +44,23 @@ namespace WordAddIn1
                 return Fail(check);
             }
 
-            display = paragraph
-                ? F_DocumentStructureTool.ReadParagraphDisplay()
-                : F_DocumentStructureTool.ReadDisplay();
-            string stripped = StructureSpanLister.StripCodeMarks(display, out int[] origin);
+            display = F_DocumentStructureTool.ReadLocateDisplay();
+            if (string.IsNullOrEmpty(display))
+            {
+                return Fail("没有定位用的句子 display。请先 F_get_document_content。");
+            }
+
             var windows = new List<int[]>();
             foreach (List<string> run in runs)
             {
-                if (!TryWindow(display, origin, run, paragraph, span, stripped, out int start, out int end, out string windowError))
+                if (!StructureSpanLister.TryClearWindow(
+                    display,
+                    run,
+                    paragraph,
+                    span,
+                    out int start,
+                    out int end,
+                    out string windowError))
                 {
                     return Fail(windowError);
                 }
@@ -60,22 +68,7 @@ namespace WordAddIn1
                 windows.Add(new[] { start, end });
             }
 
-            List<StructureSpanLister.StyledSpan> spans = StructureSpanLister.CollectStyled(display, body, styles, out string listError);
-            if (listError != null)
-            {
-                return Fail(listError);
-            }
-
-            var chosen = new List<StructureSpanLister.StyledSpan>();
-            foreach (StructureSpanLister.StyledSpan spanHit in spans)
-            {
-                if (InsideAny(spanHit, windows))
-                {
-                    chosen.Add(spanHit);
-                }
-            }
-
-            return Unlink(doc, chosen, styles);
+            return Unlink(doc, Choose(display, body, styles, windows), styles);
         }
 
         public static Dictionary<string, object> ClearAll(
@@ -91,14 +84,50 @@ namespace WordAddIn1
                 return Fail(prepared);
             }
 
-            display = F_DocumentStructureTool.ReadDisplay();
-            List<StructureSpanLister.StyledSpan> spans = StructureSpanLister.CollectStyled(display, body, styles, out string listError);
-            if (listError != null)
+            display = F_DocumentStructureTool.ReadLocateDisplay();
+            if (string.IsNullOrEmpty(display))
             {
-                return Fail(listError);
+                return Fail("没有定位用的句子 display。请先 F_get_document_content。");
             }
 
-            return Unlink(doc, spans, styles);
+            return Unlink(doc, Choose(display, body, styles, null), styles);
+        }
+
+        private static List<StructureSpanLister.StyledSpan> Choose(
+            string display,
+            XElement body,
+            IList<StructureStyleRecord> styles,
+            List<int[]> windows)
+        {
+            var chosen = new List<StructureSpanLister.StyledSpan>();
+            StructureSpanLister.LocateStyledResult located = StructureSpanLister.LocateStyled(display, body, styles);
+            List<int[]> interiors = StructureSpanLister.TocInteriors(display);
+            foreach (StructureSpanLister.LocatedSpan piece in located.Spans)
+            {
+                if (piece.Style != null && piece.Style.Structure == "body")
+                {
+                    continue;
+                }
+
+                if (StructureSpanLister.InsideToc(piece.Start, piece.End, interiors))
+                {
+                    continue;
+                }
+
+                if (windows != null && !InsideAny(piece.Start, piece.End, windows))
+                {
+                    continue;
+                }
+
+                if (!StructureSpanLister.TryBindClear(display, piece, out StructureSpanLister.StyledSpan span))
+                {
+                    continue;
+                }
+
+                chosen.Add(span);
+            }
+
+            return chosen;
         }
 
         private static Dictionary<string, object> Unlink(
@@ -355,209 +384,17 @@ namespace WordAddIn1
             return merged;
         }
 
-        private static bool InsideAny(StructureSpanLister.StyledSpan hit, List<int[]> windows)
+        private static bool InsideAny(int start, int end, List<int[]> windows)
         {
             foreach (int[] window in windows)
             {
-                if (hit.Start >= window[0] && hit.End <= window[1])
+                if (start >= window[0] && end <= window[1])
                 {
                     return true;
                 }
             }
 
             return false;
-        }
-
-        private static bool TryWindow(
-            string display,
-            int[] origin,
-            List<string> run,
-            bool paragraph,
-            TextSpan span,
-            string stripped,
-            out int start,
-            out int end,
-            out string error)
-        {
-            start = 0;
-            end = 0;
-            error = null;
-            if (!TryRegion(display, origin, run, out int regionStart, out int regionEnd))
-            {
-                error = "对不上「" + string.Join(",", run) + "」。";
-                return false;
-            }
-
-            string needle = span == null ? Stored(run, paragraph) : span.Value;
-            if (string.IsNullOrEmpty(needle))
-            {
-                error = "对不上「" + string.Join(",", run) + "」。";
-                return false;
-            }
-
-            int count = Count(stripped, needle, regionStart, regionEnd);
-            int index = 1;
-            if (span != null && span.HasIndex)
-            {
-                if (!span.IndexIsInteger || span.Index < 1 || span.Index > count)
-                {
-                    error = TextSpanArg.IndexOutOfRange(run[0], span.Value, count);
-                    return false;
-                }
-
-                index = span.Index;
-            }
-            else if (count == 0)
-            {
-                error = span == null
-                    ? "对不上「" + needle + "」。"
-                    : TextSpanArg.Missing(run[0], span.Value);
-                return false;
-            }
-            else if (count > 1)
-            {
-                error = TextSpanArg.Ambiguous(run[0], needle, count);
-                return false;
-            }
-
-            int at = Nth(stripped, needle, regionStart, regionEnd, index);
-            if (at < 0)
-            {
-                error = "对不上「" + needle + "」。";
-                return false;
-            }
-
-            start = at;
-            end = at + needle.Length;
-            return true;
-        }
-
-        private static string Stored(List<string> codes, bool paragraph)
-        {
-            var sb = new StringBuilder();
-            foreach (string code in codes)
-            {
-                string part = paragraph
-                    ? DocumentState.GetParagraphContent(code)
-                    : DocumentState.GetSentenceContent(code);
-                if (string.IsNullOrEmpty(part))
-                {
-                    return null;
-                }
-
-                sb.Append(part);
-            }
-
-            return sb.ToString();
-        }
-
-        private static bool TryRegion(
-            string display,
-            int[] origin,
-            List<string> codes,
-            out int start,
-            out int end)
-        {
-            start = 0;
-            end = 0;
-            int rawStart = int.MaxValue;
-            int rawEnd = -1;
-            foreach (string code in codes)
-            {
-                string id = code.Length > 2 ? code.Substring(2) : "";
-                string prefix = code.StartsWith("P_", StringComparison.Ordinal) ? "P_" : "S_";
-                int open = Marker(display, "[" + prefix + id + "-start", "[" + prefix + id + " start");
-                int close = Marker(display, "[" + prefix + id + "-end", "[" + prefix + id + " end");
-                if (open < 0 || close < 0 || close < open)
-                {
-                    return false;
-                }
-
-                int content = display.IndexOf(']', open);
-                if (content < 0)
-                {
-                    return false;
-                }
-
-                rawStart = Math.Min(rawStart, content + 1);
-                rawEnd = Math.Max(rawEnd, close);
-            }
-
-            start = FirstAtOrAfter(origin, rawStart);
-            end = FirstAtOrAfter(origin, rawEnd);
-            return end >= start;
-        }
-
-        private static int Marker(string display, string hyphen, string spaced)
-        {
-            if (string.IsNullOrEmpty(display))
-            {
-                return -1;
-            }
-
-            int at = display.IndexOf(hyphen, StringComparison.Ordinal);
-            if (at >= 0)
-            {
-                return at;
-            }
-
-            return display.IndexOf(spaced, StringComparison.Ordinal);
-        }
-
-        private static int FirstAtOrAfter(int[] origin, int raw)
-        {
-            for (int i = 0; i < origin.Length; i++)
-            {
-                if (origin[i] >= raw)
-                {
-                    return i;
-                }
-            }
-
-            return origin.Length;
-        }
-
-        private static int Count(string haystack, string needle, int start, int end)
-        {
-            int n = 0;
-            int at = start;
-            while (at <= end - needle.Length)
-            {
-                int found = haystack.IndexOf(needle, at, end - at, StringComparison.Ordinal);
-                if (found < 0)
-                {
-                    break;
-                }
-
-                n++;
-                at = found + needle.Length;
-            }
-
-            return n;
-        }
-
-        private static int Nth(string haystack, string needle, int start, int end, int ordinal)
-        {
-            int seen = 0;
-            int at = start;
-            while (at <= end - needle.Length)
-            {
-                int found = haystack.IndexOf(needle, at, end - at, StringComparison.Ordinal);
-                if (found < 0)
-                {
-                    return -1;
-                }
-
-                seen++;
-                if (seen == ordinal)
-                {
-                    return found;
-                }
-
-                at = found + needle.Length;
-            }
-
-            return -1;
         }
 
         private static string Validate(Word.Document doc, List<List<string>> runs, bool paragraph)

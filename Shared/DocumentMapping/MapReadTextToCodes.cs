@@ -156,6 +156,7 @@ namespace WordAddIn1.DocumentMapping
         private static void FinishSentenceDisplays(MapReadTextResult mapped)
         {
             mapped.ChunkDisplayContents.Clear();
+            mapped.ChunkLocateDisplayContents.Clear();
             mapped.AllChunkSentenceNames.Clear();
             var content = DisplayMapFromMappings(mapped.SentenceMappings)
                 ?? mapped.NameToSentenceContentMap;
@@ -209,6 +210,7 @@ namespace WordAddIn1.DocumentMapping
                     }
                 }
 
+                mapped.ChunkLocateDisplayContents.Add(display);
                 mapped.ChunkDisplayContents.Add(TocFieldStamp.CollapseMarked(display));
                 var flat = new List<string>();
                 foreach (List<string> seg in segs)

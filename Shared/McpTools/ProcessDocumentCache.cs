@@ -554,6 +554,7 @@ namespace WordAddIn1
                 ChunkIdx = c.ChunkIdx,
                 Content = c.Content,
                 DisplayContent = c.DisplayContent,
+                LocateDisplayContent = c.LocateDisplayContent,
                 ParagraphDisplayContent = c.ParagraphDisplayContent,
                 Summary = c.Summary
             }).ToList();

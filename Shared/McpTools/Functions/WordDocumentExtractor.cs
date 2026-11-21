@@ -1400,6 +1400,7 @@ namespace WordAddIn1
 
             // 第七步：display_content（已由 MapReadTextToCodes 构建 sentence display）
             var displayContents = new List<string>();
+            var locateContents = new List<string>();
             if (options.BuildDisplayContent)
             {
                 if (verbose)
@@ -1408,6 +1409,11 @@ namespace WordAddIn1
                 }
 
                 displayContents.AddRange(mapResult.ChunkDisplayContents);
+                if (mapResult.ChunkLocateDisplayContents != null)
+                {
+                    locateContents.AddRange(mapResult.ChunkLocateDisplayContents);
+                }
+
                 if (verbose)
                 {
                     System.Diagnostics.Debug.WriteLine($"✅ display_content 就绪，共 {displayContents.Count} 个 chunk");
@@ -1418,6 +1424,7 @@ namespace WordAddIn1
                 for (int i = 0; i < chunks.Count; i++)
                 {
                     displayContents.Add(string.Empty);
+                    locateContents.Add(string.Empty);
                 }
             }
 
@@ -1511,6 +1518,7 @@ namespace WordAddIn1
                     ChunkIdx = i + 1,  // 从1开始
                     Content = chunks[i],
                     DisplayContent = displayContents[i],
+                    LocateDisplayContent = i < locateContents.Count ? locateContents[i] : "",
                     Summary = ""  // 前端没有提取，为空字符串
                 };
                 chunkInfoList.Add(chunkInfo);
@@ -2805,6 +2813,7 @@ namespace WordAddIn1
             public int ChunkIdx { get; set; }
             public string Content { get; set; }
             public string DisplayContent { get; set; }
+            public string LocateDisplayContent { get; set; }
             public string ParagraphDisplayContent { get; set; }
             public string Summary { get; set; }
         }

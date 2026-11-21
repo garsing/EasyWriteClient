@@ -28,7 +28,7 @@ namespace WordAddIn1
         {
             if (string.IsNullOrEmpty(display))
             {
-                return Fail("没有句子 display。请先 F_get_document_content。");
+                return Fail("没有定位用的句子 display。请先 F_get_document_content。");
             }
 
             if (body == null)
@@ -36,53 +36,27 @@ namespace WordAddIn1
                 return Fail("OOXML 没有正文。");
             }
 
-            var byId = Index(styles);
-            StructureStyleRecord bodyStyle = null;
-            if (styles != null)
-            {
-                foreach (StructureStyleRecord row in styles)
-                {
-                    if (row.Structure == "body")
-                    {
-                        bodyStyle = row;
-                        break;
-                    }
-                }
-            }
-
-            var fields = new List<bool>();
-            BuildStory(body, byId, bodyStyle, fields, out List<Piece> pieces);
+            LocateStyledResult located = LocateStyled(display, body, styles);
+            List<int[]> interiors = TocInteriors(display);
             string displayChars = DisplayChars(display, out int[] origin);
             List<SentenceSlot> slots = SentenceSlots(display, origin);
             var spans = new List<Dictionary<string, object>>();
-            var errors = new List<string>();
+            var errors = new List<string>(located.Misses);
 
-            foreach (Piece piece in pieces)
+            foreach (LocatedSpan piece in located.Spans)
             {
                 if (piece.Style != null && piece.Style.Structure == "body")
                 {
                     continue;
                 }
 
+                if (InsideToc(piece.Start, piece.End, interiors))
+                {
+                    continue;
+                }
+
                 string shown = TrimMark(piece.Text);
-                if (shown.Length == 0 || piece.Ordinal < 1)
-                {
-                    if (piece.Text.Length > 0)
-                    {
-                        errors.Add("对不上「" + shown + "」。");
-                    }
-
-                    continue;
-                }
-
-                int at = NthIndex(displayChars, shown, piece.Ordinal);
-                if (at < 0)
-                {
-                    errors.Add("对不上「" + shown + "」。");
-                    continue;
-                }
-
-                SentenceSlot slot = SlotAt(slots, origin[at]);
+                SentenceSlot slot = SlotAt(slots, piece.Start);
                 if (slot == null || slot.StreamStart < 0)
                 {
                     errors.Add("「" + shown + "」没有落在句子码里。");
@@ -99,7 +73,7 @@ namespace WordAddIn1
                 };
                 if (!whole)
                 {
-                    int index = OccurrenceIn(displayChars, slot.StreamStart, slot.StreamEnd, shown, at);
+                    int index = OccurrenceIn(displayChars, slot.StreamStart, slot.StreamEnd, shown, piece.StreamStart);
                     if (index > 1)
                     {
                         row["text"] = new Dictionary<string, object>
@@ -180,7 +154,6 @@ namespace WordAddIn1
             {
                 if (StartsWith(display, i, "[S_")
                     || StartsWith(display, i, "[P_")
-                    || StartsWith(display, i, "[目录域 ")
                     || StartsWith(display, i, "[in_table=")
                     || StartsWith(display, i, "[T_")
                     || StartsWith(display, i, "[EMPTY]"))
@@ -203,7 +176,7 @@ namespace WordAddIn1
 
             string[] tags =
             {
-                "<image", "<autonum", "<table", "</table", "<tr", "</tr", "<td", "</td", "<th", "</th"
+                "<toc", "<image", "<autonum", "<table", "</table", "<tr", "</tr", "<td", "</td", "<th", "</th"
             };
             foreach (string tag in tags)
             {
@@ -446,12 +419,13 @@ namespace WordAddIn1
 
                 int start = story.Length;
                 story.Append(text);
-                if (InsideTocField(fields) || runStyle == null)
+                if (runStyle == null)
                 {
                     continue;
                 }
 
                 string scope = hasRun ? "text" : "paragraph";
+                XElement node = hasRun ? run : paragraph;
                 if (pieces.Count > 0)
                 {
                     Piece prev = pieces[pieces.Count - 1];
@@ -469,7 +443,8 @@ namespace WordAddIn1
                     Start = start,
                     Text = text,
                     Style = runStyle,
-                    Scope = scope
+                    Scope = scope,
+                    Node = node
                 });
             }
 
@@ -661,6 +636,380 @@ namespace WordAddIn1
             }
 
             return null;
+        }
+
+        public sealed class LocatedSpan
+        {
+            public string Text;
+            public int Ordinal;
+            public string Scope;
+            public StructureStyleRecord Style;
+            public XElement Node;
+            public int Start;
+            public int End;
+            public int StreamStart;
+        }
+
+        public sealed class LocateStyledResult
+        {
+            public List<LocatedSpan> Spans = new List<LocatedSpan>();
+            public List<string> Misses = new List<string>();
+        }
+
+        public static LocateStyledResult LocateStyled(
+            string display,
+            XElement body,
+            IList<StructureStyleRecord> styles)
+        {
+            var result = new LocateStyledResult();
+            if (string.IsNullOrEmpty(display) || body == null)
+            {
+                return result;
+            }
+
+            var byId = Index(styles);
+            StructureStyleRecord bodyStyle = null;
+            if (styles != null)
+            {
+                foreach (StructureStyleRecord row in styles)
+                {
+                    if (row.Structure == "body")
+                    {
+                        bodyStyle = row;
+                        break;
+                    }
+                }
+            }
+
+            BuildStory(body, byId, bodyStyle, new List<bool>(), out List<Piece> pieces);
+            string displayChars = DisplayChars(display, out int[] origin);
+            foreach (Piece piece in pieces)
+            {
+                string shown = TrimMark(piece.Text);
+                if (shown.Length == 0 || piece.Ordinal < 1)
+                {
+                    if (piece.Text.Length > 0)
+                    {
+                        result.Misses.Add("对不上「" + shown + "」。");
+                    }
+
+                    continue;
+                }
+
+                int at = NthIndex(displayChars, shown, piece.Ordinal);
+                if (at < 0 || at >= origin.Length)
+                {
+                    result.Misses.Add("对不上「" + shown + "」。");
+                    continue;
+                }
+
+                int last = at + shown.Length - 1;
+                if (last >= origin.Length)
+                {
+                    result.Misses.Add("对不上「" + shown + "」。");
+                    continue;
+                }
+
+                result.Spans.Add(new LocatedSpan
+                {
+                    Text = shown,
+                    Ordinal = piece.Ordinal,
+                    Scope = piece.Scope,
+                    Style = piece.Style,
+                    Node = piece.Node,
+                    Start = origin[at],
+                    End = origin[last] + 1,
+                    StreamStart = at
+                });
+            }
+
+            return result;
+        }
+
+        public static List<int[]> TocInteriors(string display)
+        {
+            var interiors = new List<int[]>();
+            if (string.IsNullOrEmpty(display))
+            {
+                return interiors;
+            }
+
+            var openAt = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (Match match in TocFieldStamp.Marker.Matches(display))
+            {
+                string id = match.Groups[1].Value;
+                if (openAt.TryGetValue(id, out int openEnd))
+                {
+                    interiors.Add(new[] { openEnd, match.Index });
+                    openAt.Remove(id);
+                }
+                else
+                {
+                    openAt[id] = match.Index + match.Length;
+                }
+            }
+
+            return interiors;
+        }
+
+        public static bool InsideToc(int start, int end, List<int[]> interiors)
+        {
+            if (interiors == null)
+            {
+                return false;
+            }
+
+            foreach (int[] range in interiors)
+            {
+                if (start >= range[0] && end <= range[1])
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public static bool TryClearWindow(
+            string display,
+            List<string> run,
+            bool paragraph,
+            TextSpan span,
+            out int start,
+            out int end,
+            out string error)
+        {
+            start = 0;
+            end = 0;
+            error = null;
+            if (!TryTaggedRegion(display, run, paragraph, out int regionStart, out int regionEnd))
+            {
+                error = "对不上「" + string.Join(",", run) + "」。";
+                return false;
+            }
+
+            if (span == null)
+            {
+                start = regionStart;
+                end = regionEnd;
+                return true;
+            }
+
+            string displayChars = DisplayChars(display, out int[] origin);
+            int streamStart = FirstAtOrAfter(origin, regionStart);
+            int streamEnd = FirstAtOrAfter(origin, regionEnd);
+            string needle = span.Value;
+            if (string.IsNullOrEmpty(needle))
+            {
+                error = "对不上「" + string.Join(",", run) + "」。";
+                return false;
+            }
+
+            int count = 0;
+            int at = streamStart;
+            while (at <= streamEnd - needle.Length)
+            {
+                int found = displayChars.IndexOf(needle, at, streamEnd - at, StringComparison.Ordinal);
+                if (found < 0)
+                {
+                    break;
+                }
+
+                count++;
+                at = found + needle.Length;
+            }
+
+            int index = 1;
+            if (span.HasIndex)
+            {
+                if (!span.IndexIsInteger || span.Index < 1 || span.Index > count)
+                {
+                    error = TextSpanArg.IndexOutOfRange(run[0], span.Value, count);
+                    return false;
+                }
+
+                index = span.Index;
+            }
+            else if (count == 0)
+            {
+                error = TextSpanArg.Missing(run[0], span.Value);
+                return false;
+            }
+            else if (count > 1)
+            {
+                error = TextSpanArg.Ambiguous(run[0], needle, count);
+                return false;
+            }
+
+            int hit = NthIndexIn(displayChars, needle, streamStart, streamEnd, index);
+            if (hit < 0)
+            {
+                error = "对不上「" + needle + "」。";
+                return false;
+            }
+
+            int last = hit + needle.Length - 1;
+            start = origin[hit];
+            end = origin[last] + 1;
+            return true;
+        }
+
+        private static int NthIndexIn(string haystack, string needle, int start, int end, int ordinal)
+        {
+            int seen = 0;
+            int at = start;
+            while (at <= end - needle.Length)
+            {
+                int found = haystack.IndexOf(needle, at, end - at, StringComparison.Ordinal);
+                if (found < 0)
+                {
+                    return -1;
+                }
+
+                seen++;
+                if (seen == ordinal)
+                {
+                    return found;
+                }
+
+                at = found + needle.Length;
+            }
+
+            return -1;
+        }
+
+        private static bool TryTaggedRegion(
+            string display,
+            List<string> codes,
+            bool paragraph,
+            out int start,
+            out int end)
+        {
+            start = int.MaxValue;
+            end = -1;
+            if (codes == null || codes.Count == 0)
+            {
+                return false;
+            }
+
+            if (paragraph)
+            {
+                foreach (string code in codes)
+                {
+                    IReadOnlyList<string> sentences = ParagraphCodeResolver.ExpandParagraphToSentenceCodes(code);
+                    if (sentences == null || sentences.Count == 0)
+                    {
+                        return false;
+                    }
+
+                    foreach (string sentence in sentences)
+                    {
+                        if (!TrySentenceBounds(display, sentence, out int open, out int close))
+                        {
+                            continue;
+                        }
+
+                        start = Math.Min(start, open);
+                        end = Math.Max(end, close);
+                    }
+                }
+
+                return end >= start && start != int.MaxValue;
+            }
+
+            foreach (string code in codes)
+            {
+                if (!TrySentenceBounds(display, code, out int open, out int close))
+                {
+                    return false;
+                }
+
+                start = Math.Min(start, open);
+                end = Math.Max(end, close);
+            }
+
+            return end >= start && start != int.MaxValue;
+        }
+
+        private static bool TrySentenceBounds(string display, string code, out int open, out int close)
+        {
+            open = 0;
+            close = 0;
+            if (string.IsNullOrEmpty(display) || string.IsNullOrEmpty(code) || code.Length <= 2)
+            {
+                return false;
+            }
+
+            string id = code.Substring(2);
+            int startAt = display.IndexOf("[S_" + id + "-start", StringComparison.Ordinal);
+            if (startAt < 0)
+            {
+                startAt = display.IndexOf("[S_" + id + " start", StringComparison.Ordinal);
+            }
+
+            int endAt = display.IndexOf("[S_" + id + "-end]", StringComparison.Ordinal);
+            if (endAt < 0)
+            {
+                endAt = display.IndexOf("[S_" + id + " end]", StringComparison.Ordinal);
+            }
+
+            if (startAt < 0 || endAt < 0 || endAt < startAt)
+            {
+                return false;
+            }
+
+            int endGt = display.IndexOf(']', endAt);
+            if (endGt < 0)
+            {
+                return false;
+            }
+
+            open = startAt;
+            close = endGt + 1;
+            return true;
+        }
+
+        public static bool TryBindClear(string display, LocatedSpan piece, out StyledSpan span)
+        {
+            span = null;
+            if (piece == null || string.IsNullOrEmpty(display))
+            {
+                return false;
+            }
+
+            string displayChars = DisplayChars(display, out int[] origin);
+            List<SentenceSlot> slots = SentenceSlots(display, origin);
+            SentenceSlot slot = SlotAt(slots, piece.Start);
+            if (slot == null || string.IsNullOrEmpty(slot.Code))
+            {
+                return false;
+            }
+
+            string shown = TrimMark(piece.Text);
+            string sentence = slot.StreamStart >= 0 && slot.StreamEnd > slot.StreamStart
+                ? displayChars.Substring(slot.StreamStart, slot.StreamEnd - slot.StreamStart)
+                : "";
+            bool whole = piece.Scope == "paragraph" && TrimMark(sentence) == shown;
+            span = new StyledSpan
+            {
+                Text = shown,
+                Start = piece.Start,
+                End = piece.End,
+                Code = slot.Code,
+                ParagraphLink = piece.Scope == "paragraph"
+            };
+            if (!whole)
+            {
+                span.TextValue = shown;
+                int index = OccurrenceIn(displayChars, slot.StreamStart, slot.StreamEnd, shown, piece.StreamStart);
+                if (index > 1)
+                {
+                    span.HasIndex = true;
+                    span.TextIndex = index;
+                }
+            }
+
+            return true;
         }
 
         public sealed class StyledSpan
@@ -953,6 +1302,7 @@ namespace WordAddIn1
             public int Ordinal;
             public StructureStyleRecord Style;
             public string Scope;
+            public XElement Node;
         }
 
         private sealed class SentenceSlot

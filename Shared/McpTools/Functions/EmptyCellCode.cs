@@ -199,6 +199,7 @@ namespace WordAddIn1
                     }
 
                     chunk.DisplayContent = Stamp(chunk.DisplayContent);
+                    chunk.LocateDisplayContent = Stamp(chunk.LocateDisplayContent);
                     if (!string.IsNullOrEmpty(chunk.ParagraphDisplayContent))
                     {
                         chunk.ParagraphDisplayContent = Stamp(chunk.ParagraphDisplayContent);
