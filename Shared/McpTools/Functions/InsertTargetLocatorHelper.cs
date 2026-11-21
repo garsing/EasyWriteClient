@@ -684,7 +684,7 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 整批歧义预检（停在歧义，不落 Range）。批里有号则一次 ProcessDocument。
+        /// 整批歧义预检（停在歧义，不落 Range）。读文在 TryLocateSpans 入口，这里不再读。
         /// </summary>
         public static PrecheckResult TryPrecheckTargets(
             Word.Document doc,
@@ -700,17 +700,6 @@ namespace WordAddIn1
                 result.Success = false;
                 result.Error = "locate_failed: 文档不可用";
                 return result;
-            }
-
-            if (AnchorsNeedProcessDocument(anchors, formatScope))
-            {
-                string pdError = TryProcessDocumentForLocate(doc, disallowBackendApi);
-                if (pdError != null)
-                {
-                    result.Success = false;
-                    result.Error = "locate_failed: " + pdError;
-                    return result;
-                }
             }
 
             string inoperable = FailIfInoperable(anchors);
@@ -1887,32 +1876,6 @@ namespace WordAddIn1
             }
 
             dest.LocateFailures.AddRange(source.LocateFailures);
-        }
-
-        private static bool AnchorsNeedProcessDocument(
-            IReadOnlyList<DocumentActionAmbiguityAnchor> anchors,
-            ApplyFormatScopeArgs formatScope)
-        {
-            if (!string.IsNullOrWhiteSpace(formatScope?.TableId))
-            {
-                return true;
-            }
-
-            if (anchors == null)
-            {
-                return false;
-            }
-
-            foreach (DocumentActionAmbiguityAnchor anchor in anchors)
-            {
-                if (!string.IsNullOrWhiteSpace(anchor?.Codes)
-                    || !string.IsNullOrWhiteSpace(anchor?.TableId))
-                {
-                    return true;
-                }
-            }
-
-            return false;
         }
 
         private static List<string> FlattenAnchorCodes(IReadOnlyList<DocumentActionAmbiguityAnchor> anchors)

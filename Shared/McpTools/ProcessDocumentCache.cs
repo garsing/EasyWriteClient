@@ -71,7 +71,8 @@ namespace WordAddIn1
                 "customXmlDelRangeStart", "customXmlDelRangeEnd",
                 "customXmlMoveFromRangeStart", "customXmlMoveFromRangeEnd",
                 "customXmlMoveToRangeStart", "customXmlMoveToRangeEnd",
-                "fldChar", "smartTag", "smartTagPr", "dir", "bdo", "subDoc"
+                "fldChar", "smartTag", "smartTagPr", "dir", "bdo", "subDoc",
+                "placeholder"
             };
 
         private static readonly HashSet<string> BlockRevisionRemovalLocalNames =
