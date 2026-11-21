@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Xml.Linq;
 using WordAddIn1.DocumentMapping.CodeResolve;
 using Word = Microsoft.Office.Interop.Word;
@@ -17,6 +18,8 @@ namespace WordAddIn1
             XElement body,
             bool disallowBackendApi)
         {
+            Stopwatch total = Stopwatch.StartNew();
+            Stopwatch sw = Stopwatch.StartNew();
             string codeError = ReadCodes(item, out List<string> codes, out bool paragraph, out TextSpan span);
             if (codeError != null)
             {
@@ -24,11 +27,16 @@ namespace WordAddIn1
             }
 
             string prepared = Prepare(doc, disallowBackendApi);
+            EasyWriteDiagnostics.LogTiming(
+                "style_clear.prepare",
+                sw.ElapsedMilliseconds,
+                codes == null ? "" : "codes=" + string.Join(",", codes));
             if (prepared != null)
             {
                 return Fail(prepared);
             }
 
+            sw.Restart();
             string snapshot = paragraph
                 ? DocumentState.ParagraphSegSnapshot
                 : DocumentState.SegSnapshot;
@@ -39,17 +47,27 @@ namespace WordAddIn1
             }
 
             string check = Validate(doc, runs, paragraph);
+            EasyWriteDiagnostics.LogTiming(
+                "style_clear.validate",
+                sw.ElapsedMilliseconds,
+                "runs=" + runs.Count);
             if (check != null)
             {
                 return Fail(check);
             }
 
+            sw.Restart();
             display = F_DocumentStructureTool.ReadLocateDisplay();
+            EasyWriteDiagnostics.LogTiming(
+                "style_clear.read_display",
+                sw.ElapsedMilliseconds,
+                "len=" + (display == null ? 0 : display.Length));
             if (string.IsNullOrEmpty(display))
             {
                 return Fail("没有定位用的句子 display。请先 F_get_document_content。");
             }
 
+            sw.Restart();
             var windows = new List<int[]>();
             foreach (List<string> run in runs)
             {
@@ -68,7 +86,20 @@ namespace WordAddIn1
                 windows.Add(new[] { start, end });
             }
 
-            return Unlink(doc, Choose(display, body, styles, windows), styles);
+            EasyWriteDiagnostics.LogTiming(
+                "style_clear.windows",
+                sw.ElapsedMilliseconds,
+                "n=" + windows.Count);
+
+            sw.Restart();
+            List<StructureSpanLister.StyledSpan> chosen = Choose(display, body, styles, windows);
+            EasyWriteDiagnostics.LogTiming(
+                "style_clear.choose",
+                sw.ElapsedMilliseconds,
+                "n=" + chosen.Count);
+            Dictionary<string, object> result = Unlink(doc, chosen, styles);
+            EasyWriteDiagnostics.LogTiming("style_clear.item_total", total.ElapsedMilliseconds);
+            return result;
         }
 
         public static Dictionary<string, object> ClearAll(
@@ -78,19 +109,35 @@ namespace WordAddIn1
             XElement body,
             bool disallowBackendApi)
         {
+            Stopwatch total = Stopwatch.StartNew();
+            Stopwatch sw = Stopwatch.StartNew();
             string prepared = Prepare(doc, disallowBackendApi);
+            EasyWriteDiagnostics.LogTiming("style_clear.prepare", sw.ElapsedMilliseconds, "all");
             if (prepared != null)
             {
                 return Fail(prepared);
             }
 
+            sw.Restart();
             display = F_DocumentStructureTool.ReadLocateDisplay();
+            EasyWriteDiagnostics.LogTiming(
+                "style_clear.read_display",
+                sw.ElapsedMilliseconds,
+                "len=" + (display == null ? 0 : display.Length));
             if (string.IsNullOrEmpty(display))
             {
                 return Fail("没有定位用的句子 display。请先 F_get_document_content。");
             }
 
-            return Unlink(doc, Choose(display, body, styles, null), styles);
+            sw.Restart();
+            List<StructureSpanLister.StyledSpan> chosen = Choose(display, body, styles, null);
+            EasyWriteDiagnostics.LogTiming(
+                "style_clear.choose",
+                sw.ElapsedMilliseconds,
+                "n=" + chosen.Count);
+            Dictionary<string, object> result = Unlink(doc, chosen, styles);
+            EasyWriteDiagnostics.LogTiming("style_clear.item_total", total.ElapsedMilliseconds, "all");
+            return result;
         }
 
         private static List<StructureSpanLister.StyledSpan> Choose(
@@ -100,7 +147,13 @@ namespace WordAddIn1
             List<int[]> windows)
         {
             var chosen = new List<StructureSpanLister.StyledSpan>();
+            Stopwatch sw = Stopwatch.StartNew();
             StructureSpanLister.LocateStyledResult located = StructureSpanLister.LocateStyled(display, body, styles);
+            EasyWriteDiagnostics.LogTiming(
+                "style_clear.locate_styled",
+                sw.ElapsedMilliseconds,
+                "spans=" + located.Spans.Count + " miss=" + located.Misses.Count);
+            sw.Restart();
             List<int[]> interiors = StructureSpanLister.TocInteriors(display);
             foreach (StructureSpanLister.LocatedSpan piece in located.Spans)
             {
@@ -127,6 +180,10 @@ namespace WordAddIn1
                 chosen.Add(span);
             }
 
+            EasyWriteDiagnostics.LogTiming(
+                "style_clear.filter_bind",
+                sw.ElapsedMilliseconds,
+                "chosen=" + chosen.Count + " toc=" + interiors.Count);
             return chosen;
         }
 
@@ -137,10 +194,15 @@ namespace WordAddIn1
         {
             var ranges = new List<Word.Range>();
             var links = new List<bool>();
+            Stopwatch sw = Stopwatch.StartNew();
             foreach (StructureSpanLister.StyledSpan hit in chosen)
             {
                 if (!TryRange(doc, hit, out Word.Range range, out string error))
                 {
+                    EasyWriteDiagnostics.LogTiming(
+                        "style_clear.find_range",
+                        sw.ElapsedMilliseconds,
+                        "ok=" + ranges.Count + " fail=" + (hit.Code ?? ""));
                     return Fail(error);
                 }
 
@@ -148,6 +210,12 @@ namespace WordAddIn1
                 links.Add(hit.ParagraphLink);
             }
 
+            EasyWriteDiagnostics.LogTiming(
+                "style_clear.find_range",
+                sw.ElapsedMilliseconds,
+                "n=" + ranges.Count);
+
+            sw.Restart();
             try
             {
                 for (int i = 0; i < ranges.Count; i++)
@@ -164,13 +232,28 @@ namespace WordAddIn1
             }
             catch (Exception ex)
             {
+                EasyWriteDiagnostics.LogTiming(
+                    "style_clear.set_style",
+                    sw.ElapsedMilliseconds,
+                    "fail n=" + ranges.Count);
                 return Fail(ex.Message);
             }
 
+            EasyWriteDiagnostics.LogTiming(
+                "style_clear.set_style",
+                sw.ElapsedMilliseconds,
+                "n=" + ranges.Count);
+
+            sw.Restart();
+            List<Dictionary<string, object>> cleared = ReadBack(ranges);
+            EasyWriteDiagnostics.LogTiming(
+                "style_clear.read_back",
+                sw.ElapsedMilliseconds,
+                "runs=" + (cleared == null ? 0 : cleared.Count));
             return new Dictionary<string, object>
             {
                 ["ok"] = true,
-                ["cleared"] = ReadBack(ranges)
+                ["cleared"] = cleared
             };
         }
 

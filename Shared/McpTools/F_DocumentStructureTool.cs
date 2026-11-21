@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 using System.Threading.Tasks;
 using System.Xml.Linq;
@@ -91,6 +92,13 @@ namespace WordAddIn1
             Dictionary<string, object> args,
             bool disallowBackendApi)
         {
+            bool clearing = action == "clear";
+            if (clearing)
+            {
+                EasyWriteLog.BeginSession("document_style_clear");
+            }
+
+            Stopwatch sw = clearing ? Stopwatch.StartNew() : null;
             OpenXmlPackage full = OpenXmlPackage.LoadFull(doc);
             bool wps = WpsChartExtract.IsWpsDocument(doc);
             if (wps && StructureStyleLibrary.Ensure(doc, full.FindPartRoot("styles.xml", OpenXmlPackage.W + "styles")))
@@ -98,9 +106,22 @@ namespace WordAddIn1
                 full = OpenXmlPackage.LoadFull(doc);
             }
 
+            if (clearing)
+            {
+                EasyWriteDiagnostics.LogTiming("style_clear.load_ooxml", sw.ElapsedMilliseconds);
+                sw.Restart();
+            }
+
             XElement stylesRoot = full.FindPartRoot("styles.xml", OpenXmlPackage.W + "styles");
             XElement body = full.Body;
             List<StructureStyleRecord> styles = StructureStyleCatalog.Read(stylesRoot);
+            if (clearing)
+            {
+                EasyWriteDiagnostics.LogTiming(
+                    "style_clear.read_styles",
+                    sw.ElapsedMilliseconds,
+                    "n=" + (styles == null ? 0 : styles.Count));
+            }
 
             if (action == "list_styles")
             {
@@ -135,7 +156,16 @@ namespace WordAddIn1
 
             if (action == "clear")
             {
-                return Clear(doc, args, styles, body, disallowBackendApi);
+                sw.Restart();
+                try
+                {
+                    return Clear(doc, args, styles, body, disallowBackendApi);
+                }
+                finally
+                {
+                    EasyWriteDiagnostics.LogTiming("style_clear.action", sw.ElapsedMilliseconds);
+                    EasyWriteLog.Flush();
+                }
             }
 
             Word.Application app = doc.Application;
