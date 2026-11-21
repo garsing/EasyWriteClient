@@ -221,7 +221,7 @@ namespace WordDocumentRoundtripTest
 
             if (Want("ul-ambig-rest"))
             {
-                if (!Open(s, "第一句。\r第二句。\r第二句。", out string path, out string id, out string body))
+                if (!Open(s, "独特改字甲句。\r重复改字夹具。\r重复改字夹具。", out string path, out string id, out string body))
                 {
                     Fail(run, "ul-ambig-rest", "铺稿失败");
                 }
@@ -229,13 +229,13 @@ namespace WordDocumentRoundtripTest
                 {
                     try
                     {
-                        string first = Sent(body, "第一句");
+                        string first = Sent(body, "独特改字甲句");
                         string dup = DupCode(body);
                         ToolResult wr = s.ProcessActions(id, Batch(
                             Replace(string.IsNullOrEmpty(dup) ? "S_xxxxx" : dup, "第二已改。"),
                             Replace(first, "第一已改。")));
                         string after = Body(s, id);
-                        int secondCount = Count(after, "第二句。");
+                        int secondCount = Count(after, "重复改字夹具。");
                         Ok(run, "ul-ambig-rest",
                             !string.IsNullOrEmpty(dup)
                             && !ItemOk(wr, 0) && ItemOk(wr, 1)
@@ -264,10 +264,7 @@ namespace WordDocumentRoundtripTest
                         string bad = FirstInoperable(body);
                         if (string.IsNullOrEmpty(bad))
                         {
-                            string extra = "同文。" + "\r" + "同文。";
-                            s.ProcessActions(id, InsertAfter(Sent(body, "乙句定位"), extra));
-                            body = Body(s, id);
-                            bad = FirstInoperable(body);
+                            bad = InteriorInoperable(s, path);
                         }
 
                         string yi = Sent(body, "乙句定位");
@@ -407,7 +404,7 @@ namespace WordDocumentRoundtripTest
 
                         if (Want("ul-apply-toc"))
                         {
-                            string code = string.IsNullOrEmpty(interiorS) ? interiorP : interiorS;
+                            string code = string.IsNullOrEmpty(interiorP) ? interiorS : interiorP;
                             ToolResult applied = Apply(s, id, code ?? "S_xxxxx", "heading_1");
                             bool styled = StyleHas(s, path, "域外正文。", HeadingNames);
                             Ok(run, "ul-apply-toc",
@@ -1409,6 +1406,83 @@ namespace WordDocumentRoundtripTest
             return found;
         }
 
+        private static string InteriorInoperable(WdSession s, string path)
+        {
+            string found = "";
+            Action<Word.Document> read = doc =>
+            {
+                WordDocumentExtractor.ProcessDocument(doc, ProcessDocumentOptions.ForProcessActions("locate"));
+                List<string> codes = DocumentState.GetInoperableSentenceCodesSnapshot();
+                if (codes != null && codes.Count > 0)
+                {
+                    found = codes[0];
+                }
+            };
+            if (s.IsWps)
+            {
+                s.TryWpsDoc(path, doc =>
+                {
+                    Word.Document wordDoc = doc as Word.Document;
+                    if (wordDoc == null)
+                    {
+                        return false;
+                    }
+
+                    read(wordDoc);
+                    return true;
+                });
+            }
+            else
+            {
+                s.OnWordDoc(path, doc =>
+                {
+                    read(doc);
+                    return true;
+                });
+            }
+
+            return found;
+        }
+
+        private static object CommentScope(object comment)
+        {
+            try
+            {
+                object scope = WdSession.ComGet(comment, "Scope");
+                if (scope != null)
+                {
+                    return scope;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return WdSession.ComGet(comment, "Range");
+        }
+
+        private static Word.Range CommentScopeRange(Word.Comment comment)
+        {
+            try
+            {
+                if (comment.Scope != null)
+                {
+                    return comment.Scope;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return comment.Range;
+        }
+
+        private static string CommentScopeText(Word.Comment comment)
+        {
+            Word.Range range = CommentScopeRange(comment);
+            return range == null ? "" : (range.Text ?? "");
+        }
+
         private static bool StyleHas(WdSession s, string path, string needle, string[] names)
         {
             string found = "";
@@ -1483,7 +1557,7 @@ namespace WordDocumentRoundtripTest
                     for (int i = 1; i <= n; i++)
                     {
                         object comment = WdSession.ComCall(comments, "Item", i);
-                        object range = WdSession.ComGet(comment, "Range");
+                        object range = CommentScope(comment);
                         string text = Convert.ToString(WdSession.ComGet(range, "Text")) ?? "";
                         if (text.IndexOf(needle, StringComparison.Ordinal) >= 0)
                         {
@@ -1501,7 +1575,7 @@ namespace WordDocumentRoundtripTest
                 {
                     for (int i = 1; i <= doc.Comments.Count; i++)
                     {
-                        string text = doc.Comments[i].Range.Text ?? "";
+                        string text = CommentScopeText(doc.Comments[i]);
                         if (text.IndexOf(needle, StringComparison.Ordinal) >= 0)
                         {
                             ok = true;
@@ -1537,7 +1611,7 @@ namespace WordDocumentRoundtripTest
                     for (int i = 1; i <= n; i++)
                     {
                         object comment = WdSession.ComCall(comments, "Item", i);
-                        object range = WdSession.ComGet(comment, "Range");
+                        object range = CommentScope(comment);
                         int start = Convert.ToInt32(WdSession.ComGet(range, "Start"));
                         int end = Convert.ToInt32(WdSession.ComGet(range, "End"));
                         if (start == tableEnd && end == start)
@@ -1562,7 +1636,7 @@ namespace WordDocumentRoundtripTest
                     int tableEnd = doc.Tables[1].Range.End;
                     for (int i = 1; i <= doc.Comments.Count; i++)
                     {
-                        Word.Range range = doc.Comments[i].Range;
+                        Word.Range range = CommentScopeRange(doc.Comments[i]);
                         if (range.Start == tableEnd && range.End == range.Start)
                         {
                             ok = true;
