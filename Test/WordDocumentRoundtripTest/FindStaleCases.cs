@@ -1237,6 +1237,14 @@ namespace WordDocumentRoundtripTest
                     + "  去 /=" + slashRemoved
                     + "  仍剩 \\x01=" + leftoverSoH);
                 ReportStoryDiff("双方去图", converted, storyNoImg);
+                string ooxmlStory = OoxmlStoryConvert.ToStory(OpenXmlPackage.Load(doc).Body);
+                Console.WriteLine("    OOXML 字流 Length=" + ooxmlStory.Length
+                    + "  与 display 字流相同=" + string.Equals(ooxmlStory, converted, StringComparison.Ordinal));
+                ReportStoryDiff("OOXML 对 display 字流", ooxmlStory, converted);
+                ReportStoryDiff("OOXML 对 Content.Text", ooxmlStory, storyNoImg);
+                bool ooxmlOk = string.Equals(ooxmlStory, storyNoImg, StringComparison.Ordinal);
+                Ok(run, "fs-ooxml-align", ooxmlOk,
+                    ooxmlOk ? "OOXML 与 Content.Text 一致" : "OOXML 对不上，见日志首差");
                 DumpImageGap(display, converted, story);
                 bool thesisDump = string.Equals(
                     System.IO.Path.GetFullPath(path),

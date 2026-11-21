@@ -518,6 +518,10 @@ namespace WordAddIn1
                 {
                     sb.Append('\t');
                 }
+                else if (child.Name == W + "ptab")
+                {
+                    sb.Append('0');
+                }
                 else if (child.Name == W + "br")
                 {
                     string type = (string)child.Attribute(W + "type");

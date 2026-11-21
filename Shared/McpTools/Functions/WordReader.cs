@@ -1623,6 +1623,13 @@ namespace WordAddIn1
                     textBuffer.Append("\t");
                     orderLog.Add("tab");
                 }
+                else if (el.Name == w + "ptab")
+                {
+                    // 定位制表符。点线只是显示，故事流里它是字符 0。
+                    OpenTocResult(textBuffer);
+                    textBuffer.Append('0');
+                    orderLog.Add("ptab");
+                }
                 else if (el.Name == w + "br")
                 {
                     OpenTocResult(textBuffer);
