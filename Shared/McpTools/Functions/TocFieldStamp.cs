@@ -208,6 +208,28 @@ namespace WordAddIn1
             return null;
         }
 
+        public static string DumpInterior()
+        {
+            lock (Gate)
+            {
+                if (Interior.Count == 0)
+                {
+                    return "(empty)";
+                }
+
+                var list = new List<string>(Interior);
+                list.Sort(StringComparer.Ordinal);
+                int take = Math.Min(24, list.Count);
+                string body = string.Join(",", list.GetRange(0, take));
+                if (list.Count > take)
+                {
+                    body += ",+" + (list.Count - take);
+                }
+
+                return "n=" + list.Count + " " + body;
+            }
+        }
+
         public static bool IsInterior(string codes)
         {
             if (string.IsNullOrWhiteSpace(codes))

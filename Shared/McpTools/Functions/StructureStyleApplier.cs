@@ -218,10 +218,22 @@ namespace WordAddIn1
                 locators.Add(one);
             }
 
+            LocateProbeLog.Line(
+                "apply.Plan codes=" + code
+                + " paragraph=" + paragraph
+                + " locators=" + locators.Count
+                + " snapLen=" + (snapshot == null ? 0 : snapshot.Length)
+                + " first=" + (locators.Count == 0 ? "" : string.Join(",", locators[0].Keys)));
             InsertTargetLocatorHelper.LocateSpanBatchResult batch = InsertTargetLocatorHelper.TryLocateSpans(
                 doc,
                 locators,
                 disallowBackendApi);
+            LocateProbeLog.Line(
+                "apply.locate blocked=" + batch.BatchBlocked
+                + " err=" + (batch.Error ?? "")
+                + " items=" + (batch.Items == null ? 0 : batch.Items.Count)
+                + " firstOk=" + (batch.Items != null && batch.Items.Count > 0 && batch.Items[0] != null && batch.Items[0].Success)
+                + " " + TocFieldStamp.DumpInterior());
             if (batch.BatchBlocked)
             {
                 plan.Finished = Fail(string.IsNullOrEmpty(batch.Error) ? "定位失败。" : batch.Error);

@@ -400,6 +400,9 @@ namespace WordAddIn1
 
             DocumentState.EnsureInoperableFromLastDisplay();
             LogHit(source, fingerprint, bodyCheckMs);
+            LocateProbeLog.Line(
+                "pd.cache HIT source=" + source
+                + " " + TocFieldStamp.DumpInterior());
             return true;
         }
 
@@ -567,6 +570,10 @@ namespace WordAddIn1
             string msPart = bodyCheckMs > 0 ? $" body_check_ms={bodyCheckMs}" : "";
             Debug.WriteLine(
                 $"[ProcessCache] source={source} bodyFp={FpShort(fingerprint)} cache=MISS reason={reason}{msPart}");
+            LocateProbeLog.Line(
+                "pd.cache MISS source=" + source
+                + " reason=" + reason
+                + " " + TocFieldStamp.DumpInterior());
         }
 
         private static string FpShort(string fp)

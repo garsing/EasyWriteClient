@@ -20,6 +20,7 @@ namespace WordAddIn1.DocumentMapping
         public static MapReadTextResult MapChunks(IReadOnlyList<string> chunks, IMappingStore store)
         {
             store.BeginMappingPass();
+            LocateProbeLog.Line("MapChunks ResetPairing before " + TocFieldStamp.DumpInterior());
             TocFieldStamp.ResetPairing();
             var mapped = new MapReadTextResult();
             int chunkCount = chunks == null ? 0 : chunks.Count;
@@ -127,6 +128,7 @@ namespace WordAddIn1.DocumentMapping
                 + " find_or_create_ms=" + encodeSw.ElapsedMilliseconds
                 + " uniq_ms=" + uniqSw.ElapsedMilliseconds
                 + " display_ms=" + displaySw.ElapsedMilliseconds);
+            LocateProbeLog.Line("MapChunks done " + TocFieldStamp.DumpInterior());
             return mapped;
         }
 

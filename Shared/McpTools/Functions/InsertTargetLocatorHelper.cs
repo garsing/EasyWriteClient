@@ -718,6 +718,10 @@ namespace WordAddIn1
             {
                 result.Success = false;
                 result.Error = inoperable;
+                LocateProbeLog.Line(
+                    "precheck.block stream=" + stream
+                    + " err=" + inoperable
+                    + " " + TocFieldStamp.DumpInterior());
                 return result;
             }
 
@@ -1761,12 +1765,22 @@ namespace WordAddIn1
 
             foreach (DocumentActionAmbiguityAnchor anchor in anchors)
             {
-                if (StoryUniqEncode.CsvIsInoperable(anchor?.Codes))
+                string codes = anchor?.Codes;
+                bool inop = StoryUniqEncode.CsvIsInoperable(codes);
+                bool interior = TocFieldStamp.IsInterior(codes);
+                LocateProbeLog.Line(
+                    "FailIfInoperable idx=" + (anchor == null ? -1 : anchor.ActionIndex)
+                    + " field=" + (anchor == null ? "" : anchor.Field)
+                    + " codes=" + (codes ?? "")
+                    + " inop=" + inop
+                    + " interior=" + interior
+                    + " " + TocFieldStamp.DumpInterior());
+                if (inop)
                 {
                     return StoryUniqEncode.FailBeforeWriteMessage;
                 }
 
-                if (TocFieldStamp.IsInterior(anchor?.Codes))
+                if (interior)
                 {
                     return TocFieldStamp.InteriorMessage;
                 }

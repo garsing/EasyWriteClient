@@ -957,10 +957,19 @@ namespace WordAddIn1
                 }
             }
 
+            LocateProbeLog.Line(
+                "write.Assign n=" + inputs.Count
+                + " firstField=" + (inputs.Count == 0 ? "" : inputs[0].Field)
+                + " " + TocFieldStamp.DumpInterior());
             InsertTargetLocatorHelper.LocateSpanBatchResult batch = InsertTargetLocatorHelper.TryLocateSpans(
                 doc,
                 inputs,
                 disallowBackendApi);
+            LocateProbeLog.Line(
+                "write.locate blocked=" + batch.BatchBlocked
+                + " err=" + (batch.Error ?? "")
+                + " items=" + (batch.Items == null ? 0 : batch.Items.Count)
+                + " " + TocFieldStamp.DumpInterior());
             for (int i = 0; i < owners.Count; i++)
             {
                 owners[i].Located = i < batch.Items.Count ? batch.Items[i] : null;

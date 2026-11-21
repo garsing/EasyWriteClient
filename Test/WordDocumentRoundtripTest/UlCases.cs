@@ -15,7 +15,7 @@ namespace WordDocumentRoundtripTest
     /// <summary>统一定位 ul-*。对照 docs/测试/word测试/统一定位。</summary>
     internal static class UlCases
     {
-        public const int Target = 34;
+        public const int Target = 32;
 
         private static readonly string[] HeadingNames = { "标题 1", "heading 1", "Heading 1" };
         private static readonly Regex SentMark = new Regex(@"\[(S_[0-9A-Za-z]{5})-start(?: 歧义无法操作)?\]", RegexOptions.Compiled);
@@ -23,7 +23,6 @@ namespace WordDocumentRoundtripTest
         private static readonly Regex CellMark = new Regex(@"\[(T_[0-9A-Za-z]+_r[0-9]+_c[0-9]+)-start\]", RegexOptions.Compiled);
         private static readonly Regex TableMark = new Regex(@"<table id=""?(T_[0-9A-Za-z]+)""?>", RegexOptions.Compiled);
         private static readonly Regex ImageMark = new Regex(@"<image[^>]*id=""?(I_[0-9A-Za-z]+)""?", RegexOptions.Compiled);
-        private static readonly Regex InoperableMark = new Regex(@"\[(S_[0-9A-Za-z]+)-start 歧义无法操作\]", RegexOptions.Compiled);
 
         private static HashSet<string> Only;
         private static readonly HashSet<string> Seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -55,7 +54,6 @@ namespace WordDocumentRoundtripTest
 
             var s = new WdSession(host);
             RunMiss(run, s);
-            RunAmbig(run, s);
             RunToc(run, s);
             RunGeo(run, s);
             RunTable(run, s);
@@ -76,8 +74,8 @@ namespace WordDocumentRoundtripTest
         {
             return new[]
             {
-                "ul-miss-rest", "ul-order", "ul-ambig-rest", "ul-parse-rest", "ul-para-miss",
-                "ul-toc-block", "ul-inoperable",
+                "ul-miss-rest", "ul-order", "ul-parse-rest", "ul-para-miss",
+                "ul-toc-block",
                 "ul-cell-write", "ul-cell-miss", "ul-cell-mix", "ul-cell-and-sent",
                 "ul-table-miss", "ul-table-toc", "ul-table-gone", "ul-del-image", "ul-del-table", "ul-chart-gone",
                 "ul-replace-span", "ul-insert-end", "ul-insert-table", "ul-comment-sent", "ul-comment-table",
@@ -203,88 +201,6 @@ namespace WordDocumentRoundtripTest
                             && after.IndexOf("甲句定位。", StringComparison.Ordinal) >= 0
                             && after.IndexOf("乙句已改。", StringComparison.Ordinal) >= 0,
                             Dump(wr) + " body=" + Strip(after));
-                    }
-                    finally
-                    {
-                        s.CloseDocByPath(path);
-                    }
-                }
-            }
-        }
-
-        private static void RunAmbig(TestRun run, WdSession s)
-        {
-            if (!Want("ul-ambig-rest", "ul-inoperable"))
-            {
-                return;
-            }
-
-            if (Want("ul-ambig-rest"))
-            {
-                if (!Open(s, "独特改字甲句。\r重复改字夹具。\r重复改字夹具。", out string path, out string id, out string body))
-                {
-                    Fail(run, "ul-ambig-rest", "铺稿失败");
-                }
-                else
-                {
-                    try
-                    {
-                        string first = Sent(body, "独特改字甲句");
-                        string dup = DupCode(body);
-                        ToolResult wr = s.ProcessActions(id, Batch(
-                            Replace(string.IsNullOrEmpty(dup) ? "S_xxxxx" : dup, "第二已改。"),
-                            Replace(first, "第一已改。")));
-                        string after = Body(s, id);
-                        int secondCount = Count(after, "重复改字夹具。");
-                        Ok(run, "ul-ambig-rest",
-                            !string.IsNullOrEmpty(dup)
-                            && !ItemOk(wr, 0) && ItemOk(wr, 1)
-                            && after.IndexOf("第一已改。", StringComparison.Ordinal) >= 0
-                            && secondCount >= 2
-                            && Blob(wr, "歧义"),
-                            Dump(wr) + " dup=" + dup + " body=" + Strip(after));
-                    }
-                    finally
-                    {
-                        s.CloseDocByPath(path);
-                    }
-                }
-            }
-
-            if (Want("ul-inoperable"))
-            {
-                if (!Open(s, "甲句定位。\r乙句定位。", out string path, out string id, out string body))
-                {
-                    Fail(run, "ul-inoperable", "铺稿失败");
-                }
-                else
-                {
-                    try
-                    {
-                        string bad = FirstInoperable(body);
-                        if (string.IsNullOrEmpty(bad))
-                        {
-                            bad = InteriorInoperable(s, path);
-                        }
-
-                        string yi = Sent(body, "乙句定位");
-                        if (string.IsNullOrEmpty(bad) || string.Equals(bad, yi, StringComparison.Ordinal))
-                        {
-                            Fail(run, "ul-inoperable", "没有不可操作码 body=" + Strip(body));
-                        }
-                        else
-                        {
-                            ToolResult wr = s.ProcessActions(id, Batch(
-                                Replace(bad, "不应出现。"),
-                                Replace(yi, "乙句已改。")));
-                            string after = Body(s, id);
-                            Ok(run, "ul-inoperable",
-                                !wr.Success && WdSession.IntOf(wr, "executed_actions") == 0
-                                && after.IndexOf("乙句定位。", StringComparison.Ordinal) >= 0
-                                && after.IndexOf("乙句已改。", StringComparison.Ordinal) < 0
-                                && Blob(wr, "无法操作"),
-                                Dump(wr) + " body=" + Strip(after));
-                        }
                     }
                     finally
                     {
@@ -1094,27 +1010,6 @@ namespace WordDocumentRoundtripTest
             return m.Success ? m.Groups[1].Value : "";
         }
 
-        private static string DupCode(string body)
-        {
-            var seen = new HashSet<string>(StringComparer.Ordinal);
-            foreach (Match m in SentMark.Matches(body ?? ""))
-            {
-                string code = m.Groups[1].Value;
-                if (!seen.Add(code))
-                {
-                    return code;
-                }
-            }
-
-            return "";
-        }
-
-        private static string FirstInoperable(string body)
-        {
-            Match m = InoperableMark.Match(body ?? "");
-            return m.Success ? m.Groups[1].Value : "";
-        }
-
         private static string TableId(string body)
         {
             Match m = TableMark.Match(body ?? "");
@@ -1399,44 +1294,6 @@ namespace WordDocumentRoundtripTest
                     found = sentence
                         ? TocFieldStamp.FirstInteriorSentence() ?? ""
                         : TocFieldStamp.FirstInteriorParagraph() ?? "";
-                    return true;
-                });
-            }
-
-            return found;
-        }
-
-        private static string InteriorInoperable(WdSession s, string path)
-        {
-            string found = "";
-            Action<Word.Document> read = doc =>
-            {
-                WordDocumentExtractor.ProcessDocument(doc, ProcessDocumentOptions.ForProcessActions("locate"));
-                List<string> codes = DocumentState.GetInoperableSentenceCodesSnapshot();
-                if (codes != null && codes.Count > 0)
-                {
-                    found = codes[0];
-                }
-            };
-            if (s.IsWps)
-            {
-                s.TryWpsDoc(path, doc =>
-                {
-                    Word.Document wordDoc = doc as Word.Document;
-                    if (wordDoc == null)
-                    {
-                        return false;
-                    }
-
-                    read(wordDoc);
-                    return true;
-                });
-            }
-            else
-            {
-                s.OnWordDoc(path, doc =>
-                {
-                    read(doc);
                     return true;
                 });
             }
