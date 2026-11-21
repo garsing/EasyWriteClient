@@ -46,6 +46,8 @@ namespace WordDocumentRoundtripTest
                     && caseFilter.IndexOf("plus", StringComparison.OrdinalIgnoreCase) >= 0;
                 bool onlyParaText = !string.IsNullOrEmpty(caseFilter)
                     && caseFilter.IndexOf("pratext", StringComparison.OrdinalIgnoreCase) >= 0;
+                bool onlyWtDisplay = !string.IsNullOrEmpty(caseFilter)
+                    && caseFilter.IndexOf("wt-display", StringComparison.OrdinalIgnoreCase) >= 0;
                 bool onlyDalign = !string.IsNullOrEmpty(caseFilter)
                     && caseFilter.IndexOf("dalign", StringComparison.OrdinalIgnoreCase) >= 0;
                 bool onlyPwalk = !string.IsNullOrEmpty(caseFilter)
@@ -79,7 +81,7 @@ namespace WordDocumentRoundtripTest
                 {
                     RunRealDocParaChars(run, app);
                 }
-                else if (onlyDalign)
+                else if (onlyDalign || onlyWtDisplay)
                 {
                     RunRealDocDisplayAlign(run, app);
                 }
@@ -1247,6 +1249,7 @@ namespace WordDocumentRoundtripTest
                 bool ooxmlOk = string.Equals(ooxmlStory, storyNoImg, StringComparison.Ordinal);
                 Ok(run, "fs-ooxml-align", ooxmlOk,
                     ooxmlOk ? "OOXML 与 Content.Text 一致" : "OOXML 对不上，见日志首差");
+                CheckOoxmlWtInDisplay(run, doc, processed, display);
                 DumpImageGap(display, converted, story);
                 bool thesisDump = string.Equals(
                     System.IO.Path.GetFullPath(path),
@@ -1266,6 +1269,7 @@ namespace WordDocumentRoundtripTest
             catch (Exception ex)
             {
                 run.CaseFail("fs-display-align", ex.GetType().Name + ": " + ex.Message);
+                run.CaseFail("fs-wt-display", ex.GetType().Name + ": " + ex.Message);
             }
             finally
             {
@@ -1282,6 +1286,102 @@ namespace WordDocumentRoundtripTest
                     CloseDoc(doc);
                 }
             }
+        }
+
+        private static void CheckOoxmlWtInDisplay(
+            TestRun run,
+            Word.Document doc,
+            WordDocumentExtractor.ProcessingResult processed,
+            string paragraphDisplay)
+        {
+            var locate = new StringBuilder();
+            if (processed != null && processed.ChunkInfo != null)
+            {
+                foreach (WordDocumentExtractor.ChunkInfo chunk in processed.ChunkInfo)
+                {
+                    if (chunk != null && !string.IsNullOrEmpty(chunk.LocateDisplayContent))
+                    {
+                        locate.Append(chunk.LocateDisplayContent);
+                    }
+                }
+            }
+
+            string raw = locate.Length > 0 ? locate.ToString() : (paragraphDisplay ?? "");
+            string haystack = DisplayToStory(raw);
+            if (string.IsNullOrEmpty(haystack))
+            {
+                haystack = raw;
+            }
+
+            List<string> wts = OoxmlStoryConvert.CollectWtValues(OpenXmlPackage.Load(doc).Body);
+            int miss = 0;
+            var samples = new List<string>();
+            foreach (string needle in wts)
+            {
+                if (FoundInDisplay(haystack, needle))
+                {
+                    continue;
+                }
+
+                miss++;
+                if (samples.Count < 15)
+                {
+                    samples.Add(QuoteWt(needle));
+                }
+            }
+
+            Console.WriteLine("    w:t 条数=" + wts.Count
+                + "  display 搜不到=" + miss
+                + "  haystack=" + (locate.Length > 0 ? "LocateDisplay 字流" : "paragraph display 字流")
+                + "  Length=" + haystack.Length);
+            if (samples.Count > 0)
+            {
+                Console.WriteLine("    搜不到样例 " + string.Join(" | ", samples.ToArray()));
+            }
+
+            bool ok = miss == 0;
+            Ok(run, "fs-wt-display", ok,
+                ok ? "每个 w:t 都在 display 里" : ("搜不到 " + miss + "/" + wts.Count + "  " + string.Join(" ", samples.ToArray())));
+        }
+
+        private static bool FoundInDisplay(string haystack, string needle)
+        {
+            if (string.IsNullOrEmpty(haystack) || string.IsNullOrEmpty(needle))
+            {
+                return false;
+            }
+
+            if (haystack.IndexOf(needle, StringComparison.Ordinal) >= 0)
+            {
+                return true;
+            }
+
+            if (needle.IndexOf('\x0B') >= 0)
+            {
+                string n = needle.Replace('\x0B', '\n');
+                if (haystack.IndexOf(n, StringComparison.Ordinal) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static string QuoteWt(string text)
+        {
+            if (text == null)
+            {
+                return "null";
+            }
+
+            if (text.Length == 1 && text[0] == '\u3000')
+            {
+                return "U+3000";
+            }
+
+            string shown = text.Length > 40 ? text.Substring(0, 40) + "…" : text;
+            return "「" + shown.Replace("\r", "\\r").Replace("\n", "\\n").Replace("\x0B", "\\v") + "」";
         }
 
         private static readonly Regex DisplayCodeStart = new Regex(

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text;
 using System.Xml.Linq;
 
@@ -27,6 +28,20 @@ namespace WordAddIn1.DocumentMapping
             var sb = new StringBuilder();
             AppendBlocks(body, sb);
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// 正文里每个未删除的 <c>w:t</c>。换行收成软回车，与 ToStory 相同。空串不要。
+        /// </summary>
+        public static List<string> CollectWtValues(XElement body)
+        {
+            var list = new List<string>();
+            if (body != null)
+            {
+                CollectWt(body, list);
+            }
+
+            return list;
         }
 
         private static void AppendBlocks(XElement parent, StringBuilder sb)
@@ -305,6 +320,62 @@ namespace WordAddIn1.DocumentMapping
             }
 
             return hasDeletion;
+        }
+
+        private static void CollectWt(XElement parent, List<string> list)
+        {
+            foreach (XElement child in parent.Elements())
+            {
+                if (IsDeletion(child))
+                {
+                    continue;
+                }
+
+                if (child.Name == W + "r"
+                    && child.Element(W + "rPr")?.Element(W + "del") != null)
+                {
+                    continue;
+                }
+
+                if (child.Name == W + "t")
+                {
+                    string value = child.Value ?? "";
+                    if (value.IndexOf('\n') >= 0)
+                    {
+                        value = value.Replace('\n', '\x0B');
+                    }
+
+                    if (value.Length > 0)
+                    {
+                        list.Add(value);
+                    }
+
+                    continue;
+                }
+
+                if (child.Name.LocalName == "Fallback"
+                    || child.Name == W + "instrText"
+                    || child.Name == W + "fldChar")
+                {
+                    continue;
+                }
+
+                if (child.Name.LocalName == "AlternateContent")
+                {
+                    XElement choice = child.Element(Mc + "Choice");
+                    if (choice != null)
+                    {
+                        CollectWt(choice, list);
+                    }
+
+                    continue;
+                }
+
+                if (!child.Name.LocalName.EndsWith("Pr"))
+                {
+                    CollectWt(child, list);
+                }
+            }
         }
 
         private static void AppendInlines(XElement parent, StringBuilder sb)
