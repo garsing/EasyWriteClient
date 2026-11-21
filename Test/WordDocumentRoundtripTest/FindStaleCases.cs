@@ -1132,8 +1132,10 @@ namespace WordDocumentRoundtripTest
                 Console.Out.Flush();
 
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                string story = doc.Content.Text ?? "";
-                Console.WriteLine("    Content.Text Length=" + story.Length
+                string rawStory = doc.Content.Text ?? "";
+                string story = StoryByContentControls(doc, rawStory);
+                Console.WriteLine("    Content.Text Length=" + rawStory.Length
+                    + "  控件分段后=" + story.Length
                     + "  用时=" + sw.Elapsed.TotalSeconds.ToString("F2") + "s");
                 Console.Out.Flush();
 
@@ -1298,6 +1300,113 @@ namespace WordDocumentRoundtripTest
         private static readonly Regex DisplayAttrInt = new Regex(
             @"(colspan|rowspan)\s*=\s*""?(\d+)""?",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        /// <summary>
+        /// 整篇 Content.Text 从文首取时，会把控件结束位置包进同一次读取，第一张表里贴在 \a 前面的 \r 会漏报。
+        /// 有控件时按正文位置交替读：控件前、控件里、控件之间。最后一个控件后面先读到它所在句的段末，再从段末读到文末。
+        /// </summary>
+        private static string StoryByContentControls(Word.Document doc, string rawStory)
+        {
+            if (doc == null)
+            {
+                return rawStory ?? "";
+            }
+
+            try
+            {
+                Word.Range content = doc.Content;
+                if (content == null
+                    || doc.ContentControls == null
+                    || doc.ContentControls.Count == 0)
+                {
+                    return rawStory ?? "";
+                }
+
+                var spans = new List<int[]>();
+                int n = doc.ContentControls.Count;
+                for (int i = 1; i <= n; i++)
+                {
+                    Word.Range range = doc.ContentControls[i] == null
+                        ? null
+                        : doc.ContentControls[i].Range;
+                    if (range == null || range.End <= range.Start)
+                    {
+                        continue;
+                    }
+
+                    if (range.Start < content.Start || range.End > content.End)
+                    {
+                        continue;
+                    }
+
+                    spans.Add(new[] { range.Start, range.End });
+                }
+
+                if (spans.Count == 0)
+                {
+                    return rawStory ?? "";
+                }
+
+                spans.Sort((a, b) =>
+                {
+                    int byStart = a[0].CompareTo(b[0]);
+                    return byStart != 0 ? byStart : a[1].CompareTo(b[1]);
+                });
+
+                var sb = new StringBuilder();
+                int pos = content.Start;
+                int lastEnd = content.Start;
+                foreach (int[] span in spans)
+                {
+                    if (span[0] < pos)
+                    {
+                        continue;
+                    }
+
+                    if (span[0] > pos)
+                    {
+                        sb.Append(doc.Range(pos, span[0]).Text ?? "");
+                    }
+
+                    sb.Append(doc.Range(span[0], span[1]).Text ?? "");
+                    pos = span[1];
+                    lastEnd = span[1];
+                }
+
+                if (pos >= content.End)
+                {
+                    return sb.ToString();
+                }
+
+                int mark = ParagraphMarkAt(doc, lastEnd);
+                if (mark > pos && mark < content.End)
+                {
+                    sb.Append(doc.Range(pos, mark).Text ?? "");
+                    sb.Append(doc.Range(mark, content.End).Text ?? "");
+                }
+                else
+                {
+                    sb.Append(doc.Range(pos, content.End).Text ?? "");
+                }
+
+                return sb.ToString();
+            }
+            catch
+            {
+                return rawStory ?? "";
+            }
+        }
+
+        private static int ParagraphMarkAt(Word.Document doc, int controlEnd)
+        {
+            Word.Range para = doc.Range(controlEnd, controlEnd).Paragraphs[1].Range;
+            if (para == null)
+            {
+                return controlEnd;
+            }
+
+            return para.End - 1;
+        }
 
         private static string StripComPictureChars(Word.Document doc, string story, out int slashRemoved)
         {
