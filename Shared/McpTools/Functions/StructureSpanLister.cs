@@ -403,7 +403,19 @@ namespace WordAddIn1
                 paragraphStyle = bodyStyle;
             }
 
+            int contentStart = story.Length;
             AppendInlines(paragraph, byId, paragraphStyle, fields, story, pieces);
+            int contentEnd = story.Length;
+            if (contentEnd > contentStart && pieces.Count > 0)
+            {
+                Piece last = pieces[pieces.Count - 1];
+                int textLength = last.Text == null ? 0 : last.Text.Length;
+                if (last.Start == contentStart && last.Start + textLength == contentEnd)
+                {
+                    last.FillsParagraph = true;
+                }
+            }
+
             story.Append('\r');
         }
 
@@ -763,6 +775,7 @@ namespace WordAddIn1
             public int Start;
             public int End;
             public int StreamStart;
+            public bool FillsParagraph;
         }
 
         public sealed class LocateStyledResult
@@ -834,7 +847,8 @@ namespace WordAddIn1
                     Node = piece.Node,
                     Start = origin[at],
                     End = origin[last] + 1,
-                    StreamStart = at
+                    StreamStart = at,
+                    FillsParagraph = piece.FillsParagraph
                 });
             }
 
@@ -1146,6 +1160,14 @@ namespace WordAddIn1
             string shown = TrimMark(piece.Text);
             int streamStart = piece.StreamStart;
             int streamEnd = streamStart + (shown == null ? 0 : shown.Length);
+            if (piece.FillsParagraph
+                && displayChars != null
+                && streamEnd < displayChars.Length
+                && displayChars[streamEnd] == '\r')
+            {
+                streamEnd++;
+            }
+
             List<SentenceSlot> covered = CoveredSentences(slots, streamStart, streamEnd);
             if (covered.Count >= 2)
             {
@@ -1163,6 +1185,14 @@ namespace WordAddIn1
                 ? displayChars.Substring(slot.StreamStart, slot.StreamEnd - slot.StreamStart)
                 : "";
             bool whole = piece.Scope == "paragraph" && TrimMark(sentence) == shown;
+            if (!whole
+                && piece.FillsParagraph
+                && streamStart <= slot.StreamStart
+                && streamEnd >= slot.StreamEnd)
+            {
+                whole = true;
+            }
+
             StyledSpan single = NewSpan(piece, shown, slot.Code);
             if (!whole)
             {
@@ -1594,6 +1624,7 @@ namespace WordAddIn1
             public StructureStyleRecord Style;
             public string Scope;
             public XElement Node;
+            public bool FillsParagraph;
         }
 
         private sealed class SentenceSlot
