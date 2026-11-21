@@ -63,45 +63,44 @@ namespace WordAddIn1
                     continue;
                 }
 
-                string shown = TrimMark(piece.Text);
-                SentenceSlot slot = SlotAt(slots, piece.Start);
-                if (slot == null || slot.StreamStart < 0)
+                List<StyledSpan> parts = BindPiece(displayChars, slots, piece);
+                if (parts.Count == 0)
                 {
-                    errors.Add("「" + shown + "」没有落在句子码里。");
+                    errors.Add("「" + TrimMark(piece.Text) + "」没有落在句子码里。");
                     continue;
                 }
 
-                string sentence = displayChars.Substring(slot.StreamStart, slot.StreamEnd - slot.StreamStart);
-                bool whole = piece.Scope == "paragraph" && TrimMark(sentence) == shown;
-                var row = new Dictionary<string, object>
+                foreach (StyledSpan part in parts)
                 {
-                    ["target_codes"] = slot.Code,
-                    ["structure"] = piece.Style.Structure,
-                    ["scope"] = piece.Scope
-                };
-                if (!whole)
-                {
-                    int index = OccurrenceIn(displayChars, slot.StreamStart, slot.StreamEnd, shown, piece.StreamStart);
-                    if (index > 1)
+                    var row = new Dictionary<string, object>
                     {
-                        row["text"] = new Dictionary<string, object>
+                        ["target_codes"] = part.Code,
+                        ["structure"] = piece.Style.Structure,
+                        ["scope"] = piece.Scope
+                    };
+                    if (!string.IsNullOrEmpty(part.TextValue))
+                    {
+                        if (part.HasIndex)
                         {
-                            ["value"] = shown,
-                            ["index"] = index
-                        };
+                            row["text"] = new Dictionary<string, object>
+                            {
+                                ["value"] = part.TextValue,
+                                ["index"] = part.TextIndex
+                            };
+                        }
+                        else
+                        {
+                            row["text"] = part.TextValue;
+                        }
                     }
-                    else
+
+                    foreach (KeyValuePair<string, object> pair in piece.Style.FormatsForScope(piece.Scope))
                     {
-                        row["text"] = shown;
+                        row[pair.Key] = pair.Value;
                     }
-                }
 
-                foreach (KeyValuePair<string, object> pair in piece.Style.FormatsForScope(piece.Scope))
-                {
-                    row[pair.Key] = pair.Value;
+                    spans.Add(row);
                 }
-
-                spans.Add(row);
             }
 
             var data = new Dictionary<string, object>
@@ -1112,44 +1111,195 @@ namespace WordAddIn1
         public static bool TryBindClear(string display, LocatedSpan piece, out StyledSpan span)
         {
             span = null;
-            if (piece == null || string.IsNullOrEmpty(display))
+            List<StyledSpan> parts = BindPiece(display, piece);
+            if (parts.Count == 0)
             {
                 return false;
+            }
+
+            span = parts[0];
+            return true;
+        }
+
+        public static List<StyledSpan> BindPiece(string display, LocatedSpan piece)
+        {
+            if (piece == null || string.IsNullOrEmpty(display))
+            {
+                return new List<StyledSpan>();
             }
 
             string displayChars = DisplayChars(display, out int[] origin);
-            List<SentenceSlot> slots = SentenceSlots(display, origin);
-            SentenceSlot slot = SlotAt(slots, piece.Start);
-            if (slot == null || string.IsNullOrEmpty(slot.Code))
+            return BindPiece(displayChars, SentenceSlots(display, origin), piece);
+        }
+
+        private static List<StyledSpan> BindPiece(
+            string displayChars,
+            List<SentenceSlot> slots,
+            LocatedSpan piece)
+        {
+            var parts = new List<StyledSpan>();
+            if (piece == null)
             {
-                return false;
+                return parts;
             }
 
             string shown = TrimMark(piece.Text);
-            string sentence = slot.StreamStart >= 0 && slot.StreamEnd > slot.StreamStart
+            int streamStart = piece.StreamStart;
+            int streamEnd = streamStart + (shown == null ? 0 : shown.Length);
+            List<SentenceSlot> covered = CoveredSentences(slots, streamStart, streamEnd);
+            if (covered.Count >= 2)
+            {
+                AddCrossSentenceParts(parts, displayChars, piece, shown, streamStart, streamEnd, covered);
+                return parts;
+            }
+
+            SentenceSlot slot = SlotAt(slots, piece.Start);
+            if (slot == null || string.IsNullOrEmpty(slot.Code) || slot.StreamStart < 0)
+            {
+                return parts;
+            }
+
+            string sentence = slot.StreamEnd > slot.StreamStart
                 ? displayChars.Substring(slot.StreamStart, slot.StreamEnd - slot.StreamStart)
                 : "";
             bool whole = piece.Scope == "paragraph" && TrimMark(sentence) == shown;
-            span = new StyledSpan
+            StyledSpan single = NewSpan(piece, shown, slot.Code);
+            if (!whole)
+            {
+                SetText(single, displayChars, slot.StreamStart, slot.StreamEnd, shown, piece.StreamStart);
+            }
+
+            parts.Add(single);
+            return parts;
+        }
+
+        private static List<SentenceSlot> CoveredSentences(
+            List<SentenceSlot> slots,
+            int streamStart,
+            int streamEnd)
+        {
+            var covered = new List<SentenceSlot>();
+            if (slots == null)
+            {
+                return covered;
+            }
+
+            foreach (SentenceSlot slot in slots)
+            {
+                if (slot == null || slot.Code == null || !slot.Code.StartsWith("S_", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (slot.StreamStart < 0 || slot.StreamEnd <= slot.StreamStart)
+                {
+                    continue;
+                }
+
+                if (slot.StreamStart < streamEnd && slot.StreamEnd > streamStart)
+                {
+                    covered.Add(slot);
+                }
+            }
+
+            covered.Sort((a, b) => a.StreamStart.CompareTo(b.StreamStart));
+            return covered;
+        }
+
+        private static void AddCrossSentenceParts(
+            List<StyledSpan> parts,
+            string displayChars,
+            LocatedSpan piece,
+            string shown,
+            int streamStart,
+            int streamEnd,
+            List<SentenceSlot> covered)
+        {
+            SentenceSlot first = covered[0];
+            SentenceSlot last = covered[covered.Count - 1];
+            bool firstFull = streamStart <= first.StreamStart && streamEnd >= first.StreamEnd;
+            bool lastFull = streamStart <= last.StreamStart && streamEnd >= last.StreamEnd;
+            if (!firstFull)
+            {
+                AddFragment(parts, displayChars, piece, shown, first, streamStart, streamEnd);
+            }
+
+            var wholeCodes = new List<string>();
+            for (int i = 0; i < covered.Count; i++)
+            {
+                SentenceSlot slot = covered[i];
+                bool full = streamStart <= slot.StreamStart && streamEnd >= slot.StreamEnd;
+                if (full)
+                {
+                    wholeCodes.Add(slot.Code);
+                }
+            }
+
+            if (wholeCodes.Count > 0)
+            {
+                parts.Add(NewSpan(piece, shown, string.Join(",", wholeCodes)));
+            }
+
+            if (!lastFull && !ReferenceEquals(last, first))
+            {
+                AddFragment(parts, displayChars, piece, shown, last, streamStart, streamEnd);
+            }
+        }
+
+        private static void AddFragment(
+            List<StyledSpan> parts,
+            string displayChars,
+            LocatedSpan piece,
+            string shown,
+            SentenceSlot slot,
+            int streamStart,
+            int streamEnd)
+        {
+            int from = Math.Max(streamStart, slot.StreamStart);
+            int to = Math.Min(streamEnd, slot.StreamEnd);
+            if (to <= from || displayChars == null || from >= displayChars.Length)
+            {
+                return;
+            }
+
+            string text = displayChars.Substring(from, Math.Min(to, displayChars.Length) - from);
+            if (text.Length == 0)
+            {
+                return;
+            }
+
+            StyledSpan span = NewSpan(piece, shown, slot.Code);
+            SetText(span, displayChars, slot.StreamStart, slot.StreamEnd, text, from);
+            parts.Add(span);
+        }
+
+        private static StyledSpan NewSpan(LocatedSpan piece, string shown, string code)
+        {
+            return new StyledSpan
             {
                 Text = shown,
                 Start = piece.Start,
                 End = piece.End,
-                Code = slot.Code,
+                Code = code,
                 ParagraphLink = piece.Scope == "paragraph"
             };
-            if (!whole)
-            {
-                span.TextValue = shown;
-                int index = OccurrenceIn(displayChars, slot.StreamStart, slot.StreamEnd, shown, piece.StreamStart);
-                if (index > 1)
-                {
-                    span.HasIndex = true;
-                    span.TextIndex = index;
-                }
-            }
+        }
 
-            return true;
+        private static void SetText(
+            StyledSpan span,
+            string displayChars,
+            int sentenceStart,
+            int sentenceEnd,
+            string text,
+            int at)
+        {
+            span.TextValue = text;
+            int index = OccurrenceIn(displayChars, sentenceStart, sentenceEnd, text, at);
+            if (index > 1)
+            {
+                span.HasIndex = true;
+                span.TextIndex = index;
+            }
         }
 
         public sealed class StyledSpan
@@ -1162,6 +1312,7 @@ namespace WordAddIn1
             public bool HasIndex;
             public int TextIndex;
             public bool ParagraphLink;
+            public int Group;
         }
 
         public static string StripCodeMarks(string display, out int[] origin)

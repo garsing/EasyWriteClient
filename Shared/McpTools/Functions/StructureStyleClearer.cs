@@ -155,6 +155,7 @@ namespace WordAddIn1
                 "spans=" + located.Spans.Count + " miss=" + located.Misses.Count);
             sw.Restart();
             List<int[]> interiors = StructureSpanLister.TocInteriors(display);
+            int nextGroup = 1;
             foreach (StructureSpanLister.LocatedSpan piece in located.Spans)
             {
                 if (piece.Style != null && piece.Style.Structure == "body")
@@ -172,12 +173,22 @@ namespace WordAddIn1
                     continue;
                 }
 
-                if (!StructureSpanLister.TryBindClear(display, piece, out StructureSpanLister.StyledSpan span))
+                List<StructureSpanLister.StyledSpan> parts = StructureSpanLister.BindPiece(display, piece);
+                if (parts.Count == 0)
                 {
                     continue;
                 }
 
-                chosen.Add(span);
+                if (parts.Count > 1)
+                {
+                    int group = nextGroup++;
+                    foreach (StructureSpanLister.StyledSpan part in parts)
+                    {
+                        part.Group = group;
+                    }
+                }
+
+                chosen.AddRange(parts);
             }
 
             EasyWriteDiagnostics.LogTiming(
@@ -232,6 +243,7 @@ namespace WordAddIn1
                 }
             }
 
+            Assemble(doc, chosen, ranges, links);
             EasyWriteDiagnostics.LogTiming(
                 "style_clear.find_range",
                 sw.ElapsedMilliseconds,
@@ -277,6 +289,74 @@ namespace WordAddIn1
                 ["ok"] = true,
                 ["cleared"] = cleared
             };
+        }
+
+        private static void Assemble(
+            Word.Document doc,
+            List<StructureSpanLister.StyledSpan> chosen,
+            List<Word.Range> ranges,
+            List<bool> links)
+        {
+            if (chosen == null || ranges == null || ranges.Count == 0)
+            {
+                return;
+            }
+
+            bool anyGroup = false;
+            for (int i = 0; i < chosen.Count && i < ranges.Count; i++)
+            {
+                if (chosen[i].Group != 0)
+                {
+                    anyGroup = true;
+                    break;
+                }
+            }
+
+            if (!anyGroup)
+            {
+                return;
+            }
+
+            var assembled = new List<Word.Range>();
+            var assembledLinks = new List<bool>();
+            int index = 0;
+            while (index < ranges.Count)
+            {
+                int group = index < chosen.Count ? chosen[index].Group : 0;
+                if (group == 0)
+                {
+                    assembled.Add(ranges[index]);
+                    assembledLinks.Add(index < links.Count && links[index]);
+                    index++;
+                    continue;
+                }
+
+                int start = ranges[index].Start;
+                int end = ranges[index].End;
+                bool link = index < links.Count && links[index];
+                while (index < ranges.Count && index < chosen.Count && chosen[index].Group == group)
+                {
+                    if (ranges[index].Start < start)
+                    {
+                        start = ranges[index].Start;
+                    }
+
+                    if (ranges[index].End > end)
+                    {
+                        end = ranges[index].End;
+                    }
+
+                    index++;
+                }
+
+                assembled.Add(doc.Range(start, end));
+                assembledLinks.Add(link);
+            }
+
+            ranges.Clear();
+            ranges.AddRange(assembled);
+            links.Clear();
+            links.AddRange(assembledLinks);
         }
 
         private static Dictionary<string, object> LocatorFor(StructureSpanLister.StyledSpan hit)
