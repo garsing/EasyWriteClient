@@ -183,6 +183,20 @@ namespace WordDocumentRoundtripTest
                 args ?? new Dictionary<string, object>());
         }
 
+        public ToolResult DeleteImage(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_delete_image",
+                args ?? new Dictionary<string, object>());
+        }
+
+        public ToolResult InsertBlankPage(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_insert_blank_page",
+                args ?? new Dictionary<string, object>());
+        }
+
         public ToolResult ReadTableRowValues(Dictionary<string, object> args)
         {
             return DesktopToolPipe.Call(

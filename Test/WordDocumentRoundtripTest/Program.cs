@@ -853,6 +853,41 @@ namespace WordDocumentRoundtripTest
                 return tableRun.CasesFailed == 0 ? 0 : 1;
             }
 
+            if (caseFilter.StartsWith("ul-", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(caseFilter, "ul", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("文字 统一定位（ul-）");
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
+                Console.WriteLine("不 Quit 用户 Word / WPS。只关本夹临时稿。不进 wa-、ds-、tu-。");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop（已尝试自动拉起）。请手动打开易写应用，再跑本套。");
+                    return 1;
+                }
+
+                var locateRun = new TestRun { TotalTarget = UlCases.Target };
+                var locateWatch = Stopwatch.StartNew();
+                WdSession.SweepBeforeRun(host);
+                try
+                {
+                    UlCases.Run(locateRun, host, caseFilter);
+                }
+                finally
+                {
+                    WdSession.SweepAfterRun(host);
+                }
+
+                locateWatch.Stop();
+                Console.WriteLine();
+                Console.WriteLine("正式用例 通过 " + locateRun.CasesPassed
+                    + "  失败 " + locateRun.CasesFailed
+                    + "  跳过 " + locateRun.CasesSkipped
+                    + "  （目标 " + locateRun.TotalTarget + "）");
+                Console.WriteLine("ELAPSED_SEC=" + locateWatch.Elapsed.TotalSeconds.ToString("F1"));
+                return locateRun.CasesFailed == 0 ? 0 : 1;
+            }
+
             if (caseFilter.StartsWith("tu-", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(caseFilter, "tu", StringComparison.OrdinalIgnoreCase))
             {
