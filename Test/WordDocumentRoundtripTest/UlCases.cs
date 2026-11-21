@@ -7,7 +7,6 @@ using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using WordAddIn1;
-using WordAddIn1.DocumentMapping;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordDocumentRoundtripTest
@@ -283,10 +282,10 @@ namespace WordDocumentRoundtripTest
                     {
                         StyleHeading(s, path);
                         ToolResult inserted = Toc(id, "insert", null, "start");
-                        s.GetContent(id);
-                        string interiorP = InteriorCode(s, path, false);
-                        string interiorS = InteriorCode(s, path, true);
-                        string body = Body(s, id);
+                        ToolResult got = s.GetContent(id);
+                        string interiorP = WdSession.Str(got, "toc_interior_paragraph");
+                        string interiorS = WdSession.Str(got, "toc_interior_sentence");
+                        string body = got.Success ? WdSession.Str(got, "document_content") : "";
                         string outside = Sent(body, "域外正文");
 
                         if (Want("ul-toc-block"))
@@ -1264,41 +1263,6 @@ namespace WordDocumentRoundtripTest
 
                 return false;
             });
-        }
-
-        private static string InteriorCode(WdSession s, string path, bool sentence)
-        {
-            string found = "";
-            if (s.IsWps)
-            {
-                s.TryWpsDoc(path, doc =>
-                {
-                    Word.Document wordDoc = doc as Word.Document;
-                    if (wordDoc == null)
-                    {
-                        return false;
-                    }
-
-                    WordDocumentExtractor.ProcessDocument(wordDoc, ProcessDocumentOptions.ForProcessActions("locate"));
-                    found = sentence
-                        ? TocFieldStamp.FirstInteriorSentence() ?? ""
-                        : TocFieldStamp.FirstInteriorParagraph() ?? "";
-                    return true;
-                });
-            }
-            else
-            {
-                s.OnWordDoc(path, doc =>
-                {
-                    WordDocumentExtractor.ProcessDocument(doc, ProcessDocumentOptions.ForProcessActions("locate"));
-                    found = sentence
-                        ? TocFieldStamp.FirstInteriorSentence() ?? ""
-                        : TocFieldStamp.FirstInteriorParagraph() ?? "";
-                    return true;
-                });
-            }
-
-            return found;
         }
 
         private static object CommentScope(object comment)

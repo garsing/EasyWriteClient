@@ -66,7 +66,9 @@ namespace WordAddIn1
                         { "processing_method", processingResult.ProcessingMethod ?? "Unknown" },
                         { "note", note },
                         { "channel_id", ChannelRegistry.ToPublicId(hostResult.Context?.ChannelId) ?? "" },
-                        { "host", hostResult.Context?.Kind.ToString().ToLowerInvariant() ?? "" }
+                        { "host", hostResult.Context?.Kind.ToString().ToLowerInvariant() ?? "" },
+                        { "toc_interior_paragraph", TocFieldStamp.FirstInteriorParagraph() ?? "" },
+                        { "toc_interior_sentence", TocFieldStamp.FirstInteriorSentence() ?? "" }
                     };
 
                     EasyWriteDiagnostics.LogTiming(
