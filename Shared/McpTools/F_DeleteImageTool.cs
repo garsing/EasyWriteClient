@@ -55,7 +55,15 @@ namespace WordAddIn1
                         return Fail($"生成图片映射失败: {ex.Message}");
                     }
 
-                    Word.InlineShape shape = ImageResolveHelper.ResolveInlineShapeByImageId(document, imageId);
+                    InsertTargetLocatorHelper.LocateSpanBatchResult imageBatch = InsertTargetLocatorHelper.TryLocateSpans(
+                        document,
+                        new[]
+                        {
+                            new Dictionary<string, object> { ["image"] = imageId }
+                        });
+                    InsertTargetLocatorHelper.LocateSpanItem imageItem =
+                        imageBatch.Items.Count > 0 ? imageBatch.Items[0] : null;
+                    Word.InlineShape shape = imageItem != null && imageItem.Success ? imageItem.Image : null;
                     if (shape == null)
                     {
                         return Fail($"找不到图片编号 '{imageId}'，请确认是否为当前稿的 I_ 编号");

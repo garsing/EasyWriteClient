@@ -60,37 +60,36 @@ namespace WordAddIn1
             }
 
             ApplyFormatScopeArgs scopeArgs = ApplyFormatAmbiguityHelper.ParseScopeArgs(args);
-            var formatAnchors = new List<DocumentActionAmbiguityAnchor>
+            if (!TextSpanArg.TryRead(args, out TextSpan earlyTextSpan, out string earlyTextError))
             {
-                new DocumentActionAmbiguityAnchor
-                {
-                    ActionIndex = 0,
-                    Field = "target_paragraph_codes",
-                    Codes = string.Join(",", targetParagraphCodes),
-                    TableId = scopeArgs.TableId
-                }
-            };
-            var precheck = InsertTargetLocatorHelper.TryPrecheckTargets(
+                return Task.FromResult(new ToolResult { Success = false, Error = earlyTextError });
+            }
+
+            InsertTargetLocatorHelper.LocateSpanBatchResult locatedBatch = InsertTargetLocatorHelper.LocateFormatSpan(
                 doc,
-                formatAnchors,
+                targetParagraphCodes,
+                paragraph: true,
+                scopeArgs.TableId,
+                earlyTextSpan,
                 disallowBackendApi,
                 InsertTargetLocatorHelper.LocatePrecheckStream.ParagraphFormatApply,
                 scopeArgs,
                 "F_apply_paragraph_format");
-            if (!precheck.Success)
+            if (locatedBatch.BatchBlocked)
             {
-                if (precheck.Ambiguity != null && precheck.Ambiguity.HasBlockingError)
+                if (locatedBatch.Ambiguity != null && locatedBatch.Ambiguity.HasBlockingError)
                 {
                     return Task.FromResult(SentenceCodeAmbiguityHelper.BuildApplyAmbiguityFailureResult(
                         "F_apply_paragraph_format",
-                        precheck.Ambiguity));
+                        locatedBatch.Ambiguity));
                 }
 
-                return Task.FromResult(new ToolResult { Success = false, Error = precheck.Error });
+                return Task.FromResult(new ToolResult { Success = false, Error = locatedBatch.Error });
             }
 
-            AmbiguityCheckResult ambiguityResult = precheck.Ambiguity;
-            TableScopeIndex tableScope = precheck.TableScope;
+            AmbiguityCheckResult ambiguityResult = locatedBatch.Ambiguity;
+            TableScopeIndex tableScope = locatedBatch.TableScope;
+            InsertTargetLocatorHelper.LocateSpanItem locatedItem = locatedBatch.Items[0];
 
             var appliedParagraphCodes = new List<string>();
             var skippedParagraphCodes = new List<string>();
@@ -105,6 +104,11 @@ namespace WordAddIn1
                 return Task.FromResult(new ToolResult { Success = false, Error = textError });
             }
 
+            if (!locatedItem.Success && TextSpanArg.IsDirectError(locatedItem.Error))
+            {
+                return Task.FromResult(new ToolResult { Success = false, Error = locatedItem.Error });
+            }
+
             targetSpan = ApplyToTargetParagraphSpan(
                 doc,
                 targetParagraphCodes,
@@ -117,7 +121,8 @@ namespace WordAddIn1
                 formatWarnings,
                 appliedFieldsUnion,
                 disallowBackendApi,
-                textSpan);
+                textSpan,
+                locatedItem.Success ? locatedItem.Range : null);
 
             var data = BuildResponseData(
                 mode,
@@ -158,7 +163,8 @@ namespace WordAddIn1
             List<Dictionary<string, object>> formatWarnings,
             List<string> appliedFieldsUnion,
             bool disallowBackendApi,
-            TextSpan textSpan)
+            TextSpan textSpan,
+            Word.Range presetSpan)
         {
             foreach (string code in targetParagraphCodes)
             {
@@ -179,22 +185,7 @@ namespace WordAddIn1
                 return null;
             }
 
-            Word.Range targetSpan = null;
-            var spanLocate = InsertTargetLocatorHelper.TryResolveCodeSpan(
-                doc,
-                targetParagraphCodes,
-                scopeArgs.TableId,
-                InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
-                paragraph: true,
-                disallowBackendApi,
-                textSpan);
-            if (!spanLocate.Success && TextSpanArg.IsDirectError(spanLocate.Error))
-            {
-                applyErrors.Add(spanLocate.Error);
-                return null;
-            }
-
-            targetSpan = spanLocate.Success ? spanLocate.Range : null;
+            Word.Range targetSpan = presetSpan;
             if (targetSpan == null)
             {
                 foreach (string code in targetParagraphCodes)

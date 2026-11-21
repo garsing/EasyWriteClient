@@ -334,35 +334,23 @@ namespace WordAddIn1
             }
             else
             {
-                InsertTargetLocatorHelper.LocatorParseResult parsed =
-                    InsertTargetLocatorHelper.ParseLocatorObject(
-                        item.Target, sentenceOnly: false, fieldLabel: "target");
-                if (!parsed.Success)
-                {
-                    error = parsed.Error;
-                    return false;
-                }
-
-                InsertTargetLocatorHelper.LocateRangeKind rangeKind =
-                    parsed.Spec.Kind == InsertTargetLocatorHelper.LocatorKind.Sentence
-                    || parsed.Spec.Kind == InsertTargetLocatorHelper.LocatorKind.Paragraph
-                        ? InsertTargetLocatorHelper.LocateRangeKind.ContentSpan
-                        : InsertTargetLocatorHelper.LocateRangeKind.InsertAfter;
-                InsertTargetLocatorHelper.ResolveRangeResult located =
-                    InsertTargetLocatorHelper.TryResolveInsertRange(
+                InsertTargetLocatorHelper.LocateSpanBatchResult batch =
+                    InsertTargetLocatorHelper.TryLocateSpans(
                         doc,
-                        parsed.Spec,
-                        rangeKind,
-                        disallowBackendApi,
-                        refreshDocument: true);
-                if (!located.Success || located.Range == null)
+                        new[] { item.Target },
+                        disallowBackendApi);
+                InsertTargetLocatorHelper.LocateSpanItem located =
+                    batch.Items.Count > 0 ? batch.Items[0] : null;
+                if (batch.BatchBlocked || located == null || !located.Success || located.Range == null)
                 {
-                    error = string.IsNullOrEmpty(located.Error) ? "定位失败" : located.Error;
+                    error = located?.Error ?? batch.Error ?? "定位失败";
                     return false;
                 }
 
-                range = located.Range;
-                anchor = AnchorName(parsed.Spec.Kind);
+                range = CommentAnchorRange(located);
+                anchor = AnchorName(located.Spec == null
+                    ? InsertTargetLocatorHelper.LocatorKind.Sentence
+                    : located.Spec.Kind);
             }
 
             rangeStart = range.Start;
@@ -569,6 +557,23 @@ namespace WordAddIn1
                 System.Diagnostics.Debug.WriteLine(
                     "[ProcessComments] 移光标失败: " + ex.Message);
             }
+        }
+
+        private static Word.Range CommentAnchorRange(InsertTargetLocatorHelper.LocateSpanItem located)
+        {
+            if (located?.Spec == null || located.Range == null)
+            {
+                return located?.Range;
+            }
+
+            if (located.Spec.Kind == InsertTargetLocatorHelper.LocatorKind.Table
+                || located.Spec.Kind == InsertTargetLocatorHelper.LocatorKind.Chart
+                || located.Spec.Kind == InsertTargetLocatorHelper.LocatorKind.Image)
+            {
+                return ObjectInsertRangeHelper.PointAtEnd(located.Range);
+            }
+
+            return located.Range;
         }
 
         private static string AnchorName(InsertTargetLocatorHelper.LocatorKind kind)

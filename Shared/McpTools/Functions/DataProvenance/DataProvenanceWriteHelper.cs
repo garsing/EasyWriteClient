@@ -36,16 +36,17 @@ namespace WordAddIn1
                 throw new InvalidOperationException($"WriteObjectLines 不支持锚点类型 {item.Kind}");
             }
 
-            var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
+            InsertTargetLocatorHelper.LocateSpanBatchResult batch = InsertTargetLocatorHelper.TryLocateSpans(
                 doc,
-                spec,
-                InsertTargetLocatorHelper.LocateRangeKind.InsertAfter);
-            if (!locate.Success || locate.Range == null)
+                new[] { InsertTargetLocatorHelper.BuildTargetEcho(spec) });
+            InsertTargetLocatorHelper.LocateSpanItem spanItem = batch.Items.Count > 0 ? batch.Items[0] : null;
+            Word.Range insert = null;
+            string locateError = null;
+            if (batch.BatchBlocked || spanItem == null || !spanItem.Success
+                || !InsertTargetLocatorHelper.TryInsertPoint(doc, spanItem, out insert, out locateError))
             {
-                throw new InvalidOperationException(locate.Error ?? $"无法定位对象 {code}");
+                throw new InvalidOperationException(spanItem?.Error ?? batch.Error ?? locateError ?? $"无法定位对象 {code}");
             }
-
-            Word.Range insert = locate.Range;
 
             Word.Range firstLineRange = null;
             Word.Range lastLineRange = null;

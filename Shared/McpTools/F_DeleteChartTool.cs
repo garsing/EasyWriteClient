@@ -59,7 +59,15 @@ namespace WordAddIn1
                         };
                     }
 
-                    ChartResolveHelper.BodyChart bodyChart = ChartResolveHelper.ResolveBodyChartByChartId(document, chartId);
+                    InsertTargetLocatorHelper.LocateSpanBatchResult chartBatch = InsertTargetLocatorHelper.TryLocateSpans(
+                        document,
+                        new[]
+                        {
+                            new Dictionary<string, object> { ["chart"] = chartId }
+                        });
+                    InsertTargetLocatorHelper.LocateSpanItem chartItem =
+                        chartBatch.Items.Count > 0 ? chartBatch.Items[0] : null;
+                    ChartResolveHelper.BodyChart bodyChart = chartItem != null && chartItem.Success ? chartItem.Chart : null;
                     if (bodyChart == null)
                     {
                         List<ChartResolveHelper.BodyChart> allCharts = ChartResolveHelper.GetBodyChartsInOrder(document);

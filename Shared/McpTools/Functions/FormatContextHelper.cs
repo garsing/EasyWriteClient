@@ -30,44 +30,17 @@ namespace WordAddIn1
             }
 
             var dict = new Dictionary<string, object> { ["codes"] = csv.Trim() };
-            InsertTargetLocatorHelper.LocatorParseResult parsed =
-                InsertTargetLocatorHelper.ParseLocatorObject(dict, sentenceOnly: false, fieldLabel: "target_codes");
-            if (!parsed.Success)
+            InsertTargetLocatorHelper.LocateSpanBatchResult batch = InsertTargetLocatorHelper.TryLocateSpans(
+                doc,
+                new[] { dict },
+                disallowBackendApi);
+            InsertTargetLocatorHelper.LocateSpanItem item = batch.Items.Count > 0 ? batch.Items[0] : null;
+            if (batch.BatchBlocked || item == null || !item.Success)
             {
-                return parsed.Error;
+                return item?.Error ?? batch.Error ?? "locate_failed";
             }
 
-            if (parsed.Spec != null
-                && parsed.Spec.Kind == InsertTargetLocatorHelper.LocatorKind.Sentence)
-            {
-                if (!StoryUniqEncode.CsvIsInoperable(parsed.Spec.Codes))
-                {
-                    InsertTargetLocatorHelper.TryProcessDocumentForLocate(doc, disallowBackendApi);
-                }
-
-                if (StoryUniqEncode.CsvIsInoperable(parsed.Spec.Codes))
-                {
-                    return StoryUniqEncode.FailBeforeWriteMessage;
-                }
-            }
-
-            InsertTargetLocatorHelper.LocateRangeKind kind =
-                parsed.Spec != null && parsed.Spec.Kind == InsertTargetLocatorHelper.LocatorKind.EmptyCell
-                    ? InsertTargetLocatorHelper.LocateRangeKind.WriteCell
-                    : InsertTargetLocatorHelper.LocateRangeKind.ContentSpan;
-            InsertTargetLocatorHelper.ResolveRangeResult located =
-                InsertTargetLocatorHelper.TryResolveInsertRange(
-                    doc,
-                    parsed.Spec,
-                    kind,
-                    disallowBackendApi,
-                    refreshDocument: false);
-            if (!located.Success)
-            {
-                return located.Error ?? "locate_failed";
-            }
-
-            if (parsed.Spec != null && parsed.Spec.Kind == InsertTargetLocatorHelper.LocatorKind.EmptyCell)
+            if (item.Spec != null && item.Spec.Kind == InsertTargetLocatorHelper.LocatorKind.EmptyCell)
             {
                 return EmptyCellCode.NoFormatError;
             }
@@ -201,14 +174,19 @@ namespace WordAddIn1
                 return result;
             }
 
-            var spanLocate = InsertTargetLocatorHelper.TryResolveCodeSpan(
+            InsertTargetLocatorHelper.LocateSpanBatchResult spanBatch = InsertTargetLocatorHelper.LocateFormatSpan(
                 doc,
                 targetCodes,
-                tableId,
-                InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
                 paragraph: true,
+                tableId,
+                textSpan,
                 disallowBackendApi,
-                textSpan);
+                InsertTargetLocatorHelper.LocatePrecheckStream.ParagraphFormatContext,
+                new ApplyFormatScopeArgs { TableId = tableId },
+                "F_get_format_context");
+            InsertTargetLocatorHelper.LocateSpanItem spanLocate = spanBatch.BatchBlocked
+                ? new InsertTargetLocatorHelper.LocateSpanItem { Success = false, Error = spanBatch.Error }
+                : spanBatch.Items[0];
             if (!spanLocate.Success && TextSpanArg.IsDirectError(spanLocate.Error))
             {
                 result.Success = false;
@@ -325,14 +303,19 @@ namespace WordAddIn1
                 return result;
             }
 
-            var spanLocate = InsertTargetLocatorHelper.TryResolveCodeSpan(
+            InsertTargetLocatorHelper.LocateSpanBatchResult spanBatch = InsertTargetLocatorHelper.LocateFormatSpan(
                 doc,
                 targetCodes,
-                tableId,
-                InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
                 paragraph: false,
+                tableId,
+                textSpan,
                 disallowBackendApi,
-                textSpan);
+                InsertTargetLocatorHelper.LocatePrecheckStream.SentenceFormatContext,
+                new ApplyFormatScopeArgs { TableId = tableId },
+                "F_get_format_context");
+            InsertTargetLocatorHelper.LocateSpanItem spanLocate = spanBatch.BatchBlocked
+                ? new InsertTargetLocatorHelper.LocateSpanItem { Success = false, Error = spanBatch.Error }
+                : spanBatch.Items[0];
             if (!spanLocate.Success && TextSpanArg.IsDirectError(spanLocate.Error))
             {
                 result.Success = false;

@@ -80,9 +80,15 @@ namespace WordAddIn1
                         saveToFile = true;
                     }
 
-                    ChartResolveHelper.BodyChart bodyChart = ChartResolveHelper.ResolveBodyChartByChartId(
+                    InsertTargetLocatorHelper.LocateSpanBatchResult chartBatch = InsertTargetLocatorHelper.TryLocateSpans(
                         document,
-                        selection.ChartId);
+                        new[]
+                        {
+                            new Dictionary<string, object> { ["chart"] = selection.ChartId }
+                        });
+                    InsertTargetLocatorHelper.LocateSpanItem chartItem =
+                        chartBatch.Items.Count > 0 ? chartBatch.Items[0] : null;
+                    ChartResolveHelper.BodyChart bodyChart = chartItem != null && chartItem.Success ? chartItem.Chart : null;
                     if (bodyChart == null)
                     {
                         return new ToolResult

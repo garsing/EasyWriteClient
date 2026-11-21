@@ -98,44 +98,35 @@ namespace WordAddIn1
                     string toolCallId = ToolUiProgress.ResolveToolCallId(args);
                     ToolUiProgress.Report(toolCallId, 1, Math.Max(1, timedActionCount));
 
-                    InsertTargetLocatorHelper.PrecheckResult precheck = null;
+                    InsertTargetLocatorHelper.LocateSpanBatchResult locatedBatch = null;
                     if (actions.Count > 0)
                     {
                         using (EasyWriteDiagnostics.Time("process_actions.precheck"))
                         {
-                            precheck = InsertTargetLocatorHelper.TryPrecheckTargets(
-                                document,
-                                BuildAmbiguityAnchors(actions),
-                                docHandle.DisallowBackendApi);
+                            locatedBatch = AssignLocatedSpans(document, actions, docHandle.DisallowBackendApi);
                         }
                     }
 
-                    if (precheck != null && !precheck.Success)
+                    if (locatedBatch != null && locatedBatch.BatchBlocked)
                     {
-                        bool split = precheck.Ambiguity != null
-                            && precheck.Ambiguity.LocateFailures != null
-                            && precheck.Ambiguity.LocateFailures.Count > 0;
-                        if (!split)
+                        string err = locatedBatch.Error ?? "定位失败";
+                        foreach (ParagraphAction action in actions)
                         {
-                            string err = precheck.Error ?? "定位失败";
-                            foreach (ParagraphAction action in actions)
-                            {
-                                itemFailed.Add(FailedAction(action.ActionIndex, action.Type, err));
-                            }
+                            itemFailed.Add(FailedAction(action.ActionIndex, action.Type, err));
+                        }
 
-                            actions.Clear();
-                        }
-                        else
-                        {
-                            TakeLocateFailures(actions, itemFailed, precheck.Ambiguity.LocateFailures);
-                        }
+                        actions.Clear();
+                    }
+                    else if (locatedBatch != null)
+                    {
+                        TakeUnlocated(actions, itemFailed);
                     }
 
-                    TableScopeIndex tableScope = precheck == null
+                    TableScopeIndex tableScope = locatedBatch == null
                         ? null
-                        : (precheck.TableScope
+                        : (locatedBatch.TableScope
                             ?? TableSentenceScopeHelper.BuildIndexFromProcessCache(DocumentState.LastProcessCache));
-                    ApplyResolvedDisplayPositions(actions, precheck?.Ambiguity);
+                    ApplyResolvedDisplayPositions(actions, locatedBatch?.Ambiguity);
 
                     using (EasyWriteDiagnostics.Time("process_actions.continuity"))
                     {
@@ -901,6 +892,254 @@ namespace WordAddIn1
             return fallback ?? "未找到任何句子 Range";
         }
 
+        private static void DropPending(List<ParagraphAction> pending, IReadOnlyList<int> doneIndexes)
+        {
+            if (pending == null || doneIndexes == null)
+            {
+                return;
+            }
+
+            var done = new HashSet<int>(doneIndexes);
+            pending.RemoveAll(action => action != null && done.Contains(action.ActionIndex));
+        }
+
+        private static void TakeUnlocated(List<ParagraphAction> actions, List<ActionResult> failed)
+        {
+            if (actions == null)
+            {
+                return;
+            }
+
+            for (int i = actions.Count - 1; i >= 0; i--)
+            {
+                InsertTargetLocatorHelper.LocateSpanItem located = actions[i].Located;
+                if (located == null || located.Success)
+                {
+                    continue;
+                }
+
+                failed.Add(FailedAction(
+                    actions[i].ActionIndex,
+                    actions[i].Type,
+                    string.IsNullOrEmpty(located.Error) ? "定位失败" : located.Error));
+                actions.RemoveAt(i);
+            }
+        }
+
+        private static InsertTargetLocatorHelper.LocateSpanBatchResult AssignLocatedSpans(
+            Word.Document doc,
+            List<ParagraphAction> actions,
+            bool disallowBackendApi)
+        {
+            var inputs = new List<InsertTargetLocatorHelper.LocateInput>();
+            var owners = new List<ParagraphAction>();
+            if (actions != null)
+            {
+                foreach (ParagraphAction action in actions)
+                {
+                    Dictionary<string, object> locator = LocatorDictForAction(action);
+                    if (locator == null)
+                    {
+                        action.Located = null;
+                        continue;
+                    }
+
+                    inputs.Add(new InsertTargetLocatorHelper.LocateInput
+                    {
+                        Locator = locator,
+                        ActionIndex = action.ActionIndex,
+                        Field = LocateFieldForAction(action),
+                        InsertContentPlaceholder = string.Equals(action.Type, "insert", StringComparison.OrdinalIgnoreCase)
+                            ? action.Content
+                            : null
+                    });
+                    owners.Add(action);
+                }
+            }
+
+            InsertTargetLocatorHelper.LocateSpanBatchResult batch = InsertTargetLocatorHelper.TryLocateSpans(
+                doc,
+                inputs,
+                disallowBackendApi);
+            for (int i = 0; i < owners.Count; i++)
+            {
+                owners[i].Located = i < batch.Items.Count ? batch.Items[i] : null;
+            }
+
+            return batch;
+        }
+
+        private static string LocateFieldForAction(ParagraphAction action)
+        {
+            string type = action?.Type?.ToLowerInvariant();
+            if (type == "replace")
+            {
+                return "original";
+            }
+
+            if (type == "delete")
+            {
+                return "deletion";
+            }
+
+            return "target";
+        }
+
+        private static Dictionary<string, object> LocatorDictForAction(ParagraphAction action)
+        {
+            if (action == null)
+            {
+                return null;
+            }
+
+            string type = action.Type?.ToLowerInvariant();
+            if (type == "insert")
+            {
+                if (action.TargetLocator == null)
+                {
+                    return null;
+                }
+
+                return InsertTargetLocatorHelper.BuildTargetEcho(ToFacadeSpec(action.TargetLocator));
+            }
+
+            if ((type == "replace" || type == "delete") && !string.IsNullOrEmpty(action.SentenceNames))
+            {
+                var spec = new InsertTargetLocatorHelper.LocatorSpec
+                {
+                    Kind = SpanLocatorKind(action.SentenceNames),
+                    Codes = action.SentenceNames,
+                    InTableId = type == "replace"
+                        ? action.OriginalScopeFields?.TableId
+                        : action.DeletionScopeFields?.TableId,
+                    TextSpan = action.LocateText
+                };
+                if (EmptyCellCode.IsEmptyCellCode(action.SentenceNames))
+                {
+                    spec.Kind = InsertTargetLocatorHelper.LocatorKind.EmptyCell;
+                    EmptyCellCode.Parsed parsed;
+                    if (EmptyCellCode.TryParse(action.SentenceNames.Split(',')[0].Trim(), out parsed))
+                    {
+                        spec.TableId = parsed.TableId;
+                        spec.Row = parsed.Row;
+                        spec.Col = parsed.Col;
+                        spec.Codes = parsed.Code;
+                        spec.InTableId = parsed.TableId;
+                    }
+                }
+
+                Dictionary<string, object> dict = InsertTargetLocatorHelper.BuildTargetEcho(spec);
+                return dict == null || dict.Count == 0 ? null : dict;
+            }
+
+            return null;
+        }
+
+        private static InsertTargetLocatorHelper.ResolveRangeResult TakenSpan(
+            InsertTargetLocatorHelper.LocateSpanItem located)
+        {
+            if (located != null && located.Success && located.Range != null)
+            {
+                return new InsertTargetLocatorHelper.ResolveRangeResult
+                {
+                    Success = true,
+                    Range = located.Range,
+                    Spec = located.Spec
+                };
+            }
+
+            return new InsertTargetLocatorHelper.ResolveRangeResult
+            {
+                Success = false,
+                Error = located?.Error ?? "定位失败"
+            };
+        }
+
+        private static bool TryCellFromLocated(
+            InsertTargetLocatorHelper.LocateSpanItem located,
+            EmptyCellCode.Parsed emptyCell,
+            out Word.Cell cell,
+            out string error)
+        {
+            cell = null;
+            if (located == null || !located.Success || located.Table == null)
+            {
+                error = located?.Error ?? "无法定位空格";
+                return false;
+            }
+
+            cell = TableRowValuesHelper.TryResolveWritableCell(located.Table, emptyCell.Row, emptyCell.Col);
+            if (cell == null)
+            {
+                error = TableRowValuesHelper.BuildUnresolvableCellError(emptyCell.Row, emptyCell.Col);
+                return false;
+            }
+
+            error = null;
+            return true;
+        }
+
+        private static Word.Range InsertPointFromLocated(
+            Word.Document doc,
+            LocatorSpec target,
+            InsertTargetLocatorHelper.LocateSpanItem located,
+            out string error)
+        {
+            error = null;
+            if (target == null)
+            {
+                try
+                {
+                    return doc.Application.Selection.Range;
+                }
+                catch
+                {
+                    error = "没有活动选区";
+                    return null;
+                }
+            }
+
+            if (located == null || !located.Success || located.Range == null)
+            {
+                error = located?.Error ?? "无法确定插入位置";
+                return null;
+            }
+
+            if (target.Kind == LocatorKind.Table)
+            {
+                Word.Range afterTable = ObjectInsertRangeHelper.InsertPointAfterTable(
+                    doc, located.Table, located.Range, target.TableId);
+                if (afterTable == null)
+                {
+                    error = ObjectInsertRangeHelper.TableIsNested(located.Table, doc)
+                        ? $"locate_failed: 无法在嵌套表 '{target.TableId}' 后插入（需落在父单元格内）"
+                        : $"locate_failed: 无法在表格 '{target.TableId}' 后插入";
+                }
+
+                return afterTable;
+            }
+
+            if (target.Kind == LocatorKind.Chart || target.Kind == LocatorKind.Image)
+            {
+                try
+                {
+                    return ObjectInsertRangeHelper.InsertPointAfterShape(located.Range);
+                }
+                catch (Exception ex)
+                {
+                    error = "locate_failed: " + ex.Message;
+                    return null;
+                }
+            }
+
+            if (target.Kind == LocatorKind.DocumentStart)
+            {
+                return located.Range;
+            }
+
+            return ObjectInsertRangeHelper.PointAtEnd(located.Range);
+        }
+
         private static List<DocumentActionAmbiguityAnchor> BuildAmbiguityAnchors(List<ParagraphAction> actions)
         {
             var anchors = new List<DocumentActionAmbiguityAnchor>();
@@ -1132,10 +1371,18 @@ namespace WordAddIn1
 
                 int actionTotal = actions == null ? 0 : actions.Count;
                 int finishedCount = 0;
+                bool locateFresh = true;
+                var pending = new List<ParagraphAction>(actions);
                 foreach (DocumentActionPlan.Run step in plan)
                 {
                     AgentRunCancellation.ThrowIfCancelled();
                     ToolUiProgress.Report(toolCallId, finishedCount + 1, actionTotal);
+                    if (!locateFresh)
+                    {
+                        AssignLocatedSpans(doc, pending, disallowBackendApi);
+                    }
+
+                    locateFresh = false;
                     if (step.IsGeoRun)
                     {
                         var members = new List<IndexedAction>();
@@ -1158,6 +1405,7 @@ namespace WordAddIn1
 
                         results.AddRange(geoResults);
                         finishedCount += step.OriginalIndices == null ? 0 : step.OriginalIndices.Count;
+                        DropPending(pending, step.OriginalIndices);
                         continue;
                     }
 
@@ -1172,6 +1420,7 @@ namespace WordAddIn1
                     await RemapAndAssignNewCodes(doc, one, disallowBackendApi, "single");
                     results.Add(one);
                     finishedCount += 1;
+                    DropPending(pending, step.OriginalIndices);
                 }
 
                 ToolUiProgress.Report(toolCallId, actionTotal, actionTotal);
@@ -1280,7 +1529,8 @@ namespace WordAddIn1
                                 action.SentenceNames,
                                 action.DeletionScopeFields?.TableId,
                                 disallowBackendApi,
-                                action.LocateText);
+                                action.LocateText,
+                                action.Located);
                             FillDeleteActionResult(result, del);
                             break;
                         }
@@ -1332,24 +1582,12 @@ namespace WordAddIn1
                 + " step=geo_run cells=" + members.Count
                 + " table=" + firstGeo.TableId);
 
-            var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
-                doc,
-                new InsertTargetLocatorHelper.LocatorSpec
-                {
-                    Kind = InsertTargetLocatorHelper.LocatorKind.EmptyCell,
-                    Codes = firstGeo.Code,
-                    TableId = firstGeo.TableId,
-                    Row = firstGeo.Row,
-                    Col = firstGeo.Col
-                },
-                InsertTargetLocatorHelper.LocateRangeKind.WriteCell,
-                disallowBackendApi,
-                refreshDocument: false);
+            InsertTargetLocatorHelper.LocateSpanItem firstLocated = members[0].Action.Located;
             DocumentActionPathLog.Record(
                 DocumentActionPathLog.LogTag + " locate via=geo_run n=1");
-            if (!locate.Success)
+            if (firstLocated == null || !firstLocated.Success || firstLocated.Table == null)
             {
-                string err = locate.Error ?? "无法定位空格";
+                string err = firstLocated?.Error ?? "无法定位空格";
                 foreach (IndexedAction member in members)
                 {
                     results.Add(FailAction(member, err));
@@ -1358,10 +1596,10 @@ namespace WordAddIn1
                 return results;
             }
 
-            Word.Table table = TableResolveHelper.TryResolveTableById(doc, firstGeo.TableId, out string tableError);
+            Word.Table table = firstLocated.Table;
             if (table == null)
             {
-                string err = tableError ?? "找不到表格";
+                string err = "找不到表格";
                 foreach (IndexedAction member in members)
                 {
                     results.Add(FailAction(member, err));
@@ -1777,7 +2015,8 @@ namespace WordAddIn1
                     payload,
                     tableScope,
                     disallowBackendApi,
-                    action.LocateText);
+                    action.LocateText,
+                    action.Located);
             }
 
             if (!ActionFormatHelper.TryBuildSnapshot(
@@ -1794,7 +2033,8 @@ namespace WordAddIn1
                 snapshot,
                 formatMode,
                 disallowBackendApi,
-                action.LocateText);
+                action.LocateText,
+                action.Located);
         }
 
         private static InsertExecutionResult ExecuteInsertWithPayload(
@@ -1817,7 +2057,7 @@ namespace WordAddIn1
             if (payload.IsRuns)
             {
                 return ExecuteInsertRuns(
-                    doc, action.TargetLocator, payload, tableScope, disallowBackendApi);
+                    doc, action.TargetLocator, payload, tableScope, disallowBackendApi, action.Located);
             }
 
             if (!ActionFormatHelper.TryBuildSnapshot(
@@ -1837,7 +2077,8 @@ namespace WordAddIn1
                 payload.Text,
                 snapshot,
                 formatMode,
-                disallowBackendApi);
+                disallowBackendApi,
+                action.Located);
         }
 
         private static ReplaceExecutionResult ExecuteReplaceRuns(
@@ -1847,13 +2088,14 @@ namespace WordAddIn1
             ActionContentHelper.Payload payload,
             TableScopeIndex tableScope,
             bool disallowBackendApi,
-            TextSpan textSpan = null)
+            TextSpan textSpan = null,
+            InsertTargetLocatorHelper.LocateSpanItem located = null)
         {
             var result = new ReplaceExecutionResult { Success = false, NewSentences = new List<string>() };
             var names = ParseCodeList(sentenceNames);
             if (names.Count == 1 && EmptyCellCode.TryParse(names[0], out EmptyCellCode.Parsed emptyCell))
             {
-                return ExecuteEmptyCellReplaceRuns(doc, emptyCell, payload, tableScope, disallowBackendApi);
+                return ExecuteEmptyCellReplaceRuns(doc, emptyCell, payload, tableScope, disallowBackendApi, null, located);
             }
 
             Dictionary<string, object> firstSnap;
@@ -1865,18 +2107,7 @@ namespace WordAddIn1
             }
 
             string joined = payload.JoinedText;
-            var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
-                doc,
-                new InsertTargetLocatorHelper.LocatorSpec
-                {
-                    Kind = SpanLocatorKind(sentenceNames),
-                    Codes = sentenceNames,
-                    InTableId = tableId,
-                    TextSpan = textSpan
-                },
-                InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
-                disallowBackendApi,
-                refreshDocument: false);
+            var locate = TakenSpan(located);
             if (!locate.Success || locate.Range == null)
             {
                 result.ErrorMessage = LocateMissMessage(sentenceNames, locate.Error ?? "未找到任何句子 Range");
@@ -1940,7 +2171,8 @@ namespace WordAddIn1
             LocatorSpec target,
             ActionContentHelper.Payload payload,
             TableScopeIndex tableScope,
-            bool disallowBackendApi)
+            bool disallowBackendApi,
+            InsertTargetLocatorHelper.LocateSpanItem located = null)
         {
             var result = new InsertExecutionResult { Success = false, NewSentences = new List<string>() };
             if (target != null && target.Kind == LocatorKind.EmptyCell)
@@ -1952,7 +2184,7 @@ namespace WordAddIn1
                     Col = target.Col,
                     Code = target.Codes
                 };
-                var written = ExecuteEmptyCellReplaceRuns(doc, parsed, payload, tableScope, disallowBackendApi);
+                var written = ExecuteEmptyCellReplaceRuns(doc, parsed, payload, tableScope, disallowBackendApi, null, located);
                 result.Success = written.Success;
                 result.ErrorMessage = written.ErrorMessage;
                 result.FormatMode = written.FormatMode;
@@ -1961,28 +2193,23 @@ namespace WordAddIn1
                 return result;
             }
 
-            var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
-                doc,
-                ToFacadeSpec(target),
-                InsertTargetLocatorHelper.LocateRangeKind.InsertAfter,
-                disallowBackendApi,
-                refreshDocument: false);
-            if (!locate.Success || locate.Range == null)
+            Word.Range insertPoint = InsertPointFromLocated(doc, target, located, out string insertError);
+            if (insertPoint == null)
             {
-                result.ErrorMessage = locate.Error ?? "无法确定插入位置";
+                result.ErrorMessage = insertError ?? "无法确定插入位置";
                 return result;
             }
 
-            var autonumMarks = AutonumListWriteHelper.TypesFromRange(locate.Range);
+            var autonumMarks = AutonumListWriteHelper.TypesFromRange(insertPoint);
             EasyWriteDiagnostics.Log(
                 DebugCategory.Autonum,
                 "[autonum] ExecuteInsertRuns "
-                + InsertRangeBrief(locate.Range)
+                + InsertRangeBrief(insertPoint)
                 + " marks=" + AutonumConvert.DebugDescribeMarks(autonumMarks)
                 + " joined=" + TextUtils.EscapeNewlinesForDb(payload.JoinedText ?? ""));
             if (!TryWriteRuns(
                 doc,
-                locate.Range,
+                insertPoint,
                 payload.Runs,
                 tableScope,
                 replaceFirst: false,
@@ -2009,7 +2236,8 @@ namespace WordAddIn1
             ActionContentHelper.Payload payload,
             TableScopeIndex tableScope,
             bool disallowBackendApi,
-            Word.Cell resolvedCell = null)
+            Word.Cell resolvedCell = null,
+            InsertTargetLocatorHelper.LocateSpanItem located = null)
         {
             var result = new ReplaceExecutionResult { Success = false, NewSentences = new List<string>() };
             result.OriginalCodes = new List<string> { emptyCell.Code };
@@ -2019,33 +2247,11 @@ namespace WordAddIn1
             {
                 DocumentActionPathLog.Record(
                     DocumentActionPathLog.LogTag + " locate via=single n=1");
-                var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
-                    doc,
-                    new InsertTargetLocatorHelper.LocatorSpec
-                    {
-                        Kind = InsertTargetLocatorHelper.LocatorKind.EmptyCell,
-                        Codes = emptyCell.Code,
-                        TableId = emptyCell.TableId,
-                        Row = emptyCell.Row,
-                        Col = emptyCell.Col
-                    },
-                    InsertTargetLocatorHelper.LocateRangeKind.WriteCell,
-                    disallowBackendApi,
-                    refreshDocument: false);
-                if (!locate.Success)
+                if (!TryCellFromLocated(located, emptyCell, out cell, out string cellError))
                 {
-                    result.ErrorMessage = locate.Error ?? "无法定位空格";
+                    result.ErrorMessage = cellError;
                     return result;
                 }
-
-                Word.Table table = TableResolveHelper.TryResolveTableById(doc, emptyCell.TableId, out string tableError);
-                if (table == null)
-                {
-                    result.ErrorMessage = tableError ?? "找不到表格";
-                    return result;
-                }
-
-                cell = TableRowValuesHelper.TryResolveWritableCell(table, emptyCell.Row, emptyCell.Col);
                 if (cell == null)
                 {
                     result.ErrorMessage = TableRowValuesHelper.BuildUnresolvableCellError(emptyCell.Row, emptyCell.Col);
@@ -2222,7 +2428,8 @@ namespace WordAddIn1
             Dictionary<string, object> formatSnapshot,
             string formatMode,
             bool disallowBackendApi,
-            Word.Cell resolvedCell = null)
+            Word.Cell resolvedCell = null,
+            InsertTargetLocatorHelper.LocateSpanItem located = null)
         {
             var result = new ReplaceExecutionResult { Success = false, NewSentences = new List<string>() };
             if (emptyCell == null)
@@ -2243,36 +2450,9 @@ namespace WordAddIn1
             {
                 DocumentActionPathLog.Record(
                     DocumentActionPathLog.LogTag + " locate via=single n=1");
-                var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
-                    doc,
-                    new InsertTargetLocatorHelper.LocatorSpec
-                    {
-                        Kind = InsertTargetLocatorHelper.LocatorKind.EmptyCell,
-                        Codes = emptyCell.Code,
-                        TableId = emptyCell.TableId,
-                        Row = emptyCell.Row,
-                        Col = emptyCell.Col
-                    },
-                    InsertTargetLocatorHelper.LocateRangeKind.WriteCell,
-                    disallowBackendApi,
-                    refreshDocument: false);
-                if (!locate.Success)
+                if (!TryCellFromLocated(located, emptyCell, out cell, out string cellError))
                 {
-                    result.ErrorMessage = locate.Error ?? "无法定位空格";
-                    return result;
-                }
-
-                Word.Table table = TableResolveHelper.TryResolveTableById(doc, emptyCell.TableId, out string tableError);
-                if (table == null)
-                {
-                    result.ErrorMessage = tableError ?? "找不到表格";
-                    return result;
-                }
-
-                cell = TableRowValuesHelper.TryResolveWritableCell(table, emptyCell.Row, emptyCell.Col);
-                if (cell == null)
-                {
-                    result.ErrorMessage = TableRowValuesHelper.BuildUnresolvableCellError(emptyCell.Row, emptyCell.Col);
+                    result.ErrorMessage = cellError;
                     return result;
                 }
             }
@@ -2306,7 +2486,8 @@ namespace WordAddIn1
             Word.Document doc,
             EmptyCellCode.Parsed emptyCell,
             bool disallowBackendApi,
-            Word.Cell resolvedCell = null)
+            Word.Cell resolvedCell = null,
+            InsertTargetLocatorHelper.LocateSpanItem located = null)
         {
             var result = new DeleteExecutionResult { Success = false };
             if (emptyCell == null)
@@ -2321,36 +2502,9 @@ namespace WordAddIn1
             {
                 DocumentActionPathLog.Record(
                     DocumentActionPathLog.LogTag + " locate via=single n=1");
-                var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
-                    doc,
-                    new InsertTargetLocatorHelper.LocatorSpec
-                    {
-                        Kind = InsertTargetLocatorHelper.LocatorKind.EmptyCell,
-                        Codes = emptyCell.Code,
-                        TableId = emptyCell.TableId,
-                        Row = emptyCell.Row,
-                        Col = emptyCell.Col
-                    },
-                    InsertTargetLocatorHelper.LocateRangeKind.WriteCell,
-                    disallowBackendApi,
-                    refreshDocument: false);
-                if (!locate.Success)
+                if (!TryCellFromLocated(located, emptyCell, out cell, out string cellError))
                 {
-                    result.ErrorMessage = locate.Error ?? "无法定位空格";
-                    return result;
-                }
-
-                Word.Table table = TableResolveHelper.TryResolveTableById(doc, emptyCell.TableId, out string tableError);
-                if (table == null)
-                {
-                    result.ErrorMessage = tableError ?? "找不到表格";
-                    return result;
-                }
-
-                cell = TableRowValuesHelper.TryResolveWritableCell(table, emptyCell.Row, emptyCell.Col);
-                if (cell == null)
-                {
-                    result.ErrorMessage = TableRowValuesHelper.BuildUnresolvableCellError(emptyCell.Row, emptyCell.Col);
+                    result.ErrorMessage = cellError;
                     return result;
                 }
             }
@@ -2408,7 +2562,8 @@ namespace WordAddIn1
             Dictionary<string, object> formatSnapshot,
             string formatMode,
             bool disallowBackendApi,
-            TextSpan textSpan = null)
+            TextSpan textSpan = null,
+            InsertTargetLocatorHelper.LocateSpanItem located = null)
         {
             var result = new ReplaceExecutionResult { Success = false, NewSentences = new List<string>() };
 
@@ -2432,7 +2587,7 @@ namespace WordAddIn1
                 if (names.Count == 1 && EmptyCellCode.TryParse(names[0], out EmptyCellCode.Parsed emptyCell))
                 {
                     return ExecuteEmptyCellReplace(
-                        doc, emptyCell, newContent, formatSnapshot, formatMode, disallowBackendApi);
+                        doc, emptyCell, newContent, formatSnapshot, formatMode, disallowBackendApi, null, located);
                 }
 
                 if (!LooksLikeParagraphCodes(sentenceNames)
@@ -2446,18 +2601,7 @@ namespace WordAddIn1
                 result.OriginalCodes = names;
                 FormatInheritHelper.DbgLog($"ExecuteReplace S_ count={names.Count} codes=[{string.Join(",", names)}]");
 
-                var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
-                    doc,
-                    new InsertTargetLocatorHelper.LocatorSpec
-                    {
-                        Kind = SpanLocatorKind(sentenceNames),
-                        Codes = sentenceNames,
-                        InTableId = tableId,
-                        TextSpan = textSpan
-                    },
-                    InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
-                    disallowBackendApi,
-                    refreshDocument: false);
+                var locate = TakenSpan(located);
                 if (!locate.Success || locate.Range == null)
                 {
                     result.ErrorMessage = LocateMissMessage(sentenceNames, locate.Error ?? "未找到任何句子 Range");
@@ -2600,7 +2744,8 @@ namespace WordAddIn1
             string sentenceNames,
             string tableId,
             bool disallowBackendApi,
-            TextSpan textSpan = null)
+            TextSpan textSpan = null,
+            InsertTargetLocatorHelper.LocateSpanItem located = null)
         {
             var result = new DeleteExecutionResult { Success = false };
 
@@ -2621,7 +2766,7 @@ namespace WordAddIn1
 
                 if (names.Count == 1 && EmptyCellCode.TryParse(names[0], out EmptyCellCode.Parsed emptyCell))
                 {
-                    return ExecuteEmptyCellClear(doc, emptyCell, disallowBackendApi);
+                    return ExecuteEmptyCellClear(doc, emptyCell, disallowBackendApi, null, located);
                 }
 
                 if (!LooksLikeParagraphCodes(sentenceNames)
@@ -2634,18 +2779,7 @@ namespace WordAddIn1
 
                 result.AffectedCodes = names;
 
-                var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
-                    doc,
-                    new InsertTargetLocatorHelper.LocatorSpec
-                    {
-                        Kind = SpanLocatorKind(sentenceNames),
-                        Codes = sentenceNames,
-                        InTableId = tableId,
-                        TextSpan = textSpan
-                    },
-                    InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
-                    disallowBackendApi,
-                    refreshDocument: false);
+                var locate = TakenSpan(located);
                 if (!locate.Success || locate.Range == null)
                 {
                     result.ErrorMessage = LocateMissMessage(sentenceNames, locate.Error ?? "未找到任何句子 Range");
@@ -2681,7 +2815,8 @@ namespace WordAddIn1
             string insertContent,
             Dictionary<string, object> formatSnapshot,
             string formatMode,
-            bool disallowBackendApi)
+            bool disallowBackendApi,
+            InsertTargetLocatorHelper.LocateSpanItem located = null)
         {
             var result = new InsertExecutionResult { Success = false, NewSentences = new List<string>() };
 
@@ -2703,7 +2838,7 @@ namespace WordAddIn1
                         Code = target.Codes
                     };
                     var written = ExecuteEmptyCellReplace(
-                        doc, parsed, insertContent, formatSnapshot, formatMode, disallowBackendApi);
+                        doc, parsed, insertContent, formatSnapshot, formatMode, disallowBackendApi, null, located);
                     result.Success = written.Success;
                     result.ErrorMessage = written.ErrorMessage;
                     result.FormatMode = written.FormatMode;
@@ -2712,25 +2847,19 @@ namespace WordAddIn1
                     return result;
                 }
 
-                var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
-                    doc,
-                    ToFacadeSpec(target),
-                    InsertTargetLocatorHelper.LocateRangeKind.InsertAfter,
-                    disallowBackendApi,
-                    refreshDocument: false);
-                if (!locate.Success || locate.Range == null)
+                Word.Range insertRange = InsertPointFromLocated(doc, target, located, out string insertError);
+                if (insertRange == null)
                 {
                     WordAddIn1.DocumentHost.HostProbe.Log(
                         "insert-no-range",
                         "kind=" + (target == null ? "cursor" : target.Kind.ToString())
-                        + " err=" + (locate.Error ?? ""));
-                    result.ErrorMessage = locate.Error ?? "无法确定插入位置";
+                        + " err=" + (insertError ?? ""));
+                    result.ErrorMessage = insertError ?? "无法确定插入位置";
                     return result;
                 }
 
-                Word.Range insertRange = locate.Range;
                 System.Diagnostics.Debug.WriteLine(
-                    $"[ProcessActions][insert] 门面定位 usedCursor={locate.UsedCursor} kind={target?.Kind}");
+                    $"[ProcessActions][insert] 门面定位 usedCursor={target == null} kind={target?.Kind}");
 
                 List<string> insertSentences = SentenceSplitter.SplitForActionContent(insertContent);
                 if (insertSentences.Count == 0)
@@ -3187,6 +3316,7 @@ namespace WordAddIn1
 
             public int? ResolvedSentenceDisplayStart { get; set; }
             public int? ResolvedTargetDisplayStart { get; set; }
+            public InsertTargetLocatorHelper.LocateSpanItem Located { get; set; }
 
             /// <summary>replace/insert 的 detail.format；delete 为 null。分片时为 null。</summary>
             public ActionFormatHelper.Spec FormatSpec { get; set; }

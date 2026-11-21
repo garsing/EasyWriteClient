@@ -217,24 +217,17 @@ namespace WordAddIn1
                         string targetParagraphCodes = args["target_paragraph_codes"].ToString()?.Trim() ?? "";
                         var parsedParagraphTargets = FormatContextHelper.ParseParagraphCodes(targetParagraphCodes);
                         ApplyFormatScopeArgs scopeArgs = ApplyFormatAmbiguityHelper.ParseScopeArgs(args);
-                        var paraAnchors = new List<DocumentActionAmbiguityAnchor>
-                        {
-                            new DocumentActionAmbiguityAnchor
-                            {
-                                ActionIndex = 0,
-                                Field = "target_paragraph_codes",
-                                Codes = string.Join(",", parsedParagraphTargets),
-                                TableId = scopeArgs.TableId
-                            }
-                        };
-                        var paraPrecheck = InsertTargetLocatorHelper.TryPrecheckTargets(
+                        InsertTargetLocatorHelper.LocateSpanBatchResult paraPrecheck = InsertTargetLocatorHelper.LocateFormatSpan(
                             doc,
-                            paraAnchors,
+                            parsedParagraphTargets,
+                            paragraph: true,
+                            scopeArgs.TableId,
+                            textSpan,
                             docHandle.DisallowBackendApi,
                             InsertTargetLocatorHelper.LocatePrecheckStream.ParagraphFormatContext,
                             scopeArgs,
                             "F_get_format_context");
-                        if (!paraPrecheck.Success)
+                        if (paraPrecheck.BatchBlocked)
                         {
                             if (paraPrecheck.Ambiguity != null && paraPrecheck.Ambiguity.HasBlockingError)
                             {
@@ -274,24 +267,17 @@ namespace WordAddIn1
 
                         var parsedTargets = FormatContextHelper.ParseSentenceCodes(targetCodes);
                         ApplyFormatScopeArgs scopeArgs = ApplyFormatAmbiguityHelper.ParseScopeArgs(args);
-                        var sentAnchors = new List<DocumentActionAmbiguityAnchor>
-                        {
-                            new DocumentActionAmbiguityAnchor
-                            {
-                                ActionIndex = 0,
-                                Field = "target_codes",
-                                Codes = string.Join(",", parsedTargets),
-                                TableId = scopeArgs.TableId
-                            }
-                        };
-                        var sentPrecheck = InsertTargetLocatorHelper.TryPrecheckTargets(
+                        InsertTargetLocatorHelper.LocateSpanBatchResult sentPrecheck = InsertTargetLocatorHelper.LocateFormatSpan(
                             doc,
-                            sentAnchors,
+                            parsedTargets,
+                            paragraph: false,
+                            scopeArgs.TableId,
+                            textSpan,
                             docHandle.DisallowBackendApi,
                             InsertTargetLocatorHelper.LocatePrecheckStream.SentenceFormatContext,
                             scopeArgs,
                             "F_get_format_context");
-                        if (!sentPrecheck.Success)
+                        if (sentPrecheck.BatchBlocked)
                         {
                             if (sentPrecheck.Ambiguity != null && sentPrecheck.Ambiguity.HasBlockingError)
                             {

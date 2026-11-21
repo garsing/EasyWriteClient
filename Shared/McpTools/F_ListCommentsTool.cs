@@ -54,29 +54,24 @@ namespace WordAddIn1
                     Word.Range filter = null;
                     if (target != null)
                     {
-                        InsertTargetLocatorHelper.LocatorParseResult parsed =
-                            InsertTargetLocatorHelper.ParseLocatorObject(
-                                target, sentenceOnly: false, fieldLabel: "target");
-                        InsertTargetLocatorHelper.LocateRangeKind rangeKind =
-                            parsed.Spec.Kind == InsertTargetLocatorHelper.LocatorKind.Sentence
-                            || parsed.Spec.Kind == InsertTargetLocatorHelper.LocatorKind.Paragraph
-                                ? InsertTargetLocatorHelper.LocateRangeKind.ContentSpan
-                                : InsertTargetLocatorHelper.LocateRangeKind.InsertAfter;
-                        InsertTargetLocatorHelper.ResolveRangeResult located =
-                            InsertTargetLocatorHelper.TryResolveInsertRange(
+                        InsertTargetLocatorHelper.LocateSpanBatchResult batch =
+                            InsertTargetLocatorHelper.TryLocateSpans(
                                 doc,
-                                parsed.Spec,
-                                rangeKind,
-                                docHandle.DisallowBackendApi,
-                                refreshDocument: true);
-                        if (!located.Success || located.Range == null)
+                                new[] { target },
+                                docHandle.DisallowBackendApi);
+                        InsertTargetLocatorHelper.LocateSpanItem located =
+                            batch.Items.Count > 0 ? batch.Items[0] : null;
+                        if (batch.BatchBlocked || located == null || !located.Success || located.Range == null)
                         {
-                            return Fail(string.IsNullOrEmpty(located.Error)
-                                ? "定位失败"
-                                : located.Error);
+                            return Fail(located?.Error ?? batch.Error ?? "定位失败");
                         }
 
-                        filter = located.Range;
+                        filter = located.Spec != null
+                            && (located.Spec.Kind == InsertTargetLocatorHelper.LocatorKind.Table
+                                || located.Spec.Kind == InsertTargetLocatorHelper.LocatorKind.Chart
+                                || located.Spec.Kind == InsertTargetLocatorHelper.LocatorKind.Image)
+                            ? ObjectInsertRangeHelper.PointAtEnd(located.Range)
+                            : located.Range;
                     }
 
                     var rows = new List<Dictionary<string, object>>();

@@ -61,14 +61,12 @@ namespace WordAddIn1
                     FilePathResolver.TryResolveFromArgs(args, out ResolvedFilePath resolved, out _, "path", "filename");
                     double widthCm = TryParseWidthCm(args) ?? DefaultWidthCm;
 
-                    var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
-                        document,
-                        args,
-                        InsertTargetLocatorHelper.LocateRangeKind.InsertAfter,
-                        docHandle.DisallowBackendApi);
-                    if (!locate.Success)
+                    if (!InsertTargetLocatorHelper.TryTakeInsertRange(
+                            document, args, docHandle.DisallowBackendApi, out Word.Range insertAt, out string locateError, out bool usedCursor, out InsertTargetLocatorHelper.LocatorSpec locateSpec))
                     {
-                        return InsertTargetLocatorHelper.ToFailureResult(locate, "F_insert_workspace_image");
+                        return InsertTargetLocatorHelper.ToFailureResult(
+                            new InsertTargetLocatorHelper.ResolveRangeResult { Success = false, Error = locateError },
+                            "F_insert_workspace_image");
                     }
 
                     double heightCm;
@@ -85,7 +83,7 @@ namespace WordAddIn1
                     int pictureStart = -1;
                     try
                     {
-                        Word.Range range = locate.Range;
+                        Word.Range range = insertAt;
                         Word.InlineShape picture = range.InlineShapes.AddPicture(
                             FileName: resolved.LocalPath,
                             LinkToFile: false,
@@ -124,12 +122,12 @@ namespace WordAddIn1
                         ["filename"] = resolved.Display,
                         ["image_width_cm"] = Math.Round(widthCm, 2),
                         ["image_height_cm"] = Math.Round(heightCm, 2),
-                        ["used_cursor"] = locate.UsedCursor,
+                        ["used_cursor"] = usedCursor,
                         ["downloaded"] = downloaded,
                         ["image_id"] = resolvedImageId,
                         ["message"] = InsertTargetLocatorHelper.AppendDocumentStartMessage(
                             "已插入工作区图片（PNG/位图，非 Word Chart）。误插可用文档 checkpoint 回滚。",
-                            locate.Spec),
+                            locateSpec),
                     };
 
                     if (warnings.Count > 0)
@@ -137,7 +135,7 @@ namespace WordAddIn1
                         data["message"] = data["message"] + " 警告: " + string.Join("; ", warnings);
                     }
 
-                    var echo = InsertTargetLocatorHelper.BuildTargetEcho(locate.Spec);
+                    var echo = InsertTargetLocatorHelper.BuildTargetEcho(locateSpec);
                     if (echo != null)
                     {
                         data["target_echo"] = echo;
@@ -146,7 +144,7 @@ namespace WordAddIn1
                     Debug.WriteLine(
                         $"[InsertWorkspaceImage] ok file={resolved.Display} downloaded={downloaded} " +
                         $"image_id={resolvedImageId ?? "(null)"} " +
-                        $"used_cursor={locate.UsedCursor} w_cm={widthCm:F2} h_cm={heightCm:F2} " +
+                        $"used_cursor={usedCursor} w_cm={widthCm:F2} h_cm={heightCm:F2} " +
                         $"ms={sw.ElapsedMilliseconds}");
 
                     return new ToolResult { Success = true, Data = data };

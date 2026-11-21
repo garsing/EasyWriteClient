@@ -118,6 +118,36 @@ namespace WordAddIn1
             public TableScopeIndex TableScope { get; set; }
         }
 
+        /// <summary>一批里的一项。ActionIndex、Field 只供预检把失败填回调用方原来的槽。</summary>
+        public sealed class LocateInput
+        {
+            public Dictionary<string, object> Locator { get; set; }
+            public int ActionIndex { get; set; } = -1;
+            public string Field { get; set; }
+            public string InsertContentPlaceholder { get; set; }
+        }
+
+        /// <summary>与入参下标对齐的一项。对不上时 Range 为空。</summary>
+        public sealed class LocateSpanItem
+        {
+            public bool Success { get; set; }
+            public string Error { get; set; }
+            public Word.Range Range { get; set; }
+            public LocatorSpec Spec { get; set; }
+            public Word.Table Table { get; set; }
+            public Word.InlineShape Image { get; set; }
+            public ChartResolveHelper.BodyChart Chart { get; set; }
+        }
+
+        public sealed class LocateSpanBatchResult
+        {
+            public bool BatchBlocked { get; set; }
+            public string Error { get; set; }
+            public List<LocateSpanItem> Items { get; set; } = new List<LocateSpanItem>();
+            public AmbiguityCheckResult Ambiguity { get; set; }
+            public TableScopeIndex TableScope { get; set; }
+        }
+
         /// <summary>
         /// 解析定位对象：codes / paragraph_codes / table / chart / image / position 六选一。
         /// in_table 仅可与 codes 或段落字段同用（schema 不暴露，内部仍认）。
@@ -800,6 +830,511 @@ namespace WordAddIn1
             return result;
         }
 
+        /// <summary>
+        /// 统一定位入口。解析整批，句子/段落/几何码一次预检，再交整段 Range。
+        /// 表、图表、图片和文首不进这次预检。
+        /// </summary>
+        public static LocateSpanBatchResult TryLocateSpans(
+            Word.Document doc,
+            IReadOnlyList<Dictionary<string, object>> locators,
+            bool disallowBackendApi = false,
+            LocatePrecheckStream stream = LocatePrecheckStream.SentenceActions,
+            ApplyFormatScopeArgs formatScope = null,
+            string formatToolName = null)
+        {
+            var inputs = new List<LocateInput>();
+            if (locators != null)
+            {
+                for (int i = 0; i < locators.Count; i++)
+                {
+                    inputs.Add(new LocateInput
+                    {
+                        Locator = locators[i],
+                        ActionIndex = i,
+                        Field = "item"
+                    });
+                }
+            }
+
+            return TryLocateSpans(doc, inputs, disallowBackendApi, stream, formatScope, formatToolName);
+        }
+
+        public static LocateSpanBatchResult LocateFormatSpan(
+            Word.Document doc,
+            IReadOnlyList<string> codes,
+            bool paragraph,
+            string tableId,
+            TextSpan textSpan,
+            bool disallowBackendApi,
+            LocatePrecheckStream stream,
+            ApplyFormatScopeArgs formatScope,
+            string formatToolName)
+        {
+            var locator = new Dictionary<string, object>
+            {
+                [paragraph ? "paragraph_codes" : "codes"] = codes == null ? "" : string.Join(",", codes)
+            };
+            if (!string.IsNullOrEmpty(tableId))
+            {
+                locator["in_table"] = tableId;
+            }
+
+            if (textSpan != null && !string.IsNullOrEmpty(textSpan.Value))
+            {
+                locator["text"] = textSpan.Value;
+            }
+
+            return TryLocateSpans(
+                doc,
+                new[] { locator },
+                disallowBackendApi,
+                stream,
+                formatScope,
+                formatToolName);
+        }
+
+        public static LocateSpanBatchResult TryLocateSpans(
+            Word.Document doc,
+            IReadOnlyList<LocateInput> inputs,
+            bool disallowBackendApi = false,
+            LocatePrecheckStream stream = LocatePrecheckStream.SentenceActions,
+            ApplyFormatScopeArgs formatScope = null,
+            string formatToolName = null)
+        {
+            var result = new LocateSpanBatchResult();
+            int count = inputs == null ? 0 : inputs.Count;
+            for (int i = 0; i < count; i++)
+            {
+                result.Items.Add(new LocateSpanItem());
+            }
+
+            if (doc == null)
+            {
+                result.BatchBlocked = true;
+                result.Error = "locate_failed: 文档不可用";
+                StampBatch(result, result.Error);
+                return result;
+            }
+
+            var anchors = new List<DocumentActionAmbiguityAnchor>();
+            bool needRead = false;
+            for (int i = 0; i < count; i++)
+            {
+                LocateInput input = inputs[i];
+                LocatorParseResult parsed = ParseLocatorObject(
+                    input?.Locator,
+                    sentenceOnly: false,
+                    fieldLabel: string.IsNullOrEmpty(input?.Field) ? "target" : input.Field);
+                if (parsed == null || !parsed.Success || parsed.Spec == null)
+                {
+                    result.Items[i].Success = false;
+                    result.Items[i].Error = parsed?.Error ?? "定位对象无效";
+                    continue;
+                }
+
+                result.Items[i].Spec = parsed.Spec;
+                if (SpecNeedsProcessDocument(parsed.Spec))
+                {
+                    needRead = true;
+                }
+
+                if (parsed.Spec.Kind != LocatorKind.Sentence
+                    && parsed.Spec.Kind != LocatorKind.Paragraph
+                    && parsed.Spec.Kind != LocatorKind.EmptyCell)
+                {
+                    continue;
+                }
+
+                int actionIndex = input.ActionIndex >= 0 ? input.ActionIndex : i;
+                anchors.Add(new DocumentActionAmbiguityAnchor
+                {
+                    ActionIndex = actionIndex,
+                    Field = string.IsNullOrEmpty(input.Field) ? "item" : input.Field,
+                    Codes = parsed.Spec.Codes,
+                    TableId = !string.IsNullOrEmpty(parsed.Spec.InTableId)
+                        ? parsed.Spec.InTableId
+                        : (formatScope == null ? null : formatScope.TableId),
+                    InsertContentPlaceholder = input.InsertContentPlaceholder
+                });
+            }
+
+            if (needRead)
+            {
+                string pdError = TryProcessDocumentForLocate(doc, disallowBackendApi);
+                if (pdError != null)
+                {
+                    result.BatchBlocked = true;
+                    result.Error = "locate_failed: " + pdError;
+                    StampBatch(result, result.Error);
+                    return result;
+                }
+            }
+
+            PrecheckResult precheck = null;
+            if (anchors.Count > 0)
+            {
+                precheck = TryPrecheckTargets(
+                    doc,
+                    anchors,
+                    disallowBackendApi,
+                    stream,
+                    formatScope,
+                    formatToolName);
+                result.Ambiguity = precheck.Ambiguity;
+                result.TableScope = precheck.TableScope;
+            }
+
+            bool split = precheck?.Ambiguity?.LocateFailures != null
+                && precheck.Ambiguity.LocateFailures.Count > 0;
+            if (precheck != null && !precheck.Success && !split)
+            {
+                result.BatchBlocked = true;
+                result.Error = precheck.Error ?? "定位预检失败";
+                StampBatch(result, result.Error);
+                return result;
+            }
+
+            var failedIndexes = new HashSet<int>();
+            if (split)
+            {
+                foreach (AnchorLocateFailure failure in precheck.Ambiguity.LocateFailures)
+                {
+                    if (failure == null)
+                    {
+                        continue;
+                    }
+
+                    failedIndexes.Add(failure.ActionIndex);
+                    for (int i = 0; i < count; i++)
+                    {
+                        int actionIndex = inputs[i].ActionIndex >= 0 ? inputs[i].ActionIndex : i;
+                        if (actionIndex != failure.ActionIndex)
+                        {
+                            continue;
+                        }
+
+                        if (!string.IsNullOrEmpty(inputs[i].Field)
+                            && !string.Equals(inputs[i].Field, failure.Field, StringComparison.Ordinal))
+                        {
+                            continue;
+                        }
+
+                        result.Items[i].Success = false;
+                        result.Items[i].Error = string.IsNullOrEmpty(failure.Message)
+                            ? (precheck.Error ?? "定位失败")
+                            : failure.Message;
+                    }
+                }
+            }
+
+            for (int i = 0; i < count; i++)
+            {
+                LocateSpanItem item = result.Items[i];
+                if (item.Spec == null || !string.IsNullOrEmpty(item.Error))
+                {
+                    item.Success = false;
+                    continue;
+                }
+
+                int actionIndex = inputs[i].ActionIndex >= 0 ? inputs[i].ActionIndex : i;
+                if (failedIndexes.Contains(actionIndex)
+                    && (string.IsNullOrEmpty(inputs[i].Field) || ItemMatchesFailureField(inputs[i], precheck)))
+                {
+                    item.Success = false;
+                    if (string.IsNullOrEmpty(item.Error))
+                    {
+                        item.Error = "定位失败";
+                    }
+
+                    continue;
+                }
+
+                FillWholeSpan(doc, item);
+            }
+
+            return result;
+        }
+
+        private static bool ItemMatchesFailureField(LocateInput input, PrecheckResult precheck)
+        {
+            if (input == null || precheck?.Ambiguity?.LocateFailures == null)
+            {
+                return true;
+            }
+
+            int actionIndex = input.ActionIndex;
+            foreach (AnchorLocateFailure failure in precheck.Ambiguity.LocateFailures)
+            {
+                if (failure == null || failure.ActionIndex != actionIndex)
+                {
+                    continue;
+                }
+
+                if (string.IsNullOrEmpty(input.Field)
+                    || string.Equals(input.Field, failure.Field, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static void StampBatch(LocateSpanBatchResult result, string error)
+        {
+            if (result?.Items == null)
+            {
+                return;
+            }
+
+            foreach (LocateSpanItem item in result.Items)
+            {
+                item.Success = false;
+                item.Range = null;
+                item.Table = null;
+                item.Image = null;
+                item.Chart = null;
+                if (string.IsNullOrEmpty(item.Error))
+                {
+                    item.Error = error;
+                }
+            }
+        }
+
+        private static void FillWholeSpan(Word.Document doc, LocateSpanItem item)
+        {
+            LocatorSpec spec = item.Spec;
+            try
+            {
+                if (spec.Kind == LocatorKind.DocumentStart)
+                {
+                    Word.Range startRange = RangeAtDocumentStart(doc);
+                    if (startRange == null)
+                    {
+                        item.Success = false;
+                        item.Error = "locate_failed: 无法取得文档开头 Range";
+                        return;
+                    }
+
+                    item.Range = startRange;
+                    item.Success = true;
+                    return;
+                }
+
+                if (spec.Kind == LocatorKind.Sentence || spec.Kind == LocatorKind.Paragraph)
+                {
+                    ResolveRangeResult located = TryResolveSentenceOrParagraphRange(
+                        doc,
+                        spec,
+                        LocateRangeKind.ContentSpan,
+                        spec.Kind == LocatorKind.Paragraph);
+                    item.Success = located.Success && located.Range != null;
+                    item.Range = located.Range;
+                    item.Error = item.Success ? null : (located.Error ?? "locate_failed: 无法定位编码序列");
+                    return;
+                }
+
+                if (spec.Kind == LocatorKind.EmptyCell)
+                {
+                    ResolveRangeResult located = TryResolveEmptyCellRange(doc, spec);
+                    item.Success = located.Success && located.Range != null;
+                    item.Range = located.Range;
+                    item.Error = item.Success ? null : (located.Error ?? "locate_failed: 无法定位空格");
+                    if (item.Success)
+                    {
+                        item.Table = TableResolveHelper.TryResolveTableById(doc, spec.TableId, out _);
+                    }
+
+                    return;
+                }
+
+                if (spec.Kind == LocatorKind.Table)
+                {
+                    Word.Table table = TableResolveHelper.TryResolveTableById(doc, spec.TableId, out string tableError);
+                    if (table == null)
+                    {
+                        item.Success = false;
+                        item.Error = "locate_failed: " + (tableError ?? $"找不到表格 '{spec.TableId}'");
+                        return;
+                    }
+
+                    item.Table = table;
+                    item.Range = table.Range;
+                    item.Success = item.Range != null;
+                    if (!item.Success)
+                    {
+                        item.Error = $"locate_failed: 无法取得表格 '{spec.TableId}' 的 Range";
+                    }
+
+                    return;
+                }
+
+                if (spec.Kind == LocatorKind.Chart)
+                {
+                    ChartResolveHelper.BodyChart chart = ChartResolveHelper.ResolveBodyChartByChartId(doc, spec.ChartId);
+                    if (chart == null)
+                    {
+                        item.Success = false;
+                        item.Error = $"locate_failed: 找不到图表 '{spec.ChartId}'";
+                        return;
+                    }
+
+                    item.Chart = chart;
+                    item.Range = chart.NavigateRange();
+                    item.Success = item.Range != null;
+                    if (!item.Success)
+                    {
+                        item.Error = $"locate_failed: 无法取得图表 '{spec.ChartId}' 的 Range";
+                    }
+
+                    return;
+                }
+
+                if (spec.Kind == LocatorKind.Image)
+                {
+                    Word.InlineShape image = ImageResolveHelper.ResolveInlineShapeByImageId(doc, spec.ImageId);
+                    if (image == null)
+                    {
+                        item.Success = false;
+                        item.Error = $"locate_failed: 找不到图片 '{spec.ImageId}'";
+                        return;
+                    }
+
+                    item.Image = image;
+                    item.Range = image.Range;
+                    item.Success = item.Range != null;
+                    if (!item.Success)
+                    {
+                        item.Error = $"locate_failed: 无法取得图片 '{spec.ImageId}' 的 Range";
+                    }
+
+                    return;
+                }
+
+                item.Success = false;
+                item.Error = "locate_failed: 无法识别的定位类型";
+            }
+            catch (Exception ex)
+            {
+                item.Success = false;
+                item.Range = null;
+                item.Error = "locate_failed: " + ex.Message;
+            }
+        }
+
+        /// <summary>
+        /// 插入类调用方：没有 target 时用当前光标；有 target 时先取整段，再落到插入点。
+        /// </summary>
+        public static bool TryTakeInsertRange(
+            Word.Document doc,
+            Dictionary<string, object> args,
+            bool disallowBackendApi,
+            out Word.Range range,
+            out string error,
+            out bool usedCursor,
+            out LocatorSpec spec)
+        {
+            range = null;
+            error = null;
+            usedCursor = false;
+            spec = null;
+            Dictionary<string, object> target = TryGetTargetDict(args);
+            if (target == null)
+            {
+                if (doc == null)
+                {
+                    error = "locate_failed: 文档不可用";
+                    return false;
+                }
+
+                try
+                {
+                    range = doc.Application.Selection.Range;
+                    usedCursor = true;
+                    return range != null || FailInsertPoint(out error, "没有活动选区");
+                }
+                catch (Exception ex)
+                {
+                    error = "locate_failed: " + ex.Message;
+                    return false;
+                }
+            }
+
+            LocateSpanBatchResult batch = TryLocateSpans(
+                doc,
+                new[] { target },
+                disallowBackendApi);
+            LocateSpanItem item = batch.Items.Count > 0 ? batch.Items[0] : null;
+            if (batch.BatchBlocked || item == null || !item.Success)
+            {
+                error = item?.Error ?? batch.Error ?? "无法确定插入位置";
+                return false;
+            }
+
+            spec = item.Spec;
+            return TryInsertPoint(doc, item, out range, out error);
+        }
+
+        /// <summary>调用方要插在整段后面时使用。文首和光标不在这里处理。</summary>
+        public static bool TryInsertPoint(
+            Word.Document doc,
+            LocateSpanItem item,
+            out Word.Range range,
+            out string error)
+        {
+            range = null;
+            error = null;
+            if (item == null || !item.Success || item.Range == null || item.Spec == null)
+            {
+                error = item?.Error ?? "无法确定插入位置";
+                return false;
+            }
+
+            try
+            {
+                if (item.Spec.Kind == LocatorKind.Table)
+                {
+                    range = ObjectInsertRangeHelper.InsertPointAfterTable(
+                        doc, item.Table, item.Range, item.Spec.TableId);
+                    if (range == null)
+                    {
+                        error = ObjectInsertRangeHelper.TableIsNested(item.Table, doc)
+                            ? $"locate_failed: 无法在嵌套表 '{item.Spec.TableId}' 后插入（需落在父单元格内）"
+                            : $"locate_failed: 无法在表格 '{item.Spec.TableId}' 后插入";
+                        return false;
+                    }
+
+                    return true;
+                }
+
+                if (item.Spec.Kind == LocatorKind.Chart || item.Spec.Kind == LocatorKind.Image)
+                {
+                    range = ObjectInsertRangeHelper.InsertPointAfterShape(item.Range);
+                    return range != null || FailInsertPoint(out error, "无法在对象后插入");
+                }
+
+                if (item.Spec.Kind == LocatorKind.DocumentStart)
+                {
+                    range = item.Range;
+                    return true;
+                }
+
+                range = ObjectInsertRangeHelper.PointAtEnd(item.Range);
+                return range != null || FailInsertPoint(out error, "无法确定插入位置");
+            }
+            catch (Exception ex)
+            {
+                error = "locate_failed: " + ex.Message;
+                return false;
+            }
+        }
+
+        private static bool FailInsertPoint(out string error, string message)
+        {
+            error = message;
+            return false;
+        }
+
         public static ResolveRangeResult TryResolveCodeSpan(
             Word.Document doc,
             IReadOnlyList<string> codes,
@@ -996,6 +1531,19 @@ namespace WordAddIn1
             else if (spec.Kind == LocatorKind.DocumentStart)
             {
                 echo["position"] = PositionStart;
+            }
+            else if (spec.Kind == LocatorKind.EmptyCell)
+            {
+                echo["codes"] = spec.Codes;
+                if (!string.IsNullOrEmpty(spec.InTableId))
+                {
+                    echo["in_table"] = spec.InTableId;
+                }
+            }
+
+            if (spec.TextSpan != null && !string.IsNullOrEmpty(spec.TextSpan.Value))
+            {
+                echo["text"] = spec.TextSpan.Value;
             }
 
             return echo;

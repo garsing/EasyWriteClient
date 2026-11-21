@@ -52,22 +52,23 @@ namespace WordAddIn1
             }
 
             string tableId = anchor.TableId;
-            var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
-                doc,
-                new InsertTargetLocatorHelper.LocatorSpec
-                {
-                    Kind = InsertTargetLocatorHelper.LocatorKind.Sentence,
-                    Codes = string.Join(",", codeList),
-                    InTableId = tableId
-                },
-                InsertTargetLocatorHelper.LocateRangeKind.ContentSpan);
-            if (!locate.Success || locate.Range == null)
+            var spec = new InsertTargetLocatorHelper.LocatorSpec
             {
-                error = locate.Error ?? $"无法定位句子 {codesRaw}";
+                Kind = InsertTargetLocatorHelper.LocatorKind.Sentence,
+                Codes = string.Join(",", codeList),
+                InTableId = tableId
+            };
+            InsertTargetLocatorHelper.LocateSpanBatchResult batch = InsertTargetLocatorHelper.TryLocateSpans(
+                doc,
+                new[] { InsertTargetLocatorHelper.BuildTargetEcho(spec) });
+            InsertTargetLocatorHelper.LocateSpanItem item = batch.Items.Count > 0 ? batch.Items[0] : null;
+            if (batch.BatchBlocked || item == null || !item.Success || item.Range == null)
+            {
+                error = item?.Error ?? batch.Error ?? $"无法定位句子 {codesRaw}";
                 return false;
             }
 
-            Word.Range span = locate.Range;
+            Word.Range span = item.Range;
 
             range = SpanSentenceLocator.LocateLastSentence(doc, span, codeList, debugTag);
             if (range == null)

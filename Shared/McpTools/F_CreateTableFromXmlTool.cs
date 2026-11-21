@@ -103,17 +103,14 @@ namespace WordAddIn1
                     var parseResult = ParseXmlFile(xmlFilePath);
                     LogPhase($"XML 解析完成 rows={parseResult.Config?.Table?.Rows} cols={parseResult.Config?.Table?.Cols}");
 
-                    var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
-                        document,
-                        args,
-                        InsertTargetLocatorHelper.LocateRangeKind.InsertAfter,
-                        docHandle.DisallowBackendApi);
-                    if (!locate.Success)
+                    if (!InsertTargetLocatorHelper.TryTakeInsertRange(document, args, docHandle.DisallowBackendApi, out Word.Range insertAt, out string locateError, out _, out InsertTargetLocatorHelper.LocatorSpec locateSpec))
                     {
-                        return InsertTargetLocatorHelper.ToFailureResult(locate, "F_create_table_from_xml");
+                        return InsertTargetLocatorHelper.ToFailureResult(
+                            new InsertTargetLocatorHelper.ResolveRangeResult { Success = false, Error = locateError },
+                            "F_create_table_from_xml");
                     }
 
-                    Word.Range addRange = EnsureSeparatedFromExistingTables(document, locate.Range);
+                    Word.Range addRange = EnsureSeparatedFromExistingTables(document, insertAt);
                     var createResult = CreateTableAtLocation(document, parseResult.Config, addRange);
                     LogPhase($"CreateTableAtLocation success={createResult.Success}");
                     if (!createResult.Success)
@@ -211,7 +208,7 @@ namespace WordAddIn1
 
                     string message = InsertTargetLocatorHelper.AppendDocumentStartMessage(
                         "表格创建成功",
-                        locate.Spec);
+                        locateSpec);
                     if (warnings.Count > 0)
                     {
                         message += $"，但存在以下警告: {string.Join("; ", warnings)}";

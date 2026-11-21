@@ -43,24 +43,20 @@ namespace WordAddIn1
                         $"[InsertPageBreak] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
                     var before = TryGetPageInfo(app, doc);
-                    var locate = InsertTargetLocatorHelper.TryResolveInsertRange(
-                        doc,
-                        args,
-                        InsertTargetLocatorHelper.LocateRangeKind.InsertAfter,
-                        docHandle.DisallowBackendApi);
-                    if (!locate.Success)
+                    if (!InsertTargetLocatorHelper.TryTakeInsertRange(
+                            doc, args, docHandle.DisallowBackendApi, out Word.Range insertAt, out string locateError, out bool usedCursor, out InsertTargetLocatorHelper.LocatorSpec locateSpec))
                     {
-                        return InsertTargetLocatorHelper.ToFailureResult(locate, "F_insert_page_break");
+                        return InsertTargetLocatorHelper.ToFailureResult(
+                            new InsertTargetLocatorHelper.ResolveRangeResult { Success = false, Error = locateError },
+                            "F_insert_page_break");
                     }
 
-                    string kind = locate.UsedCursor
-                        ? "cursor"
-                        : (locate.Spec != null ? locate.Spec.Kind.ToString() : "(none)");
+                    string kind = usedCursor ? "cursor" : "target";
                     System.Diagnostics.Debug.WriteLine(
-                        $"[InsertPageBreak] used_cursor={locate.UsedCursor} target={kind} " +
+                        $"[InsertPageBreak] used_cursor={usedCursor} target={kind} " +
                         $"total_pages_before={before.TotalPages}");
 
-                    WordBreakWriteHelper.InsertPageBreak(locate.Range);
+                    WordBreakWriteHelper.InsertPageBreak(insertAt);
 
                     try
                     {
@@ -82,7 +78,7 @@ namespace WordAddIn1
 
                     try
                     {
-                        MoveCursorAfterBreak(app, locate.Range);
+                        MoveCursorAfterBreak(app, insertAt);
                     }
                     catch (Exception ex)
                     {
@@ -98,14 +94,14 @@ namespace WordAddIn1
                         ["host"] = docHandle.HostName ?? "",
                         ["message"] = SuccessMessage
                     };
-                    var echo = InsertTargetLocatorHelper.BuildTargetEcho(locate.Spec);
+                    var echo = InsertTargetLocatorHelper.BuildTargetEcho(locateSpec);
                     if (echo != null)
                     {
                         data["target_echo"] = echo;
                     }
 
                     System.Diagnostics.Debug.WriteLine(
-                        $"[InsertPageBreak] ok used_cursor={locate.UsedCursor} target={kind} " +
+                        $"[InsertPageBreak] ok used_cursor={usedCursor} target={kind} " +
                         $"total_pages_before={before.TotalPages} total_pages_after={after.TotalPages}");
 
                     await Task.CompletedTask;

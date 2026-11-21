@@ -133,37 +133,31 @@ namespace WordAddIn1
             string fingerprint = FormatInheritHelper.BuildFingerprint(snapshot);
 
             var scopeArgs = new ApplyFormatScopeArgs { TableId = tableId };
-            var formatAnchors = new List<DocumentActionAmbiguityAnchor>
-            {
-                new DocumentActionAmbiguityAnchor
-                {
-                    ActionIndex = 0,
-                    Field = "target_codes",
-                    Codes = string.Join(",", targetCodes),
-                    TableId = tableId
-                }
-            };
-            var precheck = InsertTargetLocatorHelper.TryPrecheckTargets(
+            InsertTargetLocatorHelper.LocateSpanBatchResult locatedBatch = InsertTargetLocatorHelper.LocateFormatSpan(
                 doc,
-                formatAnchors,
+                targetCodes,
+                paragraph: false,
+                tableId,
+                textSpan,
                 disallowBackendApi,
                 InsertTargetLocatorHelper.LocatePrecheckStream.SentenceFormatApply,
                 scopeArgs,
                 "F_apply_source_format");
-            if (!precheck.Success)
+            if (locatedBatch.BatchBlocked)
             {
-                if (precheck.Ambiguity != null && precheck.Ambiguity.HasBlockingError)
+                if (locatedBatch.Ambiguity != null && locatedBatch.Ambiguity.HasBlockingError)
                 {
                     return SentenceCodeAmbiguityHelper.BuildApplyAmbiguityFailureResult(
                         "F_apply_source_format",
-                        precheck.Ambiguity);
+                        locatedBatch.Ambiguity);
                 }
 
-                return new ToolResult { Success = false, Error = precheck.Error };
+                return new ToolResult { Success = false, Error = locatedBatch.Error };
             }
 
-            AmbiguityCheckResult ambiguityResult = precheck.Ambiguity;
-            TableScopeIndex tableScope = precheck.TableScope;
+            AmbiguityCheckResult ambiguityResult = locatedBatch.Ambiguity;
+            TableScopeIndex tableScope = locatedBatch.TableScope;
+            InsertTargetLocatorHelper.LocateSpanItem locatedItem = locatedBatch.Items[0];
 
             var appliedCodes = new List<string>();
             var skippedCodes = new List<string>();
@@ -186,22 +180,14 @@ namespace WordAddIn1
             Word.Range targetSpan = null;
             if (skippedCodes.Count < targetCodes.Count)
             {
-                var spanLocate = InsertTargetLocatorHelper.TryResolveCodeSpan(
-                    doc,
-                    targetCodes,
-                    tableId,
-                    InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
-                    paragraph: false,
-                    disallowBackendApi,
-                    textSpan);
-                if (!spanLocate.Success && TextSpanArg.IsDirectError(spanLocate.Error))
+                if (!locatedItem.Success && TextSpanArg.IsDirectError(locatedItem.Error))
                 {
-                    return new ToolResult { Success = false, Error = spanLocate.Error };
+                    return new ToolResult { Success = false, Error = locatedItem.Error };
                 }
 
-                if (spanLocate.Success)
+                if (locatedItem.Success)
                 {
-                    targetSpan = spanLocate.Range;
+                    targetSpan = locatedItem.Range;
                 }
 
                 if (targetSpan == null)

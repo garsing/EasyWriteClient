@@ -65,7 +65,15 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = $"生成图表映射表失败：{ex.Message}" };
                     }
 
-                    ChartResolveHelper.BodyChart bodyChart = ChartResolveHelper.ResolveBodyChartByChartId(document, chartId);
+                    InsertTargetLocatorHelper.LocateSpanBatchResult chartBatch = InsertTargetLocatorHelper.TryLocateSpans(
+                        document,
+                        new[]
+                        {
+                            new Dictionary<string, object> { ["chart"] = chartId }
+                        });
+                    InsertTargetLocatorHelper.LocateSpanItem chartItem =
+                        chartBatch.Items.Count > 0 ? chartBatch.Items[0] : null;
+                    ChartResolveHelper.BodyChart bodyChart = chartItem != null && chartItem.Success ? chartItem.Chart : null;
                     if (bodyChart == null)
                     {
                         return new ToolResult

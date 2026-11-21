@@ -91,7 +91,21 @@ namespace WordAddIn1
 
         public static Word.Table ResolveTableById(Word.Document document, string tableId, out string error)
         {
-            return TableResolveHelper.TryResolveTableById(document, tableId, out error);
+            error = null;
+            InsertTargetLocatorHelper.LocateSpanBatchResult batch = InsertTargetLocatorHelper.TryLocateSpans(
+                document,
+                new[]
+                {
+                    new Dictionary<string, object> { ["table"] = tableId ?? "" }
+                });
+            InsertTargetLocatorHelper.LocateSpanItem item = batch.Items.Count > 0 ? batch.Items[0] : null;
+            if (batch.BatchBlocked || item == null || !item.Success || item.Table == null)
+            {
+                error = item?.Error ?? batch.Error ?? "找不到表格";
+                return null;
+            }
+
+            return item.Table;
         }
     }
 }

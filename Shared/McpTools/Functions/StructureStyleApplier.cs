@@ -203,20 +203,37 @@ namespace WordAddIn1
                 runs.Add(codes);
             }
 
-            var ranges = new List<Word.Range>();
+            var locators = new List<Dictionary<string, object>>();
             foreach (List<string> run in runs)
             {
-                InsertTargetLocatorHelper.ResolveRangeResult located = InsertTargetLocatorHelper.TryResolveCodeSpan(
-                    doc,
-                    run,
-                    null,
-                    InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
-                    paragraph,
-                    disallowBackendApi,
-                    span);
+                var one = new Dictionary<string, object>
+                {
+                    [paragraph ? "paragraph_codes" : "codes"] = string.Join(",", run)
+                };
+                if (span != null && !string.IsNullOrEmpty(span.Value))
+                {
+                    one["text"] = span.Value;
+                }
+
+                locators.Add(one);
+            }
+
+            InsertTargetLocatorHelper.LocateSpanBatchResult batch = InsertTargetLocatorHelper.TryLocateSpans(
+                doc,
+                locators,
+                disallowBackendApi);
+            if (batch.BatchBlocked)
+            {
+                plan.Finished = Fail(string.IsNullOrEmpty(batch.Error) ? "定位失败。" : batch.Error);
+                return plan;
+            }
+
+            var ranges = new List<Word.Range>();
+            foreach (InsertTargetLocatorHelper.LocateSpanItem located in batch.Items)
+            {
                 if (located == null || !located.Success || located.Range == null)
                 {
-                    plan.Finished = Fail(located == null ? "定位失败。" : located.Error);
+                    plan.Finished = Fail(located == null || string.IsNullOrEmpty(located.Error) ? "定位失败。" : located.Error);
                     return plan;
                 }
 

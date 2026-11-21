@@ -9,6 +9,69 @@ namespace WordAddIn1
     /// </summary>
     public static class ObjectInsertRangeHelper
     {
+        /// <summary>整段末尾的一个点。不改文档。</summary>
+        public static Word.Range PointAtEnd(Word.Range span)
+        {
+            if (span == null)
+            {
+                return null;
+            }
+
+            Word.Range point = span.Duplicate;
+            point.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+            return point;
+        }
+
+        /// <summary>
+        /// 已经拿到表的整段之后，落到表后新段起点。
+        /// 先 Collapse(End) → InsertParagraphAfter。WPS 文末表再试不夹紧的 Range(表.End)。
+        /// </summary>
+        public static Word.Range InsertPointAfterTable(
+            Word.Document doc,
+            Word.Table table,
+            Word.Range tableRange,
+            string tableId)
+        {
+            if (doc == null || table == null || tableRange == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                int objectEnd = tableRange.End;
+                Word.Range wordPath = TryInsertParagraphAfterCollapsedEnd(tableRange, tableId ?? "");
+                if (AcceptInsertAfterTable(wordPath, table, doc))
+                {
+                    return wordPath;
+                }
+
+                return TryRawEndInsert(doc, objectEnd, tableId ?? "", table);
+            }
+            catch (Exception ex)
+            {
+                WordAddIn1.DocumentHost.HostProbe.Log(
+                    "tbl-after-ex",
+                    "id=" + (tableId ?? "") + " " + WordAddIn1.DocumentHost.HostProbe.Ex(ex));
+                return null;
+            }
+        }
+
+        /// <summary>已经拿到图表或图片的整段之后，落到对象后的新段起点。</summary>
+        public static Word.Range InsertPointAfterShape(Word.Range objectRange)
+        {
+            if (objectRange == null)
+            {
+                return null;
+            }
+
+            Word.Range insertRange = objectRange.Duplicate;
+            insertRange.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+            insertRange.InsertParagraphAfter();
+            insertRange.Collapse(Word.WdCollapseDirection.wdCollapseStart);
+            return insertRange;
+        }
+
         /// <summary>
         /// 表后新段起点。先 Collapse(End) → InsertParagraphAfter（Word 表后已有段）。
         /// WPS 文末表 Collapse 常停在表内并 E_FAIL，再试不夹紧的 Range(表.End)。
@@ -34,32 +97,28 @@ namespace WordAddIn1
                 }
 
                 Word.Range tableRange = table.Range;
-                int objectEnd = tableRange.End;
                 if (WordAddIn1.DocumentHost.HostProbe.Enabled)
                 {
                     WordAddIn1.DocumentHost.HostProbe.Log(
                         "tbl-after-range",
-                        "id=" + tableId + " start=" + tableRange.Start + " end=" + objectEnd
+                        "id=" + tableId + " start=" + tableRange.Start + " end=" + tableRange.End
                         + " docEnd=" + SafeContentEnd(doc));
                 }
 
-                Word.Range wordPath = TryInsertParagraphAfterCollapsedEnd(tableRange, tableId);
-                if (AcceptInsertAfterTable(wordPath, table, doc))
+                Word.Range inserted = InsertPointAfterTable(doc, table, tableRange, tableId);
+                if (inserted == null)
+                {
+                    WordAddIn1.DocumentHost.HostProbe.Log("tbl-after-fallback-null", "id=" + tableId);
+                }
+                else
                 {
                     WordAddIn1.DocumentHost.HostProbe.Log(
                         "tbl-after-ok",
                         "id=" + tableId + " via=insert-para-after nested=" + TableIsNested(table, doc)
-                        + " start=" + wordPath.Start);
-                    return wordPath;
+                        + " start=" + inserted.Start);
                 }
 
-                Word.Range rawPath = TryRawEndInsert(doc, objectEnd, tableId, table);
-                if (rawPath == null)
-                {
-                    WordAddIn1.DocumentHost.HostProbe.Log("tbl-after-fallback-null", "id=" + tableId);
-                }
-
-                return rawPath;
+                return inserted;
             }
             catch (Exception ex)
             {
@@ -87,14 +146,11 @@ namespace WordAddIn1
                     return null;
                 }
 
-                Word.Range insertRange = chart.NavigateRange();
+                Word.Range insertRange = InsertPointAfterShape(chart.NavigateRange());
                 if (insertRange == null)
                 {
                     return null;
                 }
-                insertRange.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
-                insertRange.InsertParagraphAfter();
-                insertRange.Collapse(Word.WdCollapseDirection.wdCollapseStart);
 
                 EasyWriteDiagnostics.Log(
                     DebugCategory.Chart,
@@ -161,10 +217,11 @@ namespace WordAddIn1
                     return null;
                 }
 
-                Word.Range insertRange = image.Range;
-                insertRange.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
-                insertRange.InsertParagraphAfter();
-                insertRange.Collapse(Word.WdCollapseDirection.wdCollapseStart);
+                Word.Range insertRange = InsertPointAfterShape(image.Range);
+                if (insertRange == null)
+                {
+                    return null;
+                }
 
                 EasyWriteDiagnostics.Log(
                     DebugCategory.Chart,

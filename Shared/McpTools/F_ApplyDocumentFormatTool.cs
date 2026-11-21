@@ -197,39 +197,50 @@ namespace WordAddIn1
                     }
 
                     ApplyFormatScopeArgs scopeArgs = ApplyFormatAmbiguityHelper.ParseScopeArgs(args);
-                    var formatAnchors = new List<DocumentActionAmbiguityAnchor>
+                    if (!TextSpanArg.TryRead(args, out TextSpan textSpan, out string textError))
                     {
-                        new DocumentActionAmbiguityAnchor
-                        {
-                            ActionIndex = 0,
-                            Field = paragraphMode ? "target_paragraph_codes" : "target_codes",
-                            Codes = string.Join(",", targetCodes),
-                            TableId = scopeArgs.TableId
-                        }
+                        return Done(false, textError);
+                    }
+
+                    var locator = new Dictionary<string, object>
+                    {
+                        [paragraphMode ? "paragraph_codes" : "codes"] = string.Join(",", targetCodes)
                     };
-                    var precheck = InsertTargetLocatorHelper.TryPrecheckTargets(
+                    if (!string.IsNullOrEmpty(scopeArgs.TableId))
+                    {
+                        locator["in_table"] = scopeArgs.TableId;
+                    }
+
+                    if (textSpan != null && !string.IsNullOrEmpty(textSpan.Value))
+                    {
+                        locator["text"] = textSpan.Value;
+                    }
+
+                    InsertTargetLocatorHelper.LocateSpanBatchResult locatedBatch = InsertTargetLocatorHelper.TryLocateSpans(
                         doc,
-                        formatAnchors,
+                        new[] { locator },
                         docHandle.DisallowBackendApi,
                         paragraphMode
                             ? InsertTargetLocatorHelper.LocatePrecheckStream.ParagraphFormatApply
                             : InsertTargetLocatorHelper.LocatePrecheckStream.SentenceFormatApply,
                         scopeArgs,
                         "F_apply_document_format");
-                    if (!precheck.Success)
+                    if (locatedBatch.BatchBlocked)
                     {
-                        if (precheck.Ambiguity != null && precheck.Ambiguity.HasBlockingError)
+                        if (locatedBatch.Ambiguity != null && locatedBatch.Ambiguity.HasBlockingError)
                         {
                             return Task.FromResult(SentenceCodeAmbiguityHelper.BuildApplyAmbiguityFailureResult(
                                 "F_apply_document_format",
-                                precheck.Ambiguity));
+                                locatedBatch.Ambiguity));
                         }
 
-                        return Done(false, precheck.Error);
+                        return Done(false, locatedBatch.Error);
                     }
 
-                    AmbiguityCheckResult ambiguityResult = precheck.Ambiguity;
-                    TableScopeIndex tableScope = precheck.TableScope;
+                    InsertTargetLocatorHelper.LocateSpanItem locatedItem = locatedBatch.Items[0];
+
+                    AmbiguityCheckResult ambiguityResult = locatedBatch.Ambiguity;
+                    TableScopeIndex tableScope = locatedBatch.TableScope;
                     Dictionary<string, object> snapshot;
                     string responseMode;
                     List<string> explicitFieldsApplied = null;
@@ -283,37 +294,24 @@ namespace WordAddIn1
                     Word.Range targetSpan = null;
                     if (skippedCodes.Count < targetCodes.Count)
                     {
-                        if (!TextSpanArg.TryRead(args, out TextSpan textSpan, out string textError))
-                        {
-                            return Done(false, textError);
-                        }
-
-                        var spanLocate = InsertTargetLocatorHelper.TryResolveCodeSpan(
-                            doc,
-                            targetCodes,
-                            scopeArgs.TableId,
-                            InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
-                            paragraphMode,
-                            docHandle.DisallowBackendApi,
-                            textSpan);
-                        if (!spanLocate.Success && TextSpanArg.IsDirectError(spanLocate.Error))
+                        if (!locatedItem.Success && TextSpanArg.IsDirectError(locatedItem.Error))
                         {
                             return Task.FromResult(new ToolResult
                             {
                                 Success = false,
-                                Error = spanLocate.Error,
+                                Error = locatedItem.Error,
                                 Data = new Dictionary<string, object>
                                 {
                                     ["success"] = false,
                                     ["checkpoint_cleanup_only"] = true,
-                                    ["format_apply_error"] = spanLocate.Error
+                                    ["format_apply_error"] = locatedItem.Error
                                 }
                             });
                         }
 
-                        if (spanLocate.Success)
+                        if (locatedItem.Success)
                         {
-                            targetSpan = spanLocate.Range;
+                            targetSpan = locatedItem.Range;
                         }
 
                         if (targetSpan == null)

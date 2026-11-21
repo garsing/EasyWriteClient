@@ -410,8 +410,23 @@ namespace WordAddIn1
             string where = (at ?? "").Trim();
             if (where.Length == 0 || string.Equals(where, "start", StringComparison.OrdinalIgnoreCase))
             {
-                point = InsertTargetLocatorHelper.RangeAtDocumentStart(doc);
-                return point != null || FailPoint(out error);
+                InsertTargetLocatorHelper.LocateSpanBatchResult startBatch = InsertTargetLocatorHelper.TryLocateSpans(
+                    doc,
+                    new[]
+                    {
+                        new Dictionary<string, object> { ["position"] = "start" }
+                    },
+                    disallowBackendApi: true);
+                InsertTargetLocatorHelper.LocateSpanItem startItem =
+                    startBatch.Items.Count > 0 ? startBatch.Items[0] : null;
+                point = startItem != null && startItem.Success ? startItem.Range : null;
+                if (point == null)
+                {
+                    error = startItem?.Error ?? startBatch.Error ?? "找不到插入位置";
+                    return false;
+                }
+
+                return true;
             }
 
             if (where.StartsWith("ewC_", StringComparison.Ordinal))
@@ -431,22 +446,17 @@ namespace WordAddIn1
                 return false;
             }
 
-            if (TocFieldStamp.IsInterior(where))
-            {
-                error = TocFieldStamp.InteriorMessage;
-                return false;
-            }
-
-            var located = InsertTargetLocatorHelper.TryResolveCodeSpan(
+            InsertTargetLocatorHelper.LocateSpanBatchResult batch = InsertTargetLocatorHelper.TryLocateSpans(
                 doc,
-                new[] { where },
-                null,
-                InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
-                paragraph: true,
+                new[]
+                {
+                    new Dictionary<string, object> { ["paragraph_codes"] = where }
+                },
                 disallowBackendApi: true);
-            if (!located.Success || located.Range == null)
+            InsertTargetLocatorHelper.LocateSpanItem located = batch.Items.Count > 0 ? batch.Items[0] : null;
+            if (batch.BatchBlocked || located == null || !located.Success || located.Range == null)
             {
-                error = string.IsNullOrEmpty(located.Error) ? "找不到插入位置" : located.Error;
+                error = located?.Error ?? batch.Error ?? "找不到插入位置";
                 return false;
             }
 
@@ -1377,19 +1387,21 @@ namespace WordAddIn1
                 return false;
             }
 
-            if (TocFieldStamp.IsInterior(from) || TocFieldStamp.IsInterior(to))
-            {
-                error = TocFieldStamp.InteriorMessage;
-                return false;
-            }
-
-            var located = InsertTargetLocatorHelper.TryResolveCodeSpan(
+            InsertTargetLocatorHelper.LocateSpanBatchResult locatedBatch = InsertTargetLocatorHelper.TryLocateSpans(
                 doc,
-                new[] { from, to },
-                null,
-                InsertTargetLocatorHelper.LocateRangeKind.ContentSpan,
-                paragraph: true,
+                new[]
+                {
+                    new Dictionary<string, object> { ["paragraph_codes"] = from + "," + to }
+                },
                 disallowBackendApi: true);
+            InsertTargetLocatorHelper.LocateSpanItem locatedItem =
+                locatedBatch.Items.Count > 0 ? locatedBatch.Items[0] : null;
+            var located = new InsertTargetLocatorHelper.ResolveRangeResult
+            {
+                Success = locatedItem != null && locatedItem.Success && locatedItem.Range != null && !locatedBatch.BatchBlocked,
+                Range = locatedItem?.Range,
+                Error = locatedItem?.Error ?? locatedBatch.Error
+            };
             if (!located.Success || located.Range == null)
             {
                 error = string.IsNullOrEmpty(located.Error) ? "范围已经不在" : located.Error;
