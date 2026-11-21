@@ -414,7 +414,7 @@ namespace WordAddIn1
                         }
                     },
                     dict,
-                    singleCode: false);
+                    singleCode: true);
             }
 
             foreach (string part in parts)
@@ -1147,6 +1147,25 @@ namespace WordAddIn1
                     if (item.Success)
                     {
                         item.Table = TableResolveHelper.TryResolveTableById(doc, spec.TableId, out _);
+                        if (spec.TextSpan != null && !string.IsNullOrEmpty(spec.TextSpan.Value))
+                        {
+                            ResolveRangeResult narrowed = TextSpanNarrower.TryNarrow(
+                                doc,
+                                item.Range,
+                                spec.TextSpan,
+                                spec.Codes);
+                            if (narrowed == null || !narrowed.Success || narrowed.Range == null)
+                            {
+                                item.Success = false;
+                                item.Range = null;
+                                item.Error = narrowed == null || string.IsNullOrEmpty(narrowed.Error)
+                                    ? "locate_failed: 无法定位空格"
+                                    : narrowed.Error;
+                                return;
+                            }
+
+                            item.Range = narrowed.Range;
+                        }
                     }
 
                     return;

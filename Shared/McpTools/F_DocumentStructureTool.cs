@@ -144,6 +144,12 @@ namespace WordAddIn1
 
             if (action == "list_spans")
             {
+                string prepared = InsertTargetLocatorHelper.TryProcessDocumentForLocate(doc, disallowBackendApi);
+                if (prepared != null)
+                {
+                    return new ToolResult { Success = false, Error = prepared };
+                }
+
                 Dictionary<string, object> listed = StructureSpanLister.List(ReadLocateDisplay(), body, styles);
                 bool ok = listed.ContainsKey("ok") && listed["ok"] is bool bit && bit;
                 return new ToolResult

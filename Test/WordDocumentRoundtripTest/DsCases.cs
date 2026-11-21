@@ -105,8 +105,7 @@ namespace WordDocumentRoundtripTest
             try
             {
                 JObject early = Act(s, id, "list_spans");
-                bool needFail = !OkFlag(early) && Blob(early, "F_get_document_content");
-                Ok(run, "ds-span-need-display", needFail, Dump(early));
+                Ok(run, "ds-span-need-display", OkFlag(early), Dump(early));
                 Materialize(s, path);
 
                 JObject listed = Act(s, id, "list_styles");

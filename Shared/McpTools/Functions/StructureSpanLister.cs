@@ -21,6 +21,14 @@ namespace WordAddIn1
             @"\[S_([0-9A-Za-z]{5})-end\]",
             RegexOptions.Compiled);
 
+        private static readonly Regex CellStart = new Regex(
+            @"\[(T_[0-9A-Za-z]+_r[0-9]+_c[0-9]+)-start\]",
+            RegexOptions.Compiled);
+
+        private static readonly Regex CellEnd = new Regex(
+            @"\[(T_[0-9A-Za-z]+_r[0-9]+_c[0-9]+)-end\]",
+            RegexOptions.Compiled);
+
         public static Dictionary<string, object> List(
             string display,
             XElement body,
@@ -395,60 +403,123 @@ namespace WordAddIn1
             {
                 paragraphStyle = bodyStyle;
             }
-            foreach (XElement run in paragraph.Elements(W + "r"))
+
+            AppendInlines(paragraph, byId, paragraphStyle, fields, story, pieces);
+            story.Append('\r');
+        }
+
+        private static void AppendInlines(
+            XElement parent,
+            Dictionary<string, StructureStyleRecord> byId,
+            StructureStyleRecord paragraphStyle,
+            List<bool> fields,
+            StringBuilder story,
+            List<Piece> pieces)
+        {
+            foreach (XElement child in parent.Elements())
             {
-                NoteField(run, fields);
-                if (run.Element(W + "rPr")?.Element(W + "del") != null)
+                if (child.Name == W + "del" || child.Name == W + "moveFrom" || child.Name.LocalName == "Fallback")
                 {
                     continue;
                 }
 
-                string text = RunText(run);
-                if (text.Length == 0)
+                if (child.Name == W + "r")
                 {
+                    AppendRun(child, parent, byId, paragraphStyle, fields, story, pieces);
                     continue;
                 }
 
-                string rStyle = (string)run.Element(W + "rPr")?.Element(W + "rStyle")?.Attribute(W + "val");
-                StructureStyleRecord runStyle = null;
-                bool hasRun = !string.IsNullOrEmpty(rStyle) && byId.TryGetValue(rStyle, out runStyle);
-                if (!hasRun)
+                if (child.Name == W + "sdt")
                 {
-                    runStyle = paragraphStyle;
-                }
-
-                int start = story.Length;
-                story.Append(text);
-                if (runStyle == null)
-                {
-                    continue;
-                }
-
-                string scope = hasRun ? "text" : "paragraph";
-                XElement node = hasRun ? run : paragraph;
-                if (pieces.Count > 0)
-                {
-                    Piece prev = pieces[pieces.Count - 1];
-                    if (prev.Style == runStyle
-                        && prev.Scope == scope
-                        && prev.Start + prev.Text.Length == start)
+                    XElement content = child.Element(W + "sdtContent");
+                    if (content != null)
                     {
-                        prev.Text += text;
-                        continue;
+                        AppendInlines(content, byId, paragraphStyle, fields, story, pieces);
+                    }
+
+                    continue;
+                }
+
+                if (child.Name == W + "hyperlink"
+                    || child.Name == W + "ins"
+                    || child.Name == W + "moveTo"
+                    || child.Name == W + "smartTag"
+                    || child.Name == W + "sdtContent"
+                    || child.Name == W + "customXml")
+                {
+                    AppendInlines(child, byId, paragraphStyle, fields, story, pieces);
+                    continue;
+                }
+
+                if (child.Name.LocalName == "AlternateContent")
+                {
+                    XElement choice = child.Element(Mc + "Choice");
+                    if (choice != null)
+                    {
+                        AppendInlines(choice, byId, paragraphStyle, fields, story, pieces);
                     }
                 }
+            }
+        }
 
-                pieces.Add(new Piece
-                {
-                    Start = start,
-                    Text = text,
-                    Style = runStyle,
-                    Scope = scope,
-                    Node = node
-                });
+        private static void AppendRun(
+            XElement run,
+            XElement paragraph,
+            Dictionary<string, StructureStyleRecord> byId,
+            StructureStyleRecord paragraphStyle,
+            List<bool> fields,
+            StringBuilder story,
+            List<Piece> pieces)
+        {
+            NoteField(run, fields);
+            if (run.Element(W + "rPr")?.Element(W + "del") != null)
+            {
+                return;
             }
 
-            story.Append('\r');
+            string text = RunText(run);
+            if (text.Length == 0)
+            {
+                return;
+            }
+
+            string rStyle = (string)run.Element(W + "rPr")?.Element(W + "rStyle")?.Attribute(W + "val");
+            StructureStyleRecord runStyle = null;
+            bool hasRun = !string.IsNullOrEmpty(rStyle) && byId.TryGetValue(rStyle, out runStyle);
+            if (!hasRun)
+            {
+                runStyle = paragraphStyle;
+            }
+
+            int start = story.Length;
+            story.Append(text);
+            if (runStyle == null)
+            {
+                return;
+            }
+
+            string scope = hasRun ? "text" : "paragraph";
+            XElement node = hasRun ? run : paragraph;
+            if (pieces.Count > 0)
+            {
+                Piece prev = pieces[pieces.Count - 1];
+                if (prev.Style == runStyle
+                    && prev.Scope == scope
+                    && prev.Start + prev.Text.Length == start)
+                {
+                    prev.Text += text;
+                    return;
+                }
+            }
+
+            pieces.Add(new Piece
+            {
+                Start = start,
+                Text = text,
+                Style = runStyle,
+                Scope = scope,
+                Node = node
+            });
         }
 
         private static int OccurrenceAt(string haystack, string needle, int start)
@@ -600,6 +671,40 @@ namespace WordAddIn1
                 });
             }
 
+            MatchCollection cellStarts = CellStart.Matches(display ?? "");
+            MatchCollection cellEnds = CellEnd.Matches(display ?? "");
+            int cellEndCursor = 0;
+            foreach (Match start in cellStarts)
+            {
+                string code = start.Groups[1].Value;
+                Match end = null;
+                for (int i = cellEndCursor; i < cellEnds.Count; i++)
+                {
+                    if (cellEnds[i].Index > start.Index && cellEnds[i].Groups[1].Value == code)
+                    {
+                        end = cellEnds[i];
+                        cellEndCursor = i + 1;
+                        break;
+                    }
+                }
+
+                if (end == null)
+                {
+                    continue;
+                }
+
+                slots.Add(new SentenceSlot
+                {
+                    Code = code,
+                    Start = start.Index + start.Length,
+                    End = end.Index,
+                    StreamStart = -1,
+                    StreamEnd = -1
+                });
+            }
+
+            slots.Sort((a, b) => a.Start.CompareTo(b.Start));
+
             int slotIndex = 0;
             for (int s = 0; s < origin.Length && slotIndex < slots.Count; s++)
             {
@@ -627,15 +732,26 @@ namespace WordAddIn1
 
         private static SentenceSlot SlotAt(List<SentenceSlot> slots, int index)
         {
+            SentenceSlot cell = null;
             foreach (SentenceSlot slot in slots)
             {
-                if (index >= slot.Start && index < slot.End)
+                if (index < slot.Start || index >= slot.End)
+                {
+                    continue;
+                }
+
+                if (slot.Code != null && slot.Code.StartsWith("S_", StringComparison.Ordinal))
                 {
                     return slot;
                 }
+
+                if (cell == null)
+                {
+                    cell = slot;
+                }
             }
 
-            return null;
+            return cell;
         }
 
         public sealed class LocatedSpan
@@ -690,7 +806,7 @@ namespace WordAddIn1
                 {
                     if (piece.Text.Length > 0)
                     {
-                        result.Misses.Add("对不上「" + shown + "」。");
+                        AddMiss(result, piece, shown);
                     }
 
                     continue;
@@ -699,14 +815,14 @@ namespace WordAddIn1
                 int at = NthIndex(displayChars, shown, piece.Ordinal);
                 if (at < 0 || at >= origin.Length)
                 {
-                    result.Misses.Add("对不上「" + shown + "」。");
+                    AddMiss(result, piece, shown);
                     continue;
                 }
 
                 int last = at + shown.Length - 1;
                 if (last >= origin.Length)
                 {
-                    result.Misses.Add("对不上「" + shown + "」。");
+                    AddMiss(result, piece, shown);
                     continue;
                 }
 
@@ -724,6 +840,16 @@ namespace WordAddIn1
             }
 
             return result;
+        }
+
+        private static void AddMiss(LocateStyledResult result, Piece piece, string shown)
+        {
+            if (piece != null && piece.Style != null && piece.Style.Structure == "body")
+            {
+                return;
+            }
+
+            result.Misses.Add("对不上「" + shown + "」。");
         }
 
         public static List<int[]> TocInteriors(string display)
@@ -938,6 +1064,20 @@ namespace WordAddIn1
             if (string.IsNullOrEmpty(display) || string.IsNullOrEmpty(code) || code.Length <= 2)
             {
                 return false;
+            }
+
+            if (EmptyCellCode.IsEmptyCellCode(code))
+            {
+                int cellStart = display.IndexOf("[" + code + "-start]", StringComparison.Ordinal);
+                int cellEnd = display.IndexOf("[" + code + "-end]", StringComparison.Ordinal);
+                if (cellStart < 0 || cellEnd < 0 || cellEnd < cellStart)
+                {
+                    return false;
+                }
+
+                open = cellStart;
+                close = cellEnd + ("[" + code + "-end]").Length;
+                return true;
             }
 
             string id = code.Substring(2);

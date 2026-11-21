@@ -97,7 +97,7 @@ namespace WordAddIn1
                 "style_clear.choose",
                 sw.ElapsedMilliseconds,
                 "n=" + chosen.Count);
-            Dictionary<string, object> result = Unlink(doc, chosen, styles);
+            Dictionary<string, object> result = Unlink(doc, chosen, styles, disallowBackendApi);
             EasyWriteDiagnostics.LogTiming("style_clear.item_total", total.ElapsedMilliseconds);
             return result;
         }
@@ -135,7 +135,7 @@ namespace WordAddIn1
                 "style_clear.choose",
                 sw.ElapsedMilliseconds,
                 "n=" + chosen.Count);
-            Dictionary<string, object> result = Unlink(doc, chosen, styles);
+            Dictionary<string, object> result = Unlink(doc, chosen, styles, disallowBackendApi);
             EasyWriteDiagnostics.LogTiming("style_clear.item_total", total.ElapsedMilliseconds, "all");
             return result;
         }
@@ -190,24 +190,46 @@ namespace WordAddIn1
         private static Dictionary<string, object> Unlink(
             Word.Document doc,
             List<StructureSpanLister.StyledSpan> chosen,
-            IList<StructureStyleRecord> styles)
+            IList<StructureStyleRecord> styles,
+            bool disallowBackendApi)
         {
             var ranges = new List<Word.Range>();
             var links = new List<bool>();
             Stopwatch sw = Stopwatch.StartNew();
-            foreach (StructureSpanLister.StyledSpan hit in chosen)
+            if (chosen != null && chosen.Count > 0)
             {
-                if (!TryRange(doc, hit, out Word.Range range, out string error))
+                var locators = new List<Dictionary<string, object>>();
+                foreach (StructureSpanLister.StyledSpan hit in chosen)
+                {
+                    locators.Add(LocatorFor(hit));
+                    links.Add(hit.ParagraphLink);
+                }
+
+                InsertTargetLocatorHelper.LocateSpanBatchResult batch =
+                    InsertTargetLocatorHelper.TryLocateSpans(doc, locators, disallowBackendApi);
+                if (batch == null || batch.BatchBlocked || batch.Items == null || batch.Items.Count != chosen.Count)
                 {
                     EasyWriteDiagnostics.LogTiming(
                         "style_clear.find_range",
                         sw.ElapsedMilliseconds,
-                        "ok=" + ranges.Count + " fail=" + (hit.Code ?? ""));
-                    return Fail(error);
+                        "fail batch");
+                    return Fail(batch == null || string.IsNullOrEmpty(batch.Error) ? "定位失败。" : batch.Error);
                 }
 
-                ranges.Add(range);
-                links.Add(hit.ParagraphLink);
+                for (int i = 0; i < batch.Items.Count; i++)
+                {
+                    InsertTargetLocatorHelper.LocateSpanItem located = batch.Items[i];
+                    if (located == null || !located.Success || located.Range == null)
+                    {
+                        EasyWriteDiagnostics.LogTiming(
+                            "style_clear.find_range",
+                            sw.ElapsedMilliseconds,
+                            "ok=" + ranges.Count + " fail=" + (chosen[i].Code ?? ""));
+                        return Fail(located == null || string.IsNullOrEmpty(located.Error) ? "定位失败。" : located.Error);
+                    }
+
+                    ranges.Add(located.Range);
+                }
             }
 
             EasyWriteDiagnostics.LogTiming(
@@ -257,67 +279,28 @@ namespace WordAddIn1
             };
         }
 
-        private static bool TryRange(
-            Word.Document doc,
-            StructureSpanLister.StyledSpan hit,
-            out Word.Range range,
-            out string error)
+        private static Dictionary<string, object> LocatorFor(StructureSpanLister.StyledSpan hit)
         {
-            range = null;
-            error = null;
-            var options = new DisplaySequenceLocateOptions
+            var locator = new Dictionary<string, object>();
+            bool paragraph = FormatContextHelper.IsParagraphCode(hit.Code);
+            locator[paragraph ? "paragraph_codes" : "codes"] = hit.Code ?? "";
+            if (!string.IsNullOrEmpty(hit.TextValue))
             {
-                Snapshot = DocumentState.Snapshot,
-                SegSnapshot = DocumentState.SegSnapshot
-            };
-            DisplaySequenceLocateResult located = DisplaySequenceLocator.TryResolve(
-                new List<string> { hit.Code },
-                options);
-            if (located.MatchCount != 1 || !located.DisplayStartPosition.HasValue)
-            {
-                error = "无法定位 " + hit.Code + "。";
-                return false;
+                if (hit.HasIndex)
+                {
+                    locator["text"] = new Dictionary<string, object>
+                    {
+                        ["value"] = hit.TextValue,
+                        ["index"] = hit.TextIndex
+                    };
+                }
+                else
+                {
+                    locator["text"] = hit.TextValue;
+                }
             }
 
-            range = DisplayPositionRangeResolver.ResolveSpan(
-                doc,
-                new List<string> { hit.Code },
-                located.DisplayStartPosition.Value,
-                null,
-                null,
-                null,
-                "clear");
-            if (range == null)
-            {
-                error = "无法定位 " + hit.Code + "。";
-                return false;
-            }
-
-            if (string.IsNullOrEmpty(hit.TextValue))
-            {
-                return true;
-            }
-
-            var text = new TextSpan
-            {
-                Value = hit.TextValue,
-                HasIndex = hit.HasIndex,
-                IndexIsInteger = true,
-                Index = hit.TextIndex
-            };
-            InsertTargetLocatorHelper.ResolveRangeResult narrowed = TextSpanNarrower.TryNarrow(
-                doc,
-                range,
-                text,
-                hit.Code);
-            if (narrowed == null || !narrowed.Success || narrowed.Range == null)
-            {
-                error = narrowed == null ? "无法定位 " + hit.Code + "。" : narrowed.Error;
-                return false;
-            }
-
-            range = narrowed.Range;
-            return true;
+            return locator;
         }
 
         private static void ClearCharacter(Word.Document doc, Word.Range range)
@@ -484,6 +467,11 @@ namespace WordAddIn1
         {
             foreach (List<string> run in runs)
             {
+                if (run != null && run.Count == 1 && EmptyCellCode.IsEmptyCellCode(run[0]))
+                {
+                    continue;
+                }
+
                 if (paragraph)
                 {
                     AmbiguityCheckResult ambiguity = ParagraphFormatAmbiguityHelper.RunPrecheck(
@@ -566,9 +554,14 @@ namespace WordAddIn1
 
             bool anyP = false;
             bool anyS = false;
+            bool anyT = false;
             foreach (string one in codes)
             {
-                if (FormatContextHelper.IsParagraphCode(one))
+                if (EmptyCellCode.IsEmptyCellCode(one))
+                {
+                    anyT = true;
+                }
+                else if (FormatContextHelper.IsParagraphCode(one))
                 {
                     anyP = true;
                 }
@@ -578,12 +571,22 @@ namespace WordAddIn1
                 }
             }
 
+            if (anyT && (anyP || anyS))
+            {
+                return "同一项不能把几何码和 S_、P_ 写在一起。";
+            }
+
+            if (anyT && codes.Count != 1)
+            {
+                return "几何码一次一条。";
+            }
+
             if (anyP && anyS)
             {
                 return "同一项混用 S_ 与 P_，未套用";
             }
 
-            if (!anyP && !anyS)
+            if (!anyP && !anyS && !anyT)
             {
                 return "locate_failed: 无法定位编码序列";
             }

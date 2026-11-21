@@ -416,7 +416,7 @@ namespace WordAddIn1
             text = MarkerPattern.Replace(text, "");
             if (string.IsNullOrEmpty(Regex.Replace(text, @"\s+", "")))
             {
-                return MarkerPair(code);
+                return "[" + code + "-start]" + text + EmptyToken + "[" + code + "-end]";
             }
 
             return "[" + code + "-start]" + text + "[" + code + "-end]";

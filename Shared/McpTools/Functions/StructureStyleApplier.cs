@@ -175,9 +175,14 @@ namespace WordAddIn1
 
             bool anyP = false;
             bool anyS = false;
+            bool anyT = false;
             foreach (string one in codes)
             {
-                if (FormatContextHelper.IsParagraphCode(one))
+                if (EmptyCellCode.IsEmptyCellCode(one))
+                {
+                    anyT = true;
+                }
+                else if (FormatContextHelper.IsParagraphCode(one))
                 {
                     anyP = true;
                 }
@@ -187,20 +192,46 @@ namespace WordAddIn1
                 }
             }
 
+            if (anyT && (anyP || anyS))
+            {
+                plan.Finished = Fail("同一项不能把几何码和 S_、P_ 写在一起。");
+                return plan;
+            }
+
+            if (anyT && codes.Count != 1)
+            {
+                plan.Finished = Fail("几何码一次一条。");
+                return plan;
+            }
+
             if (anyP && anyS)
             {
                 plan.Finished = Fail("同一项混用 S_ 与 P_，未套用");
                 return plan;
             }
 
-            bool paragraph = ParagraphCodes(codes);
-            string snapshot = paragraph
-                ? DocumentState.ParagraphSegSnapshot
-                : DocumentState.SegSnapshot;
-            List<List<string>> runs = FormatApplyBatchCompiler.SplitRuns(codes, snapshot);
-            if (runs.Count == 0)
+            if (!anyP && !anyS && !anyT)
             {
-                runs.Add(codes);
+                plan.Finished = Fail("locate_failed: 无法定位编码序列");
+                return plan;
+            }
+
+            bool paragraph = ParagraphCodes(codes);
+            List<List<string>> runs;
+            if (anyT)
+            {
+                runs = new List<List<string>> { codes };
+            }
+            else
+            {
+                string snapshot = paragraph
+                    ? DocumentState.ParagraphSegSnapshot
+                    : DocumentState.SegSnapshot;
+                runs = FormatApplyBatchCompiler.SplitRuns(codes, snapshot);
+                if (runs.Count == 0)
+                {
+                    runs.Add(codes);
+                }
             }
 
             var locators = new List<Dictionary<string, object>>();
@@ -222,7 +253,6 @@ namespace WordAddIn1
                 "apply.Plan codes=" + code
                 + " paragraph=" + paragraph
                 + " locators=" + locators.Count
-                + " snapLen=" + (snapshot == null ? 0 : snapshot.Length)
                 + " first=" + (locators.Count == 0 ? "" : string.Join(",", locators[0].Keys)));
             InsertTargetLocatorHelper.LocateSpanBatchResult batch = InsertTargetLocatorHelper.TryLocateSpans(
                 doc,
