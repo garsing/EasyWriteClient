@@ -459,6 +459,9 @@ namespace WordAddIn1
             Session.ParagraphToSentences.Clear();
         }
 
+        /// <summary>
+        /// 写入 S_↔P_。慎用：只记句子起点所在段，处理不了句子黏连，对应可能不准。先保留，后续可能改。
+        /// </summary>
         public static void LinkSentenceToParagraph(string sentenceName, string paragraphName)
         {
             if (string.IsNullOrEmpty(sentenceName) || string.IsNullOrEmpty(paragraphName))
@@ -576,8 +579,10 @@ namespace WordAddIn1
 
         public static IReadOnlyList<IReadOnlyList<string>> SentenceNameMapping => Session.SentenceNameMapping;
 
+        /// <summary>S_→起点所在 P_。慎用：处理不了句子黏连，对应可能不准。先保留，后续可能改。</summary>
         public static IReadOnlyDictionary<string, string> SentenceToParagraph => Session.SentenceToParagraph;
 
+        /// <summary>P_→起点落在这段里的 S_。慎用：黏连盖住的后面那些段没有 S_。先保留，后续可能改。</summary>
         public static IReadOnlyDictionary<string, List<string>> ParagraphToSentences => Session.ParagraphToSentences;
 
         public static IReadOnlyList<string> ChunkParagraphDisplayContents => Session.ChunkParagraphDisplayContents;

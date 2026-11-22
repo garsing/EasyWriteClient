@@ -45,9 +45,13 @@ namespace WordAddIn1
         /// <summary>[段落名称 P_, 哈希码, storedText（含 \r 规则）, segMark]</summary>
         public List<List<string>> ParagraphNameMapping { get; } = new List<List<string>>();
 
+        /// <summary>
+        /// S_↔P_。慎用，先保留，后续可能改。只记句子起点所在段，处理不了句子黏连，对应可能不准。
+        /// </summary>
         public Dictionary<string, string> SentenceToParagraph { get; } =
             new Dictionary<string, string>(StringComparer.Ordinal);
 
+        /// <summary>P_→起点落在这段的 S_。黏连盖住的后面那些段没有句子。慎用。</summary>
         public Dictionary<string, List<string>> ParagraphToSentences { get; } =
             new Dictionary<string, List<string>>(StringComparer.Ordinal);
 

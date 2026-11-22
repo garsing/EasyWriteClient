@@ -9,6 +9,8 @@ namespace WordAddIn1.DocumentMapping
     /// <summary>
     /// L6：readText chunk → S_/P_ 映射。
     /// S_ 与 P_ 并行切分（均不重不漏覆盖原文），再按偏移建立 S_↔P_。
+    /// 这张对照表慎用，先保留，后续可能改。只按句子起点落段，处理不了句子黏连：
+    /// 黏连会把后面的空段并进前一句，这句实际盖住多段，表里只记下起点那段，对应可能不准。
     /// </summary>
     public static class MapReadTextToCodes
     {
@@ -275,6 +277,7 @@ namespace WordAddIn1.DocumentMapping
                 sentenceParagraphIndex.Add(sentencePara);
                 sentenceOffset += storedSentence.Length;
 
+                // 对照表慎用：只记句子起点所在段，黏连盖住的后面那些段不记。
                 string paragraphName = sentencePara >= 0 ? paragraphRanges[sentencePara].Name : null;
                 if (!string.IsNullOrEmpty(paragraphName))
                 {

@@ -19,7 +19,7 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
         /// <summary>重复 P_ 且 codes 无法唯一定位（与 S_ 同码 ambiguous_sentence_code）。</summary>
         public const string ErrorAmbiguousParagraphCode = DisplaySequenceLocator.ErrorAmbiguousSentenceCode;
 
-        /// <summary>S_ → 所属 P_（仅查 DocumentState.SentenceToParagraph）。</summary>
+        /// <summary>S_ → 起点所在 P_（仅查 DocumentState.SentenceToParagraph）。对照表慎用，处理不了句子黏连。</summary>
         public static string ResolveParagraphFromSentence(string sentenceCode)
         {
             if (string.IsNullOrEmpty(sentenceCode))
@@ -32,7 +32,7 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
                 : null;
         }
 
-        /// <summary>P_ → 段内 S_ 有序列表；空段或无映射时返回空列表。</summary>
+        /// <summary>P_ → 起点落在这段里的 S_。对照表慎用，黏连盖住的后面那些段不在列表里。</summary>
         public static IReadOnlyList<string> ExpandParagraphToSentenceCodes(string paragraphCode)
         {
             if (string.IsNullOrEmpty(paragraphCode))
