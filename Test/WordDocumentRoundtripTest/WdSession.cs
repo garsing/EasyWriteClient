@@ -1816,7 +1816,9 @@ namespace WordDocumentRoundtripTest
                 return false;
             }
 
-            return !IsWps && WithWordDoc(fullPath, doc =>
+            return IsWps
+                ? WithWpsDoc(fullPath, doc => MaterializeCharacterStyleLate(doc, names))
+                : WithWordDoc(fullPath, doc =>
             {
                 Word.Style style = FindStyle(doc, names);
                 if (style == null)
@@ -1852,7 +1854,9 @@ namespace WordDocumentRoundtripTest
                 return false;
             }
 
-            return !IsWps && WithWordDoc(fullPath, doc =>
+            return IsWps
+                ? WithWpsDoc(fullPath, doc => ApplyHeaderStyleLate(doc, names))
+                : WithWordDoc(fullPath, doc =>
             {
                 Word.HeaderFooter header = doc.Sections[1].Headers[Word.WdHeaderFooterIndex.wdHeaderFooterPrimary];
                 if (header.Range.Paragraphs.Count < 1)
@@ -1862,6 +1866,242 @@ namespace WordDocumentRoundtripTest
 
                 return TrySetParagraphStyle(header.Range.Paragraphs[1], names);
             });
+        }
+
+        public string PrimaryHeaderStyle(string fullPath)
+        {
+            string name = "";
+            if (IsWps)
+            {
+                WithWpsDoc(fullPath, doc =>
+                {
+                    name = PrimaryHeaderStyleLate(doc);
+                    return true;
+                });
+                return name ?? "";
+            }
+
+            WithWordDoc(fullPath, doc =>
+            {
+                try
+                {
+                    Word.HeaderFooter header = doc.Sections[1].Headers[Word.WdHeaderFooterIndex.wdHeaderFooterPrimary];
+                    Word.Style style = header.Range.Paragraphs[1].get_Style() as Word.Style;
+                    name = style == null ? "" : (style.NameLocal ?? "");
+                }
+                catch
+                {
+                    name = "";
+                }
+
+                return true;
+            });
+            return name ?? "";
+        }
+
+        private static bool MaterializeCharacterStyleLate(object doc, string[] names)
+        {
+            try
+            {
+                object style = FindStyleLate(doc, names);
+                if (style == null)
+                {
+                    return false;
+                }
+
+                object content = GetProp(doc, "Content");
+                int end = Convert.ToInt32(GetProp(content, "End"));
+                if (end > 1)
+                {
+                    Invoke(content, "InsertAfter", "\r样式垫。");
+                }
+
+                object paras = GetProp(doc, "Paragraphs");
+                object last = Invoke(paras, "Item", Convert.ToInt32(GetProp(paras, "Count")));
+                object range = GetProp(GetProp(last, "Range"), "Duplicate");
+                int start = Convert.ToInt32(GetProp(range, "Start"));
+                int rangeEnd = Convert.ToInt32(GetProp(range, "End"));
+                if (rangeEnd <= start)
+                {
+                    Invoke(range, "InsertBefore", "垫");
+                    paras = GetProp(doc, "Paragraphs");
+                    last = Invoke(paras, "Item", Convert.ToInt32(GetProp(paras, "Count")));
+                    range = GetProp(GetProp(last, "Range"), "Duplicate");
+                    start = Convert.ToInt32(GetProp(range, "Start"));
+                    rangeEnd = Convert.ToInt32(GetProp(range, "End"));
+                }
+
+                if (rangeEnd > start + 1)
+                {
+                    SetProp(range, "End", start + 1);
+                }
+
+                string local = Convert.ToString(GetProp(style, "NameLocal")) ?? "";
+                SetProp(range, "Style", string.IsNullOrEmpty(local) ? (object)names[0] : local);
+                string applied = CharacterStyleLocal(range);
+                return StyleNameHits(applied, "超链接") || StyleNameHits(applied, "Hyperlink");
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool ApplyHeaderStyleLate(object doc, string[] names)
+        {
+            try
+            {
+                object para = PrimaryHeaderParagraphLate(doc);
+                if (para == null)
+                {
+                    return false;
+                }
+
+                foreach (string name in names)
+                {
+                    try
+                    {
+                        SetProp(para, "Style", name);
+                        string local = StyleLocal(para);
+                        if (StyleNameHits(local, name))
+                        {
+                            return true;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                if (!WantsHeading1(names))
+                {
+                    return false;
+                }
+
+                SetProp(para, "Style", (int)Word.WdBuiltinStyle.wdStyleHeading1);
+                string heading = StyleLocal(para);
+                return StyleNameHits(heading, "标题") || StyleNameHits(heading, "Heading");
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string PrimaryHeaderStyleLate(object doc)
+        {
+            try
+            {
+                object para = PrimaryHeaderParagraphLate(doc);
+                return para == null ? "" : StyleLocal(para);
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private static object PrimaryHeaderParagraphLate(object doc)
+        {
+            object sections = GetProp(doc, "Sections");
+            object section = Invoke(sections, "Item", 1);
+            object headers = GetProp(section, "Headers");
+            object header = Invoke(headers, "Item", (int)Word.WdHeaderFooterIndex.wdHeaderFooterPrimary);
+            object paras = GetProp(GetProp(header, "Range"), "Paragraphs");
+            int count = Convert.ToInt32(GetProp(paras, "Count"));
+            if (count < 1)
+            {
+                return null;
+            }
+
+            return Invoke(paras, "Item", 1);
+        }
+
+        private static object FindStyleLate(object doc, string[] names)
+        {
+            object styles = GetProp(doc, "Styles");
+            if (names != null)
+            {
+                foreach (string name in names)
+                {
+                    if (string.IsNullOrEmpty(name))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        object style = Invoke(styles, "Item", name);
+                        if (style != null)
+                        {
+                            return style;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+
+            if (!WantsHyperlink(names))
+            {
+                return null;
+            }
+
+            try
+            {
+                return Invoke(styles, "Item", (int)Word.WdBuiltinStyle.wdStyleHyperlink);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string CharacterStyleLocal(object range)
+        {
+            try
+            {
+                object style = GetProp(range, "CharacterStyle");
+                if (style == null)
+                {
+                    return "";
+                }
+
+                if (style is string text)
+                {
+                    return text;
+                }
+
+                return Convert.ToString(GetProp(style, "NameLocal")) ?? "";
+            }
+            catch
+            {
+                return "";
+            }
+        }
+
+        private static string StyleLocal(object target)
+        {
+            try
+            {
+                object style = GetProp(target, "Style");
+                if (style == null)
+                {
+                    return "";
+                }
+
+                if (style is string text)
+                {
+                    return text;
+                }
+
+                return Convert.ToString(GetProp(style, "NameLocal")) ?? "";
+            }
+            catch
+            {
+                return "";
+            }
         }
 
         private static bool ApplyParagraphStyleLate(object doc, string needle, string[] names)

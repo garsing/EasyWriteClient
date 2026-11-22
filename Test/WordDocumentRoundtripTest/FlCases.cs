@@ -854,6 +854,11 @@ namespace WordDocumentRoundtripTest
 
         private static string HeaderStyle(FormatProbe doc)
         {
+            if (doc.Session.IsWps)
+            {
+                return doc.Session.PrimaryHeaderStyle(doc.Path);
+            }
+
             string name = "";
             doc.Session.OnWordDoc(doc.Path, word =>
             {
