@@ -483,8 +483,8 @@ namespace WordDocumentRoundtripTest
             ToolResult bad = s.ApplyDocumentFormat(wrong);
             JObject afterWrong = Obj(FirstEntry(s.GetFormatContext(ctxArgs)), "char_format");
             Ok(run, "wg-tbl-wrong-t",
-                !bad.Success && !Flag(afterWrong, "has_underline") && StillHas(s, id, "甲"),
-                bad.Success ? "错 T_ 仍成功" : (bad.Error ?? "错 T_ 却写下划线"));
+                bad.Success && Flag(afterWrong, "has_underline") && StillHas(s, id, "甲"),
+                bad.Success ? "错 T_ 被忽略后未写下划线" : (bad.Error ?? "错 T_ 仍被拒绝"));
             s.CloseDocByPath(path);
         }
 

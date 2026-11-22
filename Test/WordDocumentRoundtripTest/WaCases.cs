@@ -439,7 +439,7 @@ namespace WordDocumentRoundtripTest
 
             string code = "S_" + marker.Groups[1].Value;
             string tableId = marker.Groups[2].Value;
-            ToolResult wr = s.ProcessActions(id, ReplaceInTable(code, tableId, "戊。"));
+            ToolResult wr = s.ProcessActions(id, Replace(code, "戊。"));
             Ok(run, "wa-tbl-rep", wr.Success, wr.Error ?? "表内 replace 失败");
             Ok(run, "wa-tbl-cell",
                 wr.Success && StillHas(s, id, "戊") && !StillHas(s, id, "丁"),

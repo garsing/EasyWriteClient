@@ -199,7 +199,7 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
                     if (string.IsNullOrEmpty(suggested))
                     {
                         builder.AppendLine(
-                            $"第 {i + 1} 处：下文是「{following}」→ 下文不足以唯一定位，请改用全文唯一的邻句或 in_table");
+                            $"第 {i + 1} 处：下文是「{following}」→ 下文不足以唯一定位，请改用全文唯一的邻句");
                     }
                     else
                     {
@@ -381,7 +381,7 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
                     if (string.IsNullOrEmpty(suggested))
                     {
                         builder.AppendLine(
-                            $"第 {i + 1} 处：下文是「{following}」→ 下文不足以唯一定位，请改用全文唯一的邻句或 in_table");
+                            $"第 {i + 1} 处：下文是「{following}」→ 下文不足以唯一定位，请改用全文唯一的邻句");
                     }
                     else
                     {

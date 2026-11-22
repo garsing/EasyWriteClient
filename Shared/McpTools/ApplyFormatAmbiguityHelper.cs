@@ -30,18 +30,7 @@ namespace WordAddIn1
         public static TableScopeIndex BuildTableScopeOrNull(ApplyFormatScopeArgs scopeArgs, out string cacheError)
         {
             cacheError = null;
-            if (string.IsNullOrEmpty(scopeArgs?.TableId))
-            {
-                return null;
-            }
-
-            if (DocumentState.LastProcessCache == null)
-            {
-                cacheError = "请先调用 F_get_document_content 刷新文档映射后再使用 in_table";
-                return null;
-            }
-
-            return TableSentenceScopeHelper.BuildIndexFromProcessCache(DocumentState.LastProcessCache);
+            return null;
         }
 
         public static List<DocumentActionAmbiguityAnchor> BuildAnchors(

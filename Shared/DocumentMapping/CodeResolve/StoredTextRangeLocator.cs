@@ -10,12 +10,11 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
     public static class StoredTextRangeLocator
     {
         /// <summary>
-        /// 无序号单次 Find：全文或限表第一处命中。供 ResolveSpan 拼串落 Span 等路径。
+        /// 无序号单次 Find：全文第一处命中。供 ResolveSpan 拼串落 Span。
         /// </summary>
         public static Word.Range LocateFirst(
             Word.Document doc,
             string storedText,
-            string tableId,
             string debugTag = null)
         {
             if (doc == null || string.IsNullOrEmpty(storedText))
@@ -23,27 +22,7 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
                 return null;
             }
 
-            string tag = debugTag ?? "";
-
-            if (string.IsNullOrEmpty(tableId))
-            {
-                return WordRangeFinder.FindFirstInDocument(doc, storedText, tag);
-            }
-
-            Word.Table table = SentenceCodeLocator.ResolveTableById(doc, tableId);
-            if (table == null)
-            {
-                System.Diagnostics.Debug.WriteLine(
-                    $"[StoredTextRangeLocator] 未找到表格 {tableId}，无法 LocateFirst {tag}");
-                return null;
-            }
-
-            System.Diagnostics.Debug.WriteLine(
-                $"[StoredTextRangeLocator] 表内 LocateFirst（整表 Range 一次 Find）tag={tag} table={tableId}");
-            return WordRangeFinder.FindFirstInTable(
-                table,
-                storedText,
-                string.IsNullOrEmpty(tag) ? $"table={tableId}" : tag);
+            return WordRangeFinder.FindFirstInDocument(doc, storedText, debugTag ?? "");
         }
 
         /// <summary>

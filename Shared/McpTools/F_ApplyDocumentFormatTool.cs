@@ -206,11 +206,6 @@ namespace WordAddIn1
                     {
                         [paragraphMode ? "paragraph_codes" : "codes"] = string.Join(",", targetCodes)
                     };
-                    if (!string.IsNullOrEmpty(scopeArgs.TableId))
-                    {
-                        locator["in_table"] = scopeArgs.TableId;
-                    }
-
                     if (textSpan != null && !string.IsNullOrEmpty(textSpan.Value))
                     {
                         locator["text"] = textSpan.Value;

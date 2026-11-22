@@ -627,7 +627,7 @@ namespace WordDocumentRoundtripTest
                     ["codes"] = "S_00001",
                     ["in_table"] = "foo"
                 })),
-                "T_");
+                "in_table");
             ExpectFail(run, "wp-c-from-only",
                 s.CapturePageImage(new Dictionary<string, object>
                 {

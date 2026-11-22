@@ -44,7 +44,7 @@ namespace WordAddIn1
         public const string FiveWayLocatorError =
             "定位对象须为 codes / paragraph_codes / table / chart / image / position 六选一";
         public const string SentenceOnlyLocatorError = "仅支持 codes / paragraph_codes";
-        public const string InTableWithCodesOrParagraphError = "in_table 仅可与 codes / paragraph_codes 同用";
+        public const string InTableRejectedError = "不再接受 in_table";
         public const string CodesRejectParagraphError = "codes 仅支持 S_ 或真空几何码；段落请用 paragraph_codes";
         public const string ParagraphCodesOnlyPError = "paragraph_codes 仅支持 P_ 段落编码";
         public const string FromFileRetiredFlatLocatorError =
@@ -150,7 +150,7 @@ namespace WordAddIn1
 
         /// <summary>
         /// 解析定位对象：codes / paragraph_codes / table / chart / image / position 六选一。
-        /// in_table 仅可与 codes 或段落字段同用（schema 不暴露，内部仍认）。
+        /// 不收 in_table。
         /// </summary>
         public static LocatorParseResult ParseLocatorObject(
             Dictionary<string, object> dict,
@@ -175,7 +175,10 @@ namespace WordAddIn1
             bool hasChart = TryGetLocatorField(dict, "chart", out _);
             bool hasImage = TryGetLocatorField(dict, "image", out _);
             bool hasPosition = TryGetLocatorField(dict, "position", out _);
-            bool hasInTable = TryGetLocatorField(dict, "in_table", out _);
+            if (TryGetLocatorField(dict, "in_table", out _))
+            {
+                return FailParse($"{fieldLabel}.{InTableRejectedError}");
+            }
 
             int modeCount = (hasCodes ? 1 : 0) + (hasPara ? 1 : 0) + (hasTable ? 1 : 0)
                 + (hasChart ? 1 : 0) + (hasImage ? 1 : 0) + (hasPosition ? 1 : 0);
@@ -191,11 +194,6 @@ namespace WordAddIn1
 
             if (hasPosition)
             {
-                if (hasInTable)
-                {
-                    return FailParse($"{fieldLabel}.{InTableWithCodesOrParagraphError}");
-                }
-
                 if (!IsStartPosition(dict["position"].ToString()))
                 {
                     return FailParse($"{fieldLabel}.{PositionStartOnlyError}");
@@ -213,17 +211,12 @@ namespace WordAddIn1
 
             if (hasCodes)
             {
-                return ParseCodesMode(dict, fieldLabel, hasInTable);
+                return ParseCodesMode(dict, fieldLabel);
             }
 
             if (hasPara)
             {
-                return ParseParagraphMode(dict, fieldLabel, hasParaNested, hasInTable);
-            }
-
-            if (hasInTable)
-            {
-                return FailParse($"{fieldLabel}.{InTableWithCodesOrParagraphError}");
+                return ParseParagraphMode(dict, fieldLabel, hasParaNested);
             }
 
             if (hasTable)
@@ -345,36 +338,9 @@ namespace WordAddIn1
             return !string.IsNullOrEmpty(value);
         }
 
-        private static LocatorParseResult ParseInTableId(
-            Dictionary<string, object> dict,
-            bool hasInTable,
-            string fieldLabel,
-            out string inTable)
-        {
-            inTable = null;
-            if (!hasInTable)
-            {
-                return new LocatorParseResult { Success = true };
-            }
-
-            inTable = dict["in_table"].ToString().Trim();
-            if (!inTable.StartsWith("T_", StringComparison.Ordinal))
-            {
-                return FailParse($"{fieldLabel}.in_table 须为 T_ 表格编号");
-            }
-
-            if (EmptyCellCode.IsEmptyCellCode(inTable))
-            {
-                return FailParse($"{fieldLabel}.in_table 须为光杆表号，不能用空格码");
-            }
-
-            return new LocatorParseResult { Success = true };
-        }
-
         private static LocatorParseResult ParseCodesMode(
             Dictionary<string, object> dict,
-            string fieldLabel,
-            bool hasInTable)
+            string fieldLabel)
         {
             string codes = dict["codes"].ToString().Trim();
             var parts = codes.Split(',').Select(s => s.Trim()).Where(s => !string.IsNullOrEmpty(s)).ToList();
@@ -392,13 +358,6 @@ namespace WordAddIn1
                     return FailParse($"{fieldLabel}.codes {EmptyCellCode.MixError}");
                 }
 
-                string inTableEmpty = hasInTable ? dict["in_table"].ToString().Trim() : null;
-                if (!string.IsNullOrEmpty(inTableEmpty)
-                    && !string.Equals(inTableEmpty, parsedCell.TableId, StringComparison.Ordinal))
-                {
-                    return FailParse($"{fieldLabel}.in_table 须等于空格码内表号 {parsedCell.TableId}");
-                }
-
                 return WithText(
                     new LocatorParseResult
                     {
@@ -408,7 +367,7 @@ namespace WordAddIn1
                             Kind = LocatorKind.EmptyCell,
                             Codes = parsedCell.Code,
                             TableId = parsedCell.TableId,
-                            InTableId = string.IsNullOrEmpty(inTableEmpty) ? parsedCell.TableId : inTableEmpty,
+                            InTableId = parsedCell.TableId,
                             Row = parsedCell.Row,
                             Col = parsedCell.Col
                         }
@@ -442,12 +401,6 @@ namespace WordAddIn1
                 }
             }
 
-            LocatorParseResult inTableParsed = ParseInTableId(dict, hasInTable, fieldLabel, out string inTable);
-            if (!inTableParsed.Success)
-            {
-                return inTableParsed;
-            }
-
             return WithText(
                 new LocatorParseResult
                 {
@@ -455,8 +408,7 @@ namespace WordAddIn1
                     Spec = new LocatorSpec
                     {
                         Kind = LocatorKind.Sentence,
-                        Codes = string.Join(",", parts),
-                        InTableId = inTable
+                        Codes = string.Join(",", parts)
                     }
                 },
                 dict,
@@ -466,8 +418,7 @@ namespace WordAddIn1
         private static LocatorParseResult ParseParagraphMode(
             Dictionary<string, object> dict,
             string fieldLabel,
-            bool hasParaNested,
-            bool hasInTable)
+            bool hasParaNested)
         {
             string key = hasParaNested ? "paragraph_codes" : "target_paragraph_codes";
             string csv = dict[key].ToString().Trim();
@@ -485,12 +436,6 @@ namespace WordAddIn1
                 }
             }
 
-            LocatorParseResult inTableParsed = ParseInTableId(dict, hasInTable, fieldLabel, out string inTable);
-            if (!inTableParsed.Success)
-            {
-                return inTableParsed;
-            }
-
             return WithText(
                 new LocatorParseResult
                 {
@@ -498,8 +443,7 @@ namespace WordAddIn1
                     Spec = new LocatorSpec
                     {
                         Kind = LocatorKind.Paragraph,
-                        Codes = string.Join(",", parts),
-                        InTableId = inTable
+                        Codes = string.Join(",", parts)
                     }
                 },
                 dict,
@@ -766,23 +710,22 @@ namespace WordAddIn1
             else
             {
                 cacheError = null;
+                tableScope = null;
                 SplitAnchorsByKind(anchors, out List<DocumentActionAmbiguityAnchor> sentenceAnchors,
                     out List<DocumentActionAmbiguityAnchor> paragraphAnchors);
-                tableScope = TableSentenceScopeHelper.BuildIndexFromProcessCache(
-                    DocumentState.LastProcessCache);
                 AmbiguityCheckResult sentenceAmbiguity = sentenceAnchors.Count == 0
                     ? new AmbiguityCheckResult()
                     : SentenceCodeAmbiguityHelper.CheckBatch(
                         sentenceAnchors,
                         DocumentState.Snapshot,
                         ConfigManager.GetDocumentActionsAmbiguitySettings(),
-                        tableScope);
+                        null);
                 AmbiguityCheckResult paragraphAmbiguity = paragraphAnchors.Count == 0
                     ? new AmbiguityCheckResult()
                     : ParagraphCodeAmbiguityHelper.CheckBatch(
                         paragraphAnchors,
                         ConfigManager.GetDocumentActionsAmbiguitySettings(),
-                        TableParagraphScopeHelper.BuildIndexFromProcessCache(DocumentState.LastProcessCache));
+                        null);
                 ambiguity = MergeAmbiguity(sentenceAmbiguity, paragraphAmbiguity);
                 if (paragraphAmbiguity != null && paragraphAmbiguity.HasBlockingError)
                 {
@@ -867,11 +810,6 @@ namespace WordAddIn1
             {
                 [paragraph ? "paragraph_codes" : "codes"] = codes == null ? "" : string.Join(",", codes)
             };
-            if (!string.IsNullOrEmpty(tableId))
-            {
-                locator["in_table"] = tableId;
-            }
-
             if (textSpan != null && !string.IsNullOrEmpty(textSpan.Value))
             {
                 locator["text"] = textSpan.Value;
@@ -944,9 +882,7 @@ namespace WordAddIn1
                     ActionIndex = actionIndex,
                     Field = string.IsNullOrEmpty(input.Field) ? "item" : input.Field,
                     Codes = parsed.Spec.Codes,
-                    TableId = !string.IsNullOrEmpty(parsed.Spec.InTableId)
-                        ? parsed.Spec.InTableId
-                        : (formatScope == null ? null : formatScope.TableId),
+                    TableId = parsed.Spec.Kind == LocatorKind.EmptyCell ? parsed.Spec.TableId : null,
                     InsertContentPlaceholder = input.InsertContentPlaceholder
                 });
             }
@@ -1609,19 +1545,20 @@ namespace WordAddIn1
                 return FailResolve("locate_failed: target.codes 为空");
             }
 
-            var formatScope = new ApplyFormatScopeArgs { TableId = target.InTableId };
             AmbiguityCheckResult ambiguity;
-            TableScopeIndex tableScope;
-            string cacheError;
             string field = paragraph ? "target_paragraph_codes" : "target";
             if (paragraph)
             {
                 ambiguity = ParagraphFormatAmbiguityHelper.RunPrecheck(
-                    formatScope,
+                    new ApplyFormatScopeArgs(),
                     names,
                     "locate",
-                    out tableScope,
-                    out cacheError);
+                    out TableScopeIndex _,
+                    out string cacheError);
+                if (cacheError != null)
+                {
+                    return FailResolve($"locate_failed: {cacheError}");
+                }
             }
             else
             {
@@ -1629,20 +1566,13 @@ namespace WordAddIn1
                 {
                     ActionIndex = 0,
                     Field = field,
-                    Codes = string.Join(",", names),
-                    TableId = target.InTableId
+                    Codes = string.Join(",", names)
                 };
-                tableScope = BuildSentenceTableScope(target.InTableId, out cacheError);
                 ambiguity = SentenceCodeAmbiguityHelper.CheckBatch(
                     new[] { anchor },
                     DocumentState.Snapshot,
                     ConfigManager.GetDocumentActionsAmbiguitySettings(),
-                    tableScope);
-            }
-
-            if (cacheError != null)
-            {
-                return FailResolve($"locate_failed: {cacheError}");
+                    null);
             }
 
             if (ambiguity != null && ambiguity.HasBlockingError)
@@ -1656,12 +1586,6 @@ namespace WordAddIn1
             if (displayStart < 0)
             {
                 return FailResolve("locate_failed: 无法定位编码序列");
-            }
-
-            if (!string.IsNullOrEmpty(target.InTableId)
-                && (tableScope == null || !tableScope.ContainsTableId(target.InTableId)))
-            {
-                return FailResolve($"locate_failed: 表域 '{target.InTableId}' 不可用，请先 F_get_document_content");
             }
 
             HostProbe.Touch("sent-locate-doc", doc);
@@ -1678,15 +1602,15 @@ namespace WordAddIn1
                     doc,
                     names,
                     displayStart,
-                    target.InTableId,
-                    tableScope,
+                    null,
+                    null,
                     debugTag: "locate_facade_para")
                 : DisplayPositionRangeResolver.ResolveSpan(
                     doc,
                     names,
                     displayStart,
-                    target.InTableId,
-                    tableScope,
+                    null,
+                    null,
                     debugTag: "locate_facade");
 
             HostProbe.Log(
@@ -1904,18 +1828,6 @@ namespace WordAddIn1
             }
 
             return codes;
-        }
-
-        private static TableScopeIndex BuildSentenceTableScope(string tableId, out string cacheError)
-        {
-            cacheError = null;
-            if (string.IsNullOrEmpty(tableId))
-            {
-                return TableSentenceScopeHelper.BuildIndexFromProcessCache(DocumentState.LastProcessCache);
-            }
-
-            var scopeArgs = new ApplyFormatScopeArgs { TableId = tableId };
-            return ApplyFormatAmbiguityHelper.BuildTableScopeOrNull(scopeArgs, out cacheError);
         }
 
         private static ResolveRangeResult FailAmbiguity(AmbiguityCheckResult ambiguity)

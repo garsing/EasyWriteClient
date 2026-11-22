@@ -157,35 +157,6 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
             string snapshot = options.Snapshot ?? DocumentState.Snapshot ?? "";
             string segSnapshot = options.SegSnapshot ?? DocumentState.SegSnapshot ?? "";
 
-            if (!string.IsNullOrEmpty(options.TableId))
-            {
-                TableScopeIndex tableScope = options.TableScope;
-                if (tableScope == null)
-                {
-                    errorCode = ErrorUnknownTableId;
-                    return false;
-                }
-
-                if (!tableScope.ContainsTableId(options.TableId)
-                    && DocumentState.GetTableIndex(options.TableId) < 0)
-                {
-                    errorCode = ErrorUnknownTableId;
-                    return false;
-                }
-
-                if (!tableScope.TryGetTableSentenceCodes(options.TableId, out IReadOnlyList<string> tableCodes)
-                    || tableCodes == null
-                    || tableCodes.Count == 0)
-                {
-                    errorCode = ErrorSentenceNotInTable;
-                    return false;
-                }
-
-                domain = tableCodes.ToList();
-                segIndices = BuildSegIndicesForTableDomain(domain, snapshot, segSnapshot);
-                return true;
-            }
-
             domain = DocumentState.GetOrderedSentenceCodesFromSnapshot(snapshot);
             segIndices = DocumentState.BuildSegIndexBySnapshotPosition(snapshot, segSnapshot);
             return true;
@@ -200,35 +171,6 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
             domain = Array.Empty<string>();
             segIndices = Array.Empty<int>();
             errorCode = null;
-
-            if (!string.IsNullOrEmpty(options.TableId))
-            {
-                TableScopeIndex tableScope = options.TableScope;
-                if (tableScope == null)
-                {
-                    errorCode = ErrorUnknownTableId;
-                    return false;
-                }
-
-                if (!tableScope.ContainsTableId(options.TableId)
-                    && DocumentState.GetTableIndex(options.TableId) < 0)
-                {
-                    errorCode = ErrorUnknownTableId;
-                    return false;
-                }
-
-                if (!tableScope.TryGetTableSentenceCodes(options.TableId, out IReadOnlyList<string> tableCodes)
-                    || tableCodes == null
-                    || tableCodes.Count == 0)
-                {
-                    errorCode = ErrorSentenceNotInTable;
-                    return false;
-                }
-
-                domain = tableCodes.ToList();
-                segIndices = new int[domain.Count];
-                return true;
-            }
 
             List<string> ordered = ParagraphCodeAmbiguityHelper.GetOrderedParagraphCodesFromDisplay();
             domain = ordered;

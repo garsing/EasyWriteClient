@@ -445,7 +445,7 @@ namespace WordDocumentRoundtripTest
                 }
                 else
                 {
-                    ToolResult wr = s.ProcessActions(p.Id, ReplaceInTable(cellCode, tid, "1. g"));
+                    ToolResult wr = s.ProcessActions(p.Id, Replace(cellCode, "1. g"));
                     ToolResult got = s.GetContent(p.Id);
                     string body = got.Success ? WdSession.Str(got, "document_content") : "";
                     Ok(run, "an-rep-table",
@@ -643,8 +643,7 @@ namespace WordDocumentRoundtripTest
                     {
                         ["target"] = new Dictionary<string, object>
                         {
-                            ["codes"] = cellCode,
-                            ["in_table"] = tid
+                            ["codes"] = cellCode
                         },
                         ["insert"] = "1. in",
                         ["format"] = DefaultFormat()

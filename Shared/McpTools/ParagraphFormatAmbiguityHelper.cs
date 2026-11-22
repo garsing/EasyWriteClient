@@ -135,19 +135,7 @@ namespace WordAddIn1
         private static TableScopeIndex BuildTableScopeOrNull(ApplyFormatScopeArgs scopeArgs, out string cacheError)
         {
             cacheError = null;
-            bool needsTableScope = !string.IsNullOrEmpty(scopeArgs?.TableId);
-            if (!needsTableScope)
-            {
-                return null;
-            }
-
-            if (DocumentState.LastProcessCache == null)
-            {
-                cacheError = "请先调用 F_get_document_content 刷新文档映射后再使用 in_table";
-                return null;
-            }
-
-            return TableParagraphScopeHelper.BuildIndexFromProcessCache(DocumentState.LastProcessCache);
+            return null;
         }
     }
 }

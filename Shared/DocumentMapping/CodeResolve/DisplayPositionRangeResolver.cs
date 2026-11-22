@@ -84,7 +84,6 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
             Word.Range hit = StoredTextRangeLocator.LocateFirst(
                 doc,
                 combinedText,
-                tableId,
                 tag);
             HostProbe.Log(
                 "span-find",

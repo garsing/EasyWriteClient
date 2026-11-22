@@ -150,60 +150,6 @@ namespace WordAddIn1
             return new TableScopeIndex(tableToCodes);
         }
 
-        /// <summary>
-        /// 解析 step3 实际使用的 table_id：显式指定优先；否则当编码在快照中的出现次数与唯一表内次数一致时自动限定表域。
-        /// </summary>
-        public static string ResolveEffectiveTableId(
-            string code,
-            string explicitTableId,
-            TableScopeIndex tableScope)
-        {
-            if (!string.IsNullOrEmpty(explicitTableId))
-            {
-                return explicitTableId;
-            }
-
-            if (tableScope == null || string.IsNullOrEmpty(code))
-            {
-                return null;
-            }
-
-            string soleTableId = null;
-            int soleTableOccurrences = 0;
-
-            foreach (KeyValuePair<string, IReadOnlyList<string>> kv in tableScope.TableToSentenceCodes)
-            {
-                int count = tableScope.GetTableLocalPositionsForCode(kv.Key, code).Count;
-                if (count == 0)
-                {
-                    continue;
-                }
-
-                if (soleTableId != null)
-                {
-                    return null;
-                }
-
-                soleTableId = kv.Key;
-                soleTableOccurrences = count;
-            }
-
-            if (soleTableId == null)
-            {
-                return null;
-            }
-
-            int snapshotCount = DocumentState.GetSnapshotPositionsForCode(code, DocumentState.Snapshot).Count;
-            if (snapshotCount == soleTableOccurrences)
-            {
-                System.Diagnostics.Debug.WriteLine(
-                    $"[TableScope] 自动限定表格域 code={code} table={soleTableId}（快照 {snapshotCount} 次均在该表）");
-                return soleTableId;
-            }
-
-            return null;
-        }
-
         private static int FindMatchingCloseTag(string text, int openTagStart)
         {
             int depth = 0;

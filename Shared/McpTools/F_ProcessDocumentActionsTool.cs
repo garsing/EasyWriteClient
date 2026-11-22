@@ -122,10 +122,7 @@ namespace WordAddIn1
                         TakeUnlocated(actions, itemFailed);
                     }
 
-                    TableScopeIndex tableScope = locatedBatch == null
-                        ? null
-                        : (locatedBatch.TableScope
-                            ?? TableSentenceScopeHelper.BuildIndexFromProcessCache(DocumentState.LastProcessCache));
+                    TableScopeIndex tableScope = locatedBatch == null ? null : locatedBatch.TableScope;
                     ApplyResolvedDisplayPositions(actions, locatedBatch?.Ambiguity);
 
                     using (EasyWriteDiagnostics.Time("process_actions.continuity"))
