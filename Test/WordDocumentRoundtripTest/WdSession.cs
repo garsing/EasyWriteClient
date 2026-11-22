@@ -1144,7 +1144,9 @@ namespace WordDocumentRoundtripTest
         public bool SetEmptyParagraphOutline(string fullPath, int level)
         {
             Word.WdOutlineLevel target = (Word.WdOutlineLevel)level;
-            return !IsWps && WithWordDoc(fullPath, doc =>
+            return IsWps
+                ? WithWpsDoc(fullPath, doc => SetEmptyParagraphOutlineLate(doc, level))
+                : WithWordDoc(fullPath, doc =>
             {
                 foreach (Word.Paragraph para in doc.Paragraphs)
                 {
@@ -1166,7 +1168,9 @@ namespace WordDocumentRoundtripTest
         public bool SetCellLastParagraphOutline(string fullPath, int level)
         {
             Word.WdOutlineLevel target = (Word.WdOutlineLevel)level;
-            return !IsWps && WithWordDoc(fullPath, doc =>
+            return IsWps
+                ? WithWpsDoc(fullPath, doc => SetCellLastParagraphOutlineLate(doc, level))
+                : WithWordDoc(fullPath, doc =>
             {
                 if (doc.Tables.Count < 1)
                 {
@@ -1246,6 +1250,132 @@ namespace WordDocumentRoundtripTest
         private static string VisibleParagraphText(Word.Paragraph para)
         {
             return (para.Range.Text ?? "").Replace("\r", "").Replace("\a", "").Trim();
+        }
+
+        private static bool SetEmptyParagraphOutlineLate(object doc, int level)
+        {
+            try
+            {
+                object paras = GetProp(doc, "Paragraphs");
+                int count = Convert.ToInt32(GetProp(paras, "Count"));
+                for (int i = 1; i <= count; i++)
+                {
+                    object para = Invoke(paras, "Item", i);
+                    if (VisibleParagraphTextLate(para).Length > 0)
+                    {
+                        continue;
+                    }
+
+                    SetProp(para, "OutlineLevel", level);
+                    return Convert.ToInt32(GetProp(para, "OutlineLevel")) == level;
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+
+        private static bool SetCellLastParagraphOutlineLate(object doc, int level)
+        {
+            try
+            {
+                object tables = GetProp(doc, "Tables");
+                if (Convert.ToInt32(GetProp(tables, "Count")) < 1)
+                {
+                    return false;
+                }
+
+                object table = Invoke(tables, "Item", 1);
+                object cell = Invoke(table, "Cell", 1, 1);
+                if (!EnsureCellTrailingEmptyParagraphLate(cell))
+                {
+                    return false;
+                }
+
+                object paras = GetProp(GetProp(cell, "Range"), "Paragraphs");
+                int count = Convert.ToInt32(GetProp(paras, "Count"));
+                if (count < 2)
+                {
+                    return false;
+                }
+
+                object last = Invoke(paras, "Item", count);
+                if (VisibleParagraphTextLate(last).Length > 0)
+                {
+                    return false;
+                }
+
+                int body = (int)Word.WdOutlineLevel.wdOutlineLevelBodyText;
+                for (int i = 1; i < count; i++)
+                {
+                    SetProp(Invoke(paras, "Item", i), "OutlineLevel", body);
+                }
+
+                SetProp(last, "OutlineLevel", level);
+                ClearOutlineOnEmptyParagraphsOutsideLate(doc, cell);
+                return Convert.ToInt32(GetProp(last, "OutlineLevel")) == level
+                    && Convert.ToInt32(GetProp(Invoke(paras, "Item", 1), "OutlineLevel")) == body;
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+
+        private static bool EnsureCellTrailingEmptyParagraphLate(object cell)
+        {
+            object paras = GetProp(GetProp(cell, "Range"), "Paragraphs");
+            int count = Convert.ToInt32(GetProp(paras, "Count"));
+            if (count >= 2 && VisibleParagraphTextLate(Invoke(paras, "Item", count)).Length == 0)
+            {
+                return true;
+            }
+
+            object inner = GetProp(GetProp(cell, "Range"), "Duplicate");
+            Invoke(inner, "MoveEnd", (int)Word.WdUnits.wdCharacter, -1);
+            Invoke(inner, "Collapse", (int)Word.WdCollapseDirection.wdCollapseEnd);
+            Invoke(inner, "InsertParagraph");
+            paras = GetProp(GetProp(cell, "Range"), "Paragraphs");
+            count = Convert.ToInt32(GetProp(paras, "Count"));
+            return count >= 2 && VisibleParagraphTextLate(Invoke(paras, "Item", count)).Length == 0;
+        }
+
+        private static void ClearOutlineOnEmptyParagraphsOutsideLate(object doc, object cell)
+        {
+            object cellRange = GetProp(cell, "Range");
+            int cellStart = Convert.ToInt32(GetProp(cellRange, "Start"));
+            int cellEnd = Convert.ToInt32(GetProp(cellRange, "End"));
+            object paras = GetProp(doc, "Paragraphs");
+            int count = Convert.ToInt32(GetProp(paras, "Count"));
+            int body = (int)Word.WdOutlineLevel.wdOutlineLevelBodyText;
+            for (int i = 1; i <= count; i++)
+            {
+                object para = Invoke(paras, "Item", i);
+                object range = GetProp(para, "Range");
+                int start = Convert.ToInt32(GetProp(range, "Start"));
+                int end = Convert.ToInt32(GetProp(range, "End"));
+                if (start >= cellStart && end <= cellEnd)
+                {
+                    continue;
+                }
+
+                if (VisibleParagraphTextLate(para).Length > 0)
+                {
+                    continue;
+                }
+
+                SetProp(para, "OutlineLevel", body);
+            }
+        }
+
+        private static string VisibleParagraphTextLate(object para)
+        {
+            object range = GetProp(para, "Range");
+            string text = Convert.ToString(GetProp(range, "Text")) ?? "";
+            return text.Replace("\r", "").Replace("\a", "").Trim();
         }
 
         private static bool SetOutlineLate(object doc, string needle, int level)
