@@ -1174,22 +1174,78 @@ namespace WordDocumentRoundtripTest
                 }
 
                 Word.Cell cell = doc.Tables[1].Cell(1, 1);
+                if (!EnsureCellTrailingEmptyParagraph(cell))
+                {
+                    return false;
+                }
+
                 Word.Paragraphs paras = cell.Range.Paragraphs;
-                if (paras.Count < 1)
+                if (paras.Count < 2)
                 {
                     return false;
                 }
 
                 Word.Paragraph last = paras[paras.Count];
-                if (paras.Count > 1)
+                string lastText = VisibleParagraphText(last);
+                if (lastText.Length > 0)
                 {
-                    paras[1].OutlineLevel = Word.WdOutlineLevel.wdOutlineLevelBodyText;
+                    return false;
+                }
+
+                for (int i = 1; i < paras.Count; i++)
+                {
+                    paras[i].OutlineLevel = Word.WdOutlineLevel.wdOutlineLevelBodyText;
                 }
 
                 last.OutlineLevel = target;
+                ClearOutlineOnEmptyParagraphsOutside(doc, cell);
                 doc.Save();
-                return last.OutlineLevel == target;
+                return last.OutlineLevel == target
+                    && paras[1].OutlineLevel == Word.WdOutlineLevel.wdOutlineLevelBodyText;
             });
+        }
+
+        private static bool EnsureCellTrailingEmptyParagraph(Word.Cell cell)
+        {
+            Word.Paragraphs paras = cell.Range.Paragraphs;
+            if (paras.Count >= 2 && VisibleParagraphText(paras[paras.Count]).Length == 0)
+            {
+                return true;
+            }
+
+            Word.Range inner = cell.Range.Duplicate;
+            inner.MoveEnd(Word.WdUnits.wdCharacter, -1);
+            inner.Collapse(Word.WdCollapseDirection.wdCollapseEnd);
+            inner.InsertParagraph();
+            paras = cell.Range.Paragraphs;
+            return paras.Count >= 2 && VisibleParagraphText(paras[paras.Count]).Length == 0;
+        }
+
+        private static void ClearOutlineOnEmptyParagraphsOutside(Word.Document doc, Word.Cell cell)
+        {
+            int cellStart = cell.Range.Start;
+            int cellEnd = cell.Range.End;
+            foreach (Word.Paragraph para in doc.Paragraphs)
+            {
+                int start = para.Range.Start;
+                int end = para.Range.End;
+                if (start >= cellStart && end <= cellEnd)
+                {
+                    continue;
+                }
+
+                if (VisibleParagraphText(para).Length > 0)
+                {
+                    continue;
+                }
+
+                para.OutlineLevel = Word.WdOutlineLevel.wdOutlineLevelBodyText;
+            }
+        }
+
+        private static string VisibleParagraphText(Word.Paragraph para)
+        {
+            return (para.Range.Text ?? "").Replace("\r", "").Replace("\a", "").Trim();
         }
 
         private static bool SetOutlineLate(object doc, string needle, int level)
