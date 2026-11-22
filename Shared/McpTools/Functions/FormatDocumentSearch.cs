@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Text.RegularExpressions;
@@ -36,63 +37,98 @@ namespace WordAddIn1
                 return Fail(error);
             }
 
-            string prepared = InsertTargetLocatorHelper.TryProcessDocumentForLocate(doc, disallowBackendApi);
-            if (prepared != null)
-            {
-                return Fail(prepared);
-            }
-
-            string sentenceDisplay = F_DocumentStructureTool.ReadLocateDisplay();
-            string paragraphDisplay = DocumentMapping.DisplayParagraphIndexMap.CombinedParagraphDisplay();
-            if (string.IsNullOrEmpty(sentenceDisplay) || string.IsNullOrEmpty(paragraphDisplay))
-            {
-                return Fail("没有句子快照或段落 display。请先 F_get_document_content。");
-            }
-
-            List<Dictionary<string, object>> items;
-            int unbound = 0;
-            if (character)
-            {
-                if (!TryCharacter(doc, sentenceDisplay, query, match, out items, out unbound, out error))
-                {
-                    return Fail(error);
-                }
-            }
-            else if (!TryParagraph(doc, disallowBackendApi, query, match, out items, out error))
-            {
-                return Fail(error);
-            }
-
-            string fileName = character ? CharacterFile : ParagraphFile;
-            string fullPath;
+            Stopwatch total = EasyWriteDiagnostics.IsEnabled(DebugCategory.Timing)
+                ? Stopwatch.StartNew()
+                : null;
+            string detail = "fail";
             try
             {
-                fullPath = WorkspacePathResolver.ResolveWritePath(fileName);
-                var body = new Dictionary<string, object> { ["items"] = items };
-                string json = JToken.FromObject(body).ToString(Formatting.None);
-                File.WriteAllText(fullPath, json);
-            }
-            catch (Exception ex)
-            {
-                return Fail("导出失败: " + ex.Message);
-            }
+                string prepared;
+                using (EasyWriteDiagnostics.Time("format_search.locate"))
+                {
+                    prepared = InsertTargetLocatorHelper.TryProcessDocumentForLocate(doc, disallowBackendApi);
+                }
 
-            var data = new Dictionary<string, object>
-            {
-                ["path"] = fileName,
-                ["count"] = items.Count
-            };
-            if (items.Count <= InlineLimit)
-            {
-                data["items"] = items;
-            }
+                if (prepared != null)
+                {
+                    detail = "kind=" + kind + " fail=locate";
+                    return Fail(prepared);
+                }
 
-            if (unbound > 0)
-            {
-                data["unbound"] = unbound;
-            }
+                string sentenceDisplay;
+                string paragraphDisplay;
+                using (EasyWriteDiagnostics.Time("format_search.display"))
+                {
+                    sentenceDisplay = F_DocumentStructureTool.ReadLocateDisplay();
+                    paragraphDisplay = DocumentMapping.DisplayParagraphIndexMap.CombinedParagraphDisplay();
+                }
 
-            return new ToolResult { Success = true, Data = data };
+                if (string.IsNullOrEmpty(sentenceDisplay) || string.IsNullOrEmpty(paragraphDisplay))
+                {
+                    detail = "kind=" + kind + " fail=display";
+                    return Fail("没有句子快照或段落 display。请先 F_get_document_content。");
+                }
+
+                List<Dictionary<string, object>> items;
+                int unbound = 0;
+                if (character)
+                {
+                    if (!TryCharacter(doc, sentenceDisplay, query, match, out items, out unbound, out error))
+                    {
+                        detail = "kind=" + kind + " fail=match";
+                        return Fail(error);
+                    }
+                }
+                else if (!TryParagraph(doc, disallowBackendApi, query, match, out items, out error))
+                {
+                    detail = "kind=" + kind + " fail=match";
+                    return Fail(error);
+                }
+
+                string fileName = character ? CharacterFile : ParagraphFile;
+                try
+                {
+                    using (EasyWriteDiagnostics.Time("format_search.write"))
+                    {
+                        string fullPath = WorkspacePathResolver.ResolveWritePath(fileName);
+                        var body = new Dictionary<string, object> { ["items"] = items };
+                        string json = JToken.FromObject(body).ToString(Formatting.None);
+                        File.WriteAllText(fullPath, json);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    detail = "kind=" + kind + " fail=write";
+                    return Fail("导出失败: " + ex.Message);
+                }
+
+                detail = "kind=" + kind + " hits=" + items.Count + " unbound=" + unbound;
+
+                var data = new Dictionary<string, object>
+                {
+                    ["path"] = fileName,
+                    ["count"] = items.Count
+                };
+                if (items.Count <= InlineLimit)
+                {
+                    data["items"] = items;
+                }
+
+                if (unbound > 0)
+                {
+                    data["unbound"] = unbound;
+                }
+
+                return new ToolResult { Success = true, Data = data };
+            }
+            finally
+            {
+                if (total != null)
+                {
+                    total.Stop();
+                    EasyWriteDiagnostics.LogTiming("format_search.total", total.ElapsedMilliseconds, detail);
+                }
+            }
         }
 
         private static bool TryCharacter(
@@ -108,80 +144,93 @@ namespace WordAddIn1
             unbound = 0;
             error = null;
             string xml;
-            try
+            using (EasyWriteDiagnostics.Time("format_search.char_openxml"))
             {
-                xml = doc?.Content?.WordOpenXML;
+                try
+                {
+                    xml = doc?.Content?.WordOpenXML;
+                }
+                catch (Exception ex)
+                {
+                    error = ex.Message;
+                    return false;
+                }
             }
-            catch (Exception ex)
+
+            List<Dictionary<string, object>> runs;
+            bool collected;
+            using (EasyWriteDiagnostics.Time("format_search.char_collect"))
             {
-                error = ex.Message;
+                collected = CharFormatRunReader.TryCollectBody(xml, out runs, out error);
+            }
+
+            if (!collected)
+            {
                 return false;
             }
 
-            if (!CharFormatRunReader.TryCollectBody(xml, out List<Dictionary<string, object>> runs, out error))
+            using (EasyWriteDiagnostics.Time("format_search.char_bind"))
             {
-                return false;
-            }
-
-            StructureSpanLister.SentenceIndex index = StructureSpanLister.SentenceIndex.Build(display);
-            string story = index.Chars ?? "";
-            int cursor = 0;
-            foreach (Dictionary<string, object> run in runs)
+                StructureSpanLister.SentenceIndex index = StructureSpanLister.SentenceIndex.Build(display);
+                string story = index.Chars ?? "";
+                int cursor = 0;
+                foreach (Dictionary<string, object> run in runs)
             {
-                string text = run.TryGetValue("text", out object raw) ? raw?.ToString() ?? "" : "";
-                if (text.Length == 0)
-                {
-                    continue;
-                }
-
-                int at = story.IndexOf(text, cursor, StringComparison.Ordinal);
-                if (at < 0)
-                {
-                    unbound++;
-                    continue;
-                }
-
-                cursor = at + text.Length;
-                if (!(run.TryGetValue("char_format", out object formatRaw) && formatRaw is Dictionary<string, object> format))
-                {
-                    continue;
-                }
-
-                if (!Matches(format, query, match))
-                {
-                    continue;
-                }
-
-                List<StructureSpanLister.StyledSpan> parts = index.Bind(at, cursor);
-                if (parts.Count == 0)
-                {
-                    unbound++;
-                    continue;
-                }
-
-                foreach (StructureSpanLister.StyledSpan part in parts)
-                {
-                    var item = new Dictionary<string, object>
+                    string text = run.TryGetValue("text", out object raw) ? raw?.ToString() ?? "" : "";
+                    if (text.Length == 0)
                     {
-                        ["target_codes"] = part.Code,
-                        ["char_format"] = new Dictionary<string, object>(format)
-                    };
-                    if (!string.IsNullOrEmpty(part.TextValue))
-                    {
-                        item["text"] = part.HasIndex
-                            ? (object)new Dictionary<string, object>
-                            {
-                                ["value"] = part.TextValue,
-                                ["index"] = part.TextIndex
-                            }
-                            : part.TextValue;
+                        continue;
                     }
 
-                    items.Add(item);
-                }
-            }
+                    int at = story.IndexOf(text, cursor, StringComparison.Ordinal);
+                    if (at < 0)
+                    {
+                        unbound++;
+                        continue;
+                    }
 
-            return true;
+                    cursor = at + text.Length;
+                    if (!(run.TryGetValue("char_format", out object formatRaw) && formatRaw is Dictionary<string, object> format))
+                    {
+                        continue;
+                    }
+
+                    if (!Matches(format, query, match))
+                    {
+                        continue;
+                    }
+
+                    List<StructureSpanLister.StyledSpan> parts = index.Bind(at, cursor);
+                    if (parts.Count == 0)
+                    {
+                        unbound++;
+                        continue;
+                    }
+
+                    foreach (StructureSpanLister.StyledSpan part in parts)
+                    {
+                        var item = new Dictionary<string, object>
+                        {
+                            ["target_codes"] = part.Code,
+                            ["char_format"] = new Dictionary<string, object>(format)
+                        };
+                        if (!string.IsNullOrEmpty(part.TextValue))
+                        {
+                            item["text"] = part.HasIndex
+                                ? (object)new Dictionary<string, object>
+                                {
+                                    ["value"] = part.TextValue,
+                                    ["index"] = part.TextIndex
+                                }
+                                : part.TextValue;
+                        }
+
+                        items.Add(item);
+                    }
+                }
+
+                return true;
+            }
         }
 
         private static bool TryParagraph(
@@ -198,18 +247,21 @@ namespace WordAddIn1
                 return false;
             }
 
-            foreach (FormatLayerLookup.MappedParagraph row in rows)
+            using (EasyWriteDiagnostics.Time("format_search.match"))
             {
-                if (row == null || string.IsNullOrEmpty(row.Code) || !Matches(row.Final, query, match))
+                foreach (FormatLayerLookup.MappedParagraph row in rows)
                 {
-                    continue;
-                }
+                    if (row == null || string.IsNullOrEmpty(row.Code) || !Matches(row.Final, query, match))
+                    {
+                        continue;
+                    }
 
-                items.Add(new Dictionary<string, object>
-                {
-                    ["target_paragraph_codes"] = row.Code,
-                    ["para_format"] = row.Final
-                });
+                    items.Add(new Dictionary<string, object>
+                    {
+                        ["target_paragraph_codes"] = row.Code,
+                        ["para_format"] = row.Final
+                    });
+                }
             }
 
             return true;

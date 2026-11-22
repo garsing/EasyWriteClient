@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Xml.Linq;
 using WordAddIn1.DocumentMapping;
 using Word = Microsoft.Office.Interop.Word;
@@ -32,76 +33,117 @@ namespace WordAddIn1
             out string error)
         {
             rows = null;
-            error = Ensure(doc, disallowBackendApi);
-            if (error != null)
+            Stopwatch total = EasyWriteDiagnostics.IsEnabled(DebugCategory.Timing)
+                ? Stopwatch.StartNew()
+                : null;
+            string detail = "fail=ensure";
+            try
             {
-                return false;
-            }
-
-            if (_hasCache && ReferenceEquals(_cachedMap, WordReader.LastParagraphMap))
-            {
-                rows = _cachedRows;
-                error = _cachedError;
-                return rows != null;
-            }
-
-            List<WordDocumentExtractor.ParagraphMapProjection> projected =
-                WordDocumentExtractor.ProjectParagraphMap(
-                    WordReader.LastMappedReadText,
-                    WordReader.LastParagraphMap);
-            string display = DisplayParagraphIndexMap.CombinedParagraphDisplay();
-            if (string.IsNullOrEmpty(display))
-            {
-                error = "没有段落 display。请先 F_get_document_content。";
-                return false;
-            }
-
-            List<DisplayParagraphIndexMap.Hit> hits = DisplayParagraphIndexMap.Build(display);
-            if (projected.Count != hits.Count)
-            {
-                error = "段落映射和 P_ 对不上：映射 " + projected.Count + "，P_ " + hits.Count;
-                Remember(error);
-                return false;
-            }
-
-            if (!TryLoadStyles(doc, out Dictionary<string, ParaFormatOoxmlReader.StyleRec> styles, out Dictionary<string, object> defaults, out error))
-            {
-                return false;
-            }
-
-            rows = new List<MappedParagraph>(projected.Count);
-            for (int i = 0; i < projected.Count; i++)
-            {
-                XElement paragraph = FindParagraph(projected[i].SourceIndex);
-                if (paragraph == null)
+                using (EasyWriteDiagnostics.Time("format_map.ensure"))
                 {
-                    error = "第 " + (i + 1) + " 段没有对应的 OOXML 段落";
-                    rows = null;
-                    Remember(error);
+                    error = Ensure(doc, disallowBackendApi);
+                }
+
+                if (error != null)
+                {
                     return false;
                 }
 
-                ParaFormatOoxmlReader.ReadLayers(
-                    paragraph,
-                    styles,
-                    defaults,
-                    out Dictionary<string, object> direct,
-                    out Dictionary<string, object> style,
-                    out Dictionary<string, object> final);
-                rows.Add(new MappedParagraph
+                if (_hasCache && ReferenceEquals(_cachedMap, WordReader.LastParagraphMap))
                 {
-                    Code = hits[i].Code,
-                    Direct = direct,
-                    Style = style,
-                    Final = final
-                });
-            }
+                    rows = _cachedRows;
+                    error = _cachedError;
+                    detail = "cache=hit paragraphs=" + (rows == null ? 0 : rows.Count);
+                    return rows != null;
+                }
 
-            _cachedRows = rows;
-            _cachedError = null;
-            _cachedMap = WordReader.LastParagraphMap;
-            _hasCache = true;
-            return true;
+                List<WordDocumentExtractor.ParagraphMapProjection> projected;
+                string display;
+                List<DisplayParagraphIndexMap.Hit> hits;
+                using (EasyWriteDiagnostics.Time("format_map.project"))
+                {
+                    projected = WordDocumentExtractor.ProjectParagraphMap(
+                        WordReader.LastMappedReadText,
+                        WordReader.LastParagraphMap);
+                    display = DisplayParagraphIndexMap.CombinedParagraphDisplay();
+                    hits = string.IsNullOrEmpty(display)
+                        ? null
+                        : DisplayParagraphIndexMap.Build(display);
+                }
+
+                if (string.IsNullOrEmpty(display))
+                {
+                    error = "没有段落 display。请先 F_get_document_content。";
+                    detail = "fail=display";
+                    return false;
+                }
+
+                if (projected.Count != hits.Count)
+                {
+                    error = "段落映射和 P_ 对不上：映射 " + projected.Count + "，P_ " + hits.Count;
+                    Remember(error);
+                    detail = "fail=align";
+                    return false;
+                }
+
+                Dictionary<string, ParaFormatOoxmlReader.StyleRec> styles;
+                Dictionary<string, object> defaults;
+                using (EasyWriteDiagnostics.Time("format_map.styles"))
+                {
+                    if (!TryLoadStyles(doc, out styles, out defaults, out error))
+                    {
+                        detail = "fail=styles";
+                        return false;
+                    }
+                }
+
+                rows = new List<MappedParagraph>(projected.Count);
+                using (EasyWriteDiagnostics.Time("format_map.layers"))
+                {
+                    for (int i = 0; i < projected.Count; i++)
+                    {
+                        XElement paragraph = FindParagraph(projected[i].SourceIndex);
+                        if (paragraph == null)
+                        {
+                            error = "第 " + (i + 1) + " 段没有对应的 OOXML 段落";
+                            rows = null;
+                            Remember(error);
+                            detail = "fail=layers";
+                            return false;
+                        }
+
+                        ParaFormatOoxmlReader.ReadLayers(
+                            paragraph,
+                            styles,
+                            defaults,
+                            out Dictionary<string, object> direct,
+                            out Dictionary<string, object> style,
+                            out Dictionary<string, object> final);
+                        rows.Add(new MappedParagraph
+                        {
+                            Code = hits[i].Code,
+                            Direct = direct,
+                            Style = style,
+                            Final = final
+                        });
+                    }
+                }
+
+                _cachedRows = rows;
+                _cachedError = null;
+                _cachedMap = WordReader.LastParagraphMap;
+                _hasCache = true;
+                detail = "cache=miss paragraphs=" + rows.Count;
+                return true;
+            }
+            finally
+            {
+                if (total != null)
+                {
+                    total.Stop();
+                    EasyWriteDiagnostics.LogTiming("format_map.total", total.ElapsedMilliseconds, detail);
+                }
+            }
         }
 
         private static void Remember(string error)
