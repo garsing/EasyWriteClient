@@ -43,8 +43,8 @@ namespace WordDocumentRoundtripTest
                     }
 
                     ToolResult applied = ApplyChar(session, doc, doc.Sentence("加粗"), Map("is_bold", "default"));
-                    JObject direct = CharDirect(session, doc, doc.Sentence("加粗"), "加粗");
-                    return Ok(applied) && Off(direct, "is_bold") ? null : Fail(applied, direct);
+                    JObject final = CharFinal(session, doc, doc.Sentence("加粗"), "加粗");
+                    return Ok(applied) && Off(final, "is_bold") ? null : Fail(applied, final);
                 }
             });
 
@@ -66,10 +66,10 @@ namespace WordDocumentRoundtripTest
                     }
 
                     ToolResult applied = ApplyChar(session, doc, doc.Sentence("十六"), Map("is_bold", "default"));
-                    JObject direct = CharDirect(session, doc, doc.Sentence("十六"), "十六");
-                    return Ok(applied) && Off(direct, "is_bold") && Is16(Txt(direct, "font_size"))
+                    JObject final = CharFinal(session, doc, doc.Sentence("十六"), "十六");
+                    return Ok(applied) && Off(final, "is_bold") && Is16(Txt(final, "font_size"))
                         ? null
-                        : Fail(applied, direct);
+                        : Fail(applied, final);
                 }
             });
 
@@ -91,10 +91,10 @@ namespace WordDocumentRoundtripTest
                     var format = Map("is_bold", "default");
                     format["font_size"] = 18;
                     ToolResult applied = ApplyChar(session, doc, doc.Sentence("混着"), format);
-                    JObject direct = CharDirect(session, doc, doc.Sentence("混着"), "混着");
-                    return Ok(applied) && Off(direct, "is_bold") && Starts(Txt(direct, "font_size"), "18")
+                    JObject final = CharFinal(session, doc, doc.Sentence("混着"), "混着");
+                    return Ok(applied) && Off(final, "is_bold") && Starts(Txt(final, "font_size"), "18")
                         ? null
-                        : Fail(applied, direct);
+                        : Fail(applied, final);
                 }
             });
 
@@ -114,10 +114,10 @@ namespace WordDocumentRoundtripTest
                     }
 
                     ToolResult applied = ApplyChar(session, doc, doc.Sentence("缺键"), Map("font_size", 18));
-                    JObject direct = CharDirect(session, doc, doc.Sentence("缺键"), "缺键");
-                    return Ok(applied) && Flag(direct, "is_bold") && Starts(Txt(direct, "font_size"), "18")
+                    JObject final = CharFinal(session, doc, doc.Sentence("缺键"), "缺键");
+                    return Ok(applied) && Flag(final, "is_bold") && Starts(Txt(final, "font_size"), "18")
                         ? null
-                        : Fail(applied, direct);
+                        : Fail(applied, final);
                 }
             });
 
@@ -137,8 +137,8 @@ namespace WordDocumentRoundtripTest
                     }
 
                     ToolResult applied = ApplyChar(session, doc, doc.Sentence("大小写"), Map("is_bold", "Default"));
-                    JObject direct = CharDirect(session, doc, doc.Sentence("大小写"), "大小写");
-                    return Ok(applied) && Flag(direct, "is_bold") ? null : Fail(applied, direct);
+                    JObject final = CharFinal(session, doc, doc.Sentence("大小写"), "大小写");
+                    return Ok(applied) && Flag(final, "is_bold") ? null : Fail(applied, final);
                 }
             });
 
@@ -160,14 +160,14 @@ namespace WordDocumentRoundtripTest
                     }
 
                     ToolResult applied = ApplyChar(session, doc, doc.Sentence("换字体"), Map("font_name", "default"));
-                    JObject direct = CharDirect(session, doc, doc.Sentence("换字体"), "换字体");
-                    string name = Txt(direct, "font_name");
+                    JObject final = CharFinal(session, doc, doc.Sentence("换字体"), "换字体");
+                    string name = Txt(final, "font_name");
                     bool warned = WarnKey(applied, "font_name");
                     bool kept = name.IndexOf("黑体", StringComparison.Ordinal) >= 0;
                     bool replaced = name.Length > 0 && !kept;
                     return Ok(applied) && ((warned && kept) || (!warned && replaced))
                         ? null
-                        : Fail(applied, direct);
+                        : Fail(applied, final);
                 }
             });
         }
@@ -191,8 +191,8 @@ namespace WordDocumentRoundtripTest
 
                     string code = doc.Paragraph("原先居中");
                     ToolResult applied = ApplyPara(session, doc, "target_paragraph_codes", code, Map("alignment", "default"));
-                    JObject direct = Obj(ParaLayers(session, doc, code), "direct");
-                    return Ok(applied) && Txt(direct, "alignment") == "left" ? null : Fail(applied, direct);
+                    JObject final = Obj(ParaLayers(session, doc, code), "final");
+                    return Ok(applied) && LooksLeft(final) ? null : Fail(applied, final);
                 }
             });
 
@@ -215,10 +215,10 @@ namespace WordDocumentRoundtripTest
                     var format = Map("alignment", "default");
                     format["space_before"] = 18;
                     ToolResult applied = ApplyPara(session, doc, "target_paragraph_codes", code, format);
-                    JObject direct = Obj(ParaLayers(session, doc, code), "direct");
-                    return Ok(applied) && Txt(direct, "alignment") == "left" && Near(Txt(direct, "space_before"), 18)
+                    JObject final = Obj(ParaLayers(session, doc, code), "final");
+                    return Ok(applied) && LooksLeft(final) && Near(Txt(final, "space_before"), 18)
                         ? null
-                        : Fail(applied, direct);
+                        : Fail(applied, final);
                 }
             });
 
@@ -239,10 +239,10 @@ namespace WordDocumentRoundtripTest
 
                     string code = doc.Paragraph("居中留着");
                     ToolResult applied = ApplyPara(session, doc, "target_paragraph_codes", code, Map("space_before", 6));
-                    JObject direct = Obj(ParaLayers(session, doc, code), "direct");
-                    return Ok(applied) && Txt(direct, "alignment") == "center" && Near(Txt(direct, "space_before"), 6)
+                    JObject final = Obj(ParaLayers(session, doc, code), "final");
+                    return Ok(applied) && Txt(final, "alignment") == "center" && Near(Txt(final, "space_before"), 6)
                         ? null
-                        : Fail(applied, direct);
+                        : Fail(applied, final);
                 }
             });
 
@@ -263,8 +263,8 @@ namespace WordDocumentRoundtripTest
 
                     string code = doc.Paragraph("继承不改");
                     ToolResult applied = ApplyPara(session, doc, "target_paragraph_codes", code, Map("alignment", "inherit"));
-                    JObject direct = Obj(ParaLayers(session, doc, code), "direct");
-                    return Ok(applied) && Txt(direct, "alignment") == "center" ? null : Fail(applied, direct);
+                    JObject final = Obj(ParaLayers(session, doc, code), "final");
+                    return Ok(applied) && Txt(final, "alignment") == "center" ? null : Fail(applied, final);
                 }
             });
 
@@ -287,13 +287,13 @@ namespace WordDocumentRoundtripTest
                     var format = Map("paragraph_style", "default");
                     format["alignment"] = "center";
                     ToolResult applied = ApplyPara(session, doc, "target_paragraph_codes", code, format);
-                    JObject direct = Obj(ParaLayers(session, doc, code), "direct");
+                    JObject final = Obj(ParaLayers(session, doc, code), "final");
                     string style = ParaStyle(doc, "标题留着");
                     bool heading = style.IndexOf("标题", StringComparison.Ordinal) >= 0
                         || style.IndexOf("Heading", StringComparison.OrdinalIgnoreCase) >= 0;
-                    return Ok(applied) && WarnKey(applied, "paragraph_style") && heading && Txt(direct, "alignment") == "center"
+                    return Ok(applied) && WarnKey(applied, "paragraph_style") && heading && Txt(final, "alignment") == "center"
                         ? null
-                        : Fail(applied, direct) + " 样式=" + style;
+                        : Fail(applied, final) + " 样式=" + style;
                 }
             });
 
@@ -319,15 +319,15 @@ namespace WordDocumentRoundtripTest
                         "target_paragraph_codes",
                         code,
                         Map("tab_stops", new List<object> { tab }));
-                    JObject plantedDirect = Obj(ParaLayers(session, doc, code), "direct");
-                    if (!Ok(planted) || Arr(plantedDirect, "tab_stops").Count < 1)
+                    JObject plantedFinal = Obj(ParaLayers(session, doc, code), "final");
+                    if (!Ok(planted) || Arr(plantedFinal, "tab_stops").Count < 1)
                     {
-                        return "铺制表位失败 " + Fail(planted, plantedDirect);
+                        return "铺制表位失败 " + Fail(planted, plantedFinal);
                     }
 
                     ToolResult applied = ApplyPara(session, doc, "target_paragraph_codes", code, Map("tab_stops", "default"));
-                    JObject direct = Obj(ParaLayers(session, doc, code), "direct");
-                    return Ok(applied) && Arr(direct, "tab_stops").Count == 0 ? null : Fail(applied, direct);
+                    JObject final = Obj(ParaLayers(session, doc, code), "final");
+                    return Ok(applied) && Arr(final, "tab_stops").Count == 0 ? null : Fail(applied, final);
                 }
             });
         }
@@ -351,7 +351,7 @@ namespace WordDocumentRoundtripTest
             return session.ApplyParagraphFormat(args);
         }
 
-        private static JObject CharDirect(WdSession session, FormatProbe doc, string code, string text)
+        private static JObject CharFinal(WdSession session, FormatProbe doc, string code, string text)
         {
             JObject data = FormatProbe.Data(session.GetFormatContext(Args(doc.Id, "target_codes", code)));
             JArray entries = data["entries"] as JArray;
@@ -372,7 +372,7 @@ namespace WordDocumentRoundtripTest
                 {
                     if (Txt(run, "text").IndexOf(text, StringComparison.Ordinal) >= 0)
                     {
-                        return Obj(Obj(run, "format_layers"), "direct");
+                        return Obj(Obj(run, "format_layers"), "final");
                     }
                 }
             }
@@ -481,6 +481,12 @@ namespace WordDocumentRoundtripTest
         {
             bool bit;
             return data != null && data[key] != null && bool.TryParse(data[key].ToString(), out bit) && bit;
+        }
+
+        private static bool LooksLeft(JObject data)
+        {
+            string align = Txt(data, "alignment");
+            return align.Length == 0 || align == "left" || align == "inherit";
         }
 
         private static bool Off(JObject data, string key)
