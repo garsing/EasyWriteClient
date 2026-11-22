@@ -1,8 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.IO.Compression;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using Word = Microsoft.Office.Interop.Word;
 using WordAddIn1;
 using WordAddIn1.DocumentMapping;
@@ -2503,47 +2507,30 @@ namespace WordDocumentRoundtripTest
         private static void RunOoxmlParagraphOrder(TestRun run, Word.Application app)
         {
             string path = ResolveAlignDocPath();
-            if (!System.IO.File.Exists(path))
+            if (!File.Exists(path))
             {
                 run.CaseSkip("fs-p-ooxml", "文件不在: " + path);
                 return;
             }
 
+            if (!path.EndsWith(".docx", StringComparison.OrdinalIgnoreCase))
+            {
+                run.CaseSkip("fs-p-ooxml", "打标记只接受 docx");
+                return;
+            }
+
+            string temp = Path.Combine(Path.GetTempPath(), "fs-p-ooxml-" + Guid.NewGuid().ToString("N") + ".docx");
             Word.Document doc = null;
-            bool weOpened = false;
             bool oldUpdate = true;
             try
             {
-                string norm = System.IO.Path.GetFullPath(path);
-                foreach (Word.Document d in app.Documents)
-                {
-                    try
-                    {
-                        if (string.Equals(
-                            System.IO.Path.GetFullPath(d.FullName),
-                            norm,
-                            StringComparison.OrdinalIgnoreCase))
-                        {
-                            doc = d;
-                            break;
-                        }
-                    }
-                    catch
-                    {
-                    }
-                }
+                File.Copy(path, temp, true);
+                List<MarkedPara> sample = StampRandomParagraphs(temp, out int total);
 
-                if (doc == null)
-                {
-                    object fileName = path;
-                    object readOnly = true;
-                    object missing = System.Reflection.Missing.Value;
-                    doc = app.Documents.Open(
-                        ref fileName,
-                        ref missing,
-                        ref readOnly);
-                    weOpened = true;
-                }
+                Console.WriteLine("  --- OOXML 每段打标记后对 display ---");
+                Console.WriteLine("    path=" + path);
+                Console.WriteLine("    标记 " + sample.Count + "/" + total);
+                Console.Out.Flush();
 
                 oldUpdate = app.ScreenUpdating;
                 app.ScreenUpdating = false;
@@ -2555,9 +2542,10 @@ namespace WordDocumentRoundtripTest
                 {
                 }
 
-                Console.WriteLine("  --- OOXML 段落顺序对 display 的 P_ ---");
-                Console.WriteLine("    path=" + path);
-                Console.Out.Flush();
+                object fileName = temp;
+                object readOnly = true;
+                object missing = System.Reflection.Missing.Value;
+                doc = app.Documents.Open(ref fileName, ref missing, ref readOnly);
 
                 var options = ProcessDocumentOptions.ForGetDocumentContent("fs-p-ooxml");
                 options.ForceRefresh = true;
@@ -2570,44 +2558,50 @@ namespace WordDocumentRoundtripTest
 
                 string display = LoadParagraphDisplay(processed);
                 List<DisplayParagraphIndexMap.Hit> hits = DisplayParagraphIndexMap.Build(display);
-                List<string> ooxml = OoxmlStoryConvert.CollectParagraphTexts(OpenXmlPackage.Load(doc).Body);
-                Console.WriteLine("    OOXML 段落=" + ooxml.Count + "  P_=" + hits.Count
-                    + (ooxml.Count == hits.Count ? "  段数相等" : "  段数对不上"));
-                Console.Out.Flush();
-
-                int n = Math.Min(ooxml.Count, hits.Count);
-                int match = 0;
-                int mismatch = 0;
-                for (int i = 0; i < n; i++)
+                int pass = 0;
+                int shown = 0;
+                for (int s = 0; s < sample.Count; s++)
                 {
-                    string left = NormParaForMap(ooxml[i] ?? "");
-                    string right = NormParaForMap(AutonumConvert.StripTags(
-                        DisplayStoryConvert.StripNeedle(hits[i].Inner ?? "")));
-                    if (string.Equals(left, right, StringComparison.Ordinal))
+                    MarkedPara item = sample[s];
+                    var marked = new List<DisplayParagraphIndexMap.Hit>();
+                    for (int i = 0; i < hits.Count; i++)
                     {
-                        match++;
+                        if ((hits[i].Inner ?? "").IndexOf(item.Mark, StringComparison.Ordinal) >= 0)
+                        {
+                            marked.Add(hits[i]);
+                        }
+                    }
+
+                    string got = "";
+                    string code = "";
+                    if (marked.Count == 1)
+                    {
+                        code = marked[0].Code ?? "";
+                        got = NormMarkedPara(AutonumConvert.StripTags(
+                            DisplayStoryConvert.StripNeedle(marked[0].Inner ?? "")), item.Mark);
+                    }
+
+                    if (marked.Count == 1 && string.Equals(item.Expect, got, StringComparison.Ordinal))
+                    {
+                        pass++;
                         continue;
                     }
 
-                    mismatch++;
-                    if (mismatch <= 8)
+                    shown++;
+                    if (shown <= 8)
                     {
-                        Console.WriteLine("    对不上 [" + i + "] " + hits[i].Code);
-                        Console.WriteLine("      OOXML " + QuoteSpecial(Peek(left, 0, 36)));
-                        Console.WriteLine("      P_    " + QuoteSpecial(Peek(right, 0, 36)));
+                        Console.WriteLine("    对不上 [" + item.Index + "] "
+                            + (marked.Count == 1 ? code : "含标记 P_=" + marked.Count));
+                        Console.WriteLine("      OOXML   " + QuoteSpecial(Peek(item.Expect, 0, 36)));
+                        Console.WriteLine("      display " + QuoteSpecial(Peek(got, 0, 36)));
                     }
                 }
 
-                Console.WriteLine("    核对  对上=" + match
-                    + "  对不上=" + mismatch
-                    + "  OOXML多=" + Math.Max(0, ooxml.Count - hits.Count)
-                    + "  P_多=" + Math.Max(0, hits.Count - ooxml.Count));
-                bool ok = ooxml.Count == hits.Count && mismatch == 0 && hits.Count > 0;
+                Console.WriteLine("    通过 " + pass + "/" + sample.Count
+                    + "  对不上 " + (sample.Count - pass));
+                bool ok = sample.Count > 0 && pass == sample.Count;
                 Ok(run, "fs-p-ooxml", ok,
-                    "OOXML=" + ooxml.Count
-                    + "  P_=" + hits.Count
-                    + "  对上=" + match
-                    + "  对不上=" + mismatch);
+                    "通过=" + pass + "/" + sample.Count + "  段落=" + total);
             }
             catch (Exception ex)
             {
@@ -2623,11 +2617,114 @@ namespace WordDocumentRoundtripTest
                 {
                 }
 
-                if (weOpened && doc != null)
+                if (doc != null)
                 {
                     CloseDoc(doc);
                 }
+
+                try
+                {
+                    if (File.Exists(temp))
+                    {
+                        File.Delete(temp);
+                    }
+                }
+                catch
+                {
+                }
             }
+        }
+
+        private sealed class MarkedPara
+        {
+            public int Index;
+            public string Mark;
+            public string Expect;
+        }
+
+        private static List<MarkedPara> StampRandomParagraphs(string docxPath, out int total)
+        {
+            XDocument xml;
+            var sample = new List<MarkedPara>();
+            using (ZipArchive zip = ZipFile.Open(docxPath, ZipArchiveMode.Update))
+            {
+                ZipArchiveEntry entry = zip.GetEntry("word/document.xml");
+                if (entry == null)
+                {
+                    throw new InvalidOperationException("没有 word/document.xml");
+                }
+
+                using (Stream read = entry.Open())
+                {
+                    xml = XDocument.Load(read, LoadOptions.PreserveWhitespace);
+                }
+
+                XElement body = xml.Descendants(OoxmlStoryConvertMarkNs + "body").FirstOrDefault();
+                if (body == null)
+                {
+                    throw new InvalidOperationException("没有 w:body");
+                }
+
+                List<XElement> paras = OoxmlStoryConvert.CollectParagraphElements(body);
+                List<string> texts = OoxmlStoryConvert.CollectParagraphTexts(body);
+                total = paras.Count;
+                if (total == 0 || texts.Count != total)
+                {
+                    throw new InvalidOperationException("没有可标记的段落");
+                }
+
+                for (int index = 0; index < total; index++)
+                {
+                    string mark = "EWP#" + index.ToString() + "#Z";
+                    sample.Add(new MarkedPara
+                    {
+                        Index = index,
+                        Mark = mark,
+                        Expect = NormMarkedPara(texts[index] ?? "", mark),
+                    });
+                    InsertParagraphMark(paras[index], mark);
+                }
+
+                entry.Delete();
+                ZipArchiveEntry neu = zip.CreateEntry("word/document.xml", CompressionLevel.Optimal);
+                using (Stream write = neu.Open())
+                {
+                    xml.Save(write);
+                }
+            }
+
+            return sample;
+        }
+
+        private static readonly XNamespace OoxmlStoryConvertMarkNs =
+            "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+
+        private static void InsertParagraphMark(XElement paragraph, string mark)
+        {
+            var run = new XElement(
+                OoxmlStoryConvertMarkNs + "r",
+                new XElement(OoxmlStoryConvertMarkNs + "t", mark));
+            XElement pPr = paragraph.Element(OoxmlStoryConvertMarkNs + "pPr");
+            if (pPr != null)
+            {
+                pPr.AddAfterSelf(run);
+            }
+            else
+            {
+                paragraph.AddFirst(run);
+            }
+        }
+
+        private static string NormMarkedPara(string text, string mark)
+        {
+            text = NormParaForMap(text ?? "");
+            text = text.Replace("^b", "\f").Replace("\n", "\x0B");
+            if (!string.IsNullOrEmpty(mark))
+            {
+                text = text.Replace(mark, "");
+            }
+
+            return text;
         }
 
         private static void RunConvertParaWalk(TestRun run, Word.Application app)

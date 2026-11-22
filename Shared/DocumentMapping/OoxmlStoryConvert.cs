@@ -54,13 +54,27 @@ namespace WordAddIn1.DocumentMapping
             var list = new List<string>();
             if (body != null)
             {
-                CollectParagraphs(body, list);
+                CollectParagraphs(body, list, null);
             }
 
             return list;
         }
 
-        private static void CollectParagraphs(XElement parent, List<string> list)
+        /// <summary>
+        /// 与 <see cref="CollectParagraphTexts"/> 同一条走文、同一批段落。元素来自调用方传入的那份正文。
+        /// </summary>
+        public static List<XElement> CollectParagraphElements(XElement body)
+        {
+            var list = new List<XElement>();
+            if (body != null)
+            {
+                CollectParagraphs(body, null, list);
+            }
+
+            return list;
+        }
+
+        private static void CollectParagraphs(XElement parent, List<string> texts, List<XElement> elements)
         {
             foreach (XElement child in parent.Elements())
             {
@@ -68,24 +82,32 @@ namespace WordAddIn1.DocumentMapping
                 {
                     if (TryParagraphText(child, out string text))
                     {
-                        list.Add(text);
+                        if (texts != null)
+                        {
+                            texts.Add(text);
+                        }
+
+                        if (elements != null)
+                        {
+                            elements.Add(child);
+                        }
                     }
                 }
                 else if (child.Name == W + "tbl")
                 {
-                    CollectParagraphsInTable(child, list);
+                    CollectParagraphsInTable(child, texts, elements);
                 }
                 else if (child.Name == W + "sdt")
                 {
                     XElement content = child.Element(W + "sdtContent");
                     if (content != null)
                     {
-                        CollectParagraphs(content, list);
+                        CollectParagraphs(content, texts, elements);
                     }
                 }
                 else if (IsInsertion(child))
                 {
-                    CollectParagraphs(child, list);
+                    CollectParagraphs(child, texts, elements);
                 }
                 else if (IsDeletion(child))
                 {
@@ -95,44 +117,44 @@ namespace WordAddIn1.DocumentMapping
                     XElement choice = child.Element(Mc + "Choice");
                     if (choice != null)
                     {
-                        CollectParagraphs(choice, list);
+                        CollectParagraphs(choice, texts, elements);
                     }
                 }
                 else if (child.Name.LocalName == "customXml" || child.Name.LocalName == "smartTag")
                 {
-                    CollectParagraphs(child, list);
+                    CollectParagraphs(child, texts, elements);
                 }
             }
         }
 
-        private static void CollectParagraphsInTable(XElement tbl, List<string> list)
+        private static void CollectParagraphsInTable(XElement tbl, List<string> texts, List<XElement> elements)
         {
             foreach (XElement child in tbl.Elements())
             {
                 if (child.Name == W + "tr")
                 {
-                    CollectParagraphsInRow(child, list);
+                    CollectParagraphsInRow(child, texts, elements);
                 }
                 else if (child.Name == W + "sdt")
                 {
                     XElement content = child.Element(W + "sdtContent");
                     if (content != null)
                     {
-                        CollectParagraphsInTable(content, list);
+                        CollectParagraphsInTable(content, texts, elements);
                     }
                 }
                 else if (IsInsertion(child))
                 {
-                    CollectParagraphsInTable(child, list);
+                    CollectParagraphsInTable(child, texts, elements);
                 }
                 else if (child.Name.LocalName == "customXml")
                 {
-                    CollectParagraphsInTable(child, list);
+                    CollectParagraphsInTable(child, texts, elements);
                 }
             }
         }
 
-        private static void CollectParagraphsInRow(XElement tr, List<string> list)
+        private static void CollectParagraphsInRow(XElement tr, List<string> texts, List<XElement> elements)
         {
             foreach (XElement child in tr.Elements())
             {
@@ -140,7 +162,7 @@ namespace WordAddIn1.DocumentMapping
                 {
                     if (!IsVMergeContinue(child))
                     {
-                        CollectParagraphs(child, list);
+                        CollectParagraphs(child, texts, elements);
                     }
                 }
                 else if (child.Name == W + "sdt")
@@ -148,12 +170,12 @@ namespace WordAddIn1.DocumentMapping
                     XElement content = child.Element(W + "sdtContent");
                     if (content != null)
                     {
-                        CollectParagraphsInRow(content, list);
+                        CollectParagraphsInRow(content, texts, elements);
                     }
                 }
                 else if (IsInsertion(child))
                 {
-                    CollectParagraphsInRow(child, list);
+                    CollectParagraphsInRow(child, texts, elements);
                 }
             }
         }
