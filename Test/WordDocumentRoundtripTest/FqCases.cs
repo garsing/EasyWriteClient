@@ -776,12 +776,13 @@ namespace WordDocumentRoundtripTest
                         return err;
                     }
 
-                    if (!RewriteOutline(FormatProbe.FileOf(SessionDir, "format_search_paragraph.json"), "wdOutlineLevelBodyText"))
+                    string file = FormatProbe.FileOf(SessionDir, "format_search_paragraph.json");
+                    if (!RewriteOutline(file, "wdOutlineLevelBodyText"))
                     {
                         return "改大纲文件失败";
                     }
 
-                    ToolResult applied = session.ApplyParagraphFormat(Map(doc.Id, "path", Txt(data, "path")));
+                    ToolResult applied = session.ApplyParagraphFormat(Map(doc.Id, "path", file));
                     JObject again = Hit(session, doc, "paragraph", Q("outline_level", "wdOutlineLevel1"), null, out err);
                     return applied.Success && Num(again, "count") == 0 ? null : (applied.Error ?? again.ToString());
                 }

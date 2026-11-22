@@ -428,6 +428,17 @@ namespace WordAddIn1
             out ToolResult failure)
         {
             failure = null;
+            if (!FormatFileArgs.TrySubstitute(
+                    args,
+                    FormatFileArgs.CharacterConflicts,
+                    out Dictionary<string, object> loaded,
+                    out string pathError))
+            {
+                failure = DocumentCheckpointMutatingTools.Fail(pathError);
+                return true;
+            }
+
+            args = loaded;
             if (FormatApplyBatchCompiler.HasItems(args))
             {
                 string itemError = FormatApplyBatchCompiler.ValidateDocumentItems(args);
