@@ -44,6 +44,151 @@ namespace WordAddIn1.DocumentMapping
             return list;
         }
 
+        /// <summary>
+        /// 正文里会写进字流的段落，顺序与 <see cref="ToStory"/> 遇到 <c>w:p</c> 的顺序相同。
+        /// 版面空段、纯删除段不进。空段是空串。分节空段是一个 <c>\f</c>。
+        /// 表的行末和纵向合并续格不是段落，不进这份列表。
+        /// </summary>
+        public static List<string> CollectParagraphTexts(XElement body)
+        {
+            var list = new List<string>();
+            if (body != null)
+            {
+                CollectParagraphs(body, list);
+            }
+
+            return list;
+        }
+
+        private static void CollectParagraphs(XElement parent, List<string> list)
+        {
+            foreach (XElement child in parent.Elements())
+            {
+                if (child.Name == W + "p")
+                {
+                    if (TryParagraphText(child, out string text))
+                    {
+                        list.Add(text);
+                    }
+                }
+                else if (child.Name == W + "tbl")
+                {
+                    CollectParagraphsInTable(child, list);
+                }
+                else if (child.Name == W + "sdt")
+                {
+                    XElement content = child.Element(W + "sdtContent");
+                    if (content != null)
+                    {
+                        CollectParagraphs(content, list);
+                    }
+                }
+                else if (IsInsertion(child))
+                {
+                    CollectParagraphs(child, list);
+                }
+                else if (IsDeletion(child))
+                {
+                }
+                else if (child.Name.LocalName == "AlternateContent")
+                {
+                    XElement choice = child.Element(Mc + "Choice");
+                    if (choice != null)
+                    {
+                        CollectParagraphs(choice, list);
+                    }
+                }
+                else if (child.Name.LocalName == "customXml" || child.Name.LocalName == "smartTag")
+                {
+                    CollectParagraphs(child, list);
+                }
+            }
+        }
+
+        private static void CollectParagraphsInTable(XElement tbl, List<string> list)
+        {
+            foreach (XElement child in tbl.Elements())
+            {
+                if (child.Name == W + "tr")
+                {
+                    CollectParagraphsInRow(child, list);
+                }
+                else if (child.Name == W + "sdt")
+                {
+                    XElement content = child.Element(W + "sdtContent");
+                    if (content != null)
+                    {
+                        CollectParagraphsInTable(content, list);
+                    }
+                }
+                else if (IsInsertion(child))
+                {
+                    CollectParagraphsInTable(child, list);
+                }
+                else if (child.Name.LocalName == "customXml")
+                {
+                    CollectParagraphsInTable(child, list);
+                }
+            }
+        }
+
+        private static void CollectParagraphsInRow(XElement tr, List<string> list)
+        {
+            foreach (XElement child in tr.Elements())
+            {
+                if (child.Name == W + "tc")
+                {
+                    if (!IsVMergeContinue(child))
+                    {
+                        CollectParagraphs(child, list);
+                    }
+                }
+                else if (child.Name == W + "sdt")
+                {
+                    XElement content = child.Element(W + "sdtContent");
+                    if (content != null)
+                    {
+                        CollectParagraphsInRow(content, list);
+                    }
+                }
+                else if (IsInsertion(child))
+                {
+                    CollectParagraphsInRow(child, list);
+                }
+            }
+        }
+
+        private static bool TryParagraphText(XElement paragraph, out string text)
+        {
+            var sb = new StringBuilder();
+            AppendInlines(paragraph, sb);
+            if (sb.Length == 0)
+            {
+                if (HasSectionBreak(paragraph))
+                {
+                    text = "\f";
+                    return true;
+                }
+
+                if (IsLayoutOnlyParagraph(paragraph) || IsDeletionOnlyParagraph(paragraph))
+                {
+                    text = null;
+                    return false;
+                }
+
+                text = "";
+                return true;
+            }
+
+            if (HasSectionBreak(paragraph))
+            {
+                sb.Append('\f');
+            }
+
+            text = sb.ToString();
+            return true;
+        }
+
         private static void AppendBlocks(XElement parent, StringBuilder sb)
         {
             foreach (XElement child in parent.Elements())

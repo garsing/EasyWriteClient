@@ -52,6 +52,8 @@ namespace WordDocumentRoundtripTest
                     && caseFilter.IndexOf("dalign", StringComparison.OrdinalIgnoreCase) >= 0;
                 bool onlyPwalk = !string.IsNullOrEmpty(caseFilter)
                     && caseFilter.IndexOf("pwalk", StringComparison.OrdinalIgnoreCase) >= 0;
+                bool onlyPOoxml = !string.IsNullOrEmpty(caseFilter)
+                    && caseFilter.IndexOf("p-ooxml", StringComparison.OrdinalIgnoreCase) >= 0;
                 bool onlyPsplit = !string.IsNullOrEmpty(caseFilter)
                     && caseFilter.IndexOf("psplit", StringComparison.OrdinalIgnoreCase) >= 0;
                 bool onlyPnth = !string.IsNullOrEmpty(caseFilter)
@@ -76,6 +78,10 @@ namespace WordDocumentRoundtripTest
                 {
                     RunPublicCodeNth(run);
                     RunConvertParaWalk(run, app);
+                }
+                else if (onlyPOoxml)
+                {
+                    RunOoxmlParagraphOrder(run, app);
                 }
                 else if (onlyPchars)
                 {
@@ -2491,6 +2497,136 @@ namespace WordDocumentRoundtripTest
             catch (Exception ex)
             {
                 run.CaseFail("fs-p-nth", ex.GetType().Name + ": " + ex.Message);
+            }
+        }
+
+        private static void RunOoxmlParagraphOrder(TestRun run, Word.Application app)
+        {
+            string path = ResolveAlignDocPath();
+            if (!System.IO.File.Exists(path))
+            {
+                run.CaseSkip("fs-p-ooxml", "文件不在: " + path);
+                return;
+            }
+
+            Word.Document doc = null;
+            bool weOpened = false;
+            bool oldUpdate = true;
+            try
+            {
+                string norm = System.IO.Path.GetFullPath(path);
+                foreach (Word.Document d in app.Documents)
+                {
+                    try
+                    {
+                        if (string.Equals(
+                            System.IO.Path.GetFullPath(d.FullName),
+                            norm,
+                            StringComparison.OrdinalIgnoreCase))
+                        {
+                            doc = d;
+                            break;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                if (doc == null)
+                {
+                    object fileName = path;
+                    object readOnly = true;
+                    object missing = System.Reflection.Missing.Value;
+                    doc = app.Documents.Open(
+                        ref fileName,
+                        ref missing,
+                        ref readOnly);
+                    weOpened = true;
+                }
+
+                oldUpdate = app.ScreenUpdating;
+                app.ScreenUpdating = false;
+                try
+                {
+                    app.DisplayAlerts = Word.WdAlertLevel.wdAlertsNone;
+                }
+                catch
+                {
+                }
+
+                Console.WriteLine("  --- OOXML 段落顺序对 display 的 P_ ---");
+                Console.WriteLine("    path=" + path);
+                Console.Out.Flush();
+
+                var options = ProcessDocumentOptions.ForGetDocumentContent("fs-p-ooxml");
+                options.ForceRefresh = true;
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                WordDocumentExtractor.ProcessingResult processed =
+                    WordDocumentExtractor.ProcessDocument(doc, options);
+                Console.WriteLine("    ProcessDocument " + sw.Elapsed.TotalSeconds.ToString("F2") + "s"
+                    + "  method=" + (processed != null ? processed.ProcessingMethod : "?"));
+                Console.Out.Flush();
+
+                string display = LoadParagraphDisplay(processed);
+                List<DisplayParagraphIndexMap.Hit> hits = DisplayParagraphIndexMap.Build(display);
+                List<string> ooxml = OoxmlStoryConvert.CollectParagraphTexts(OpenXmlPackage.Load(doc).Body);
+                Console.WriteLine("    OOXML 段落=" + ooxml.Count + "  P_=" + hits.Count
+                    + (ooxml.Count == hits.Count ? "  段数相等" : "  段数对不上"));
+                Console.Out.Flush();
+
+                int n = Math.Min(ooxml.Count, hits.Count);
+                int match = 0;
+                int mismatch = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    string left = NormParaForMap(ooxml[i] ?? "");
+                    string right = NormParaForMap(AutonumConvert.StripTags(
+                        DisplayStoryConvert.StripNeedle(hits[i].Inner ?? "")));
+                    if (string.Equals(left, right, StringComparison.Ordinal))
+                    {
+                        match++;
+                        continue;
+                    }
+
+                    mismatch++;
+                    if (mismatch <= 8)
+                    {
+                        Console.WriteLine("    对不上 [" + i + "] " + hits[i].Code);
+                        Console.WriteLine("      OOXML " + QuoteSpecial(Peek(left, 0, 36)));
+                        Console.WriteLine("      P_    " + QuoteSpecial(Peek(right, 0, 36)));
+                    }
+                }
+
+                Console.WriteLine("    核对  对上=" + match
+                    + "  对不上=" + mismatch
+                    + "  OOXML多=" + Math.Max(0, ooxml.Count - hits.Count)
+                    + "  P_多=" + Math.Max(0, hits.Count - ooxml.Count));
+                bool ok = ooxml.Count == hits.Count && mismatch == 0 && hits.Count > 0;
+                Ok(run, "fs-p-ooxml", ok,
+                    "OOXML=" + ooxml.Count
+                    + "  P_=" + hits.Count
+                    + "  对上=" + match
+                    + "  对不上=" + mismatch);
+            }
+            catch (Exception ex)
+            {
+                run.CaseFail("fs-p-ooxml", ex.GetType().Name + ": " + ex.Message);
+            }
+            finally
+            {
+                try
+                {
+                    app.ScreenUpdating = oldUpdate;
+                }
+                catch
+                {
+                }
+
+                if (weOpened && doc != null)
+                {
+                    CloseDoc(doc);
+                }
             }
         }
 
