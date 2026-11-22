@@ -158,10 +158,15 @@ namespace WordDocumentRoundtripTest
                     }
 
                     ToolResult applied = ApplyChar(session, doc, doc.Sentence("认不出"), Map("is_bold", "yes"));
-                    JObject final = CharFinal(session, doc, doc.Sentence("认不出"), "认不出");
                     string error = applied == null ? "" : (applied.Error ?? "");
                     bool reported = applied != null && !applied.Success
                         && error.IndexOf("布尔值无法识别", StringComparison.Ordinal) >= 0;
+                    if (!doc.ReadSentences())
+                    {
+                        return "重读句子失败 " + error;
+                    }
+
+                    JObject final = CharFinal(session, doc, doc.Sentence("认不出"), "认不出");
                     return reported && Flag(final, "is_bold") ? null : Fail(applied, final);
                 }
             });
