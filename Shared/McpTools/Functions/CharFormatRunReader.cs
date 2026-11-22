@@ -843,23 +843,23 @@ namespace WordAddIn1
             ThemeFonts theme)
         {
             var format = new Dictionary<string, object>();
-            XElement paragraph = run.Ancestors(W + "p").FirstOrDefault();
-            string pStyle = (string)paragraph?.Element(W + "pPr")?.Element(W + "pStyle")?.Attribute(W + "val");
-            foreach (XElement layer in Chain(styles, pStyle))
+            string rStyle = (string)run.Element(W + "rPr")?.Element(W + "rStyle")?.Attribute(W + "val");
+            if (string.IsNullOrEmpty(rStyle))
             {
-                ApplyRpr(format, layer, theme);
+                return format;
             }
 
-            XElement direct = run.Element(W + "rPr");
-            string rStyle = (string)direct?.Element(W + "rStyle")?.Attribute(W + "val");
             foreach (XElement layer in Chain(styles, rStyle))
             {
                 ApplyRpr(format, layer, theme);
             }
 
             FinishFontName(format, theme);
-            PutStyleName(format, styles, "paragraph_style", pStyle);
-            PutStyleName(format, styles, "character_style", rStyle);
+            if (format.Count > 0)
+            {
+                PutStyleName(format, styles, "character_style", rStyle);
+            }
+
             return format;
         }
 

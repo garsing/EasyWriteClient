@@ -455,10 +455,13 @@ namespace WordAddIn1
             direct = PprToPartial(paragraph?.Element(W + "pPr"));
             string styleId = GetParagraphStyleId(paragraph);
             style = MergeLayers(StyleChainParaProps(styleId, styles));
-            string styleName = StyleName(styles, styleId);
-            if (!string.IsNullOrEmpty(styleName))
+            if (style.Count > 0)
             {
-                style["paragraph_style"] = styleName;
+                string styleName = StyleName(styles, styleId);
+                if (!string.IsNullOrEmpty(styleName))
+                {
+                    style["paragraph_style"] = styleName;
+                }
             }
             final = ExtractEffective(paragraph, styles, docDefaults);
             ParaFormatCatalog.OmitReadDefaults(final, "");
