@@ -87,12 +87,16 @@ namespace WordDocumentRoundtripTest
                     }
 
                     FormatProbe.DeleteSearchFiles(SessionDir);
-                    ToolResult result = Search(session, doc.Id, "character", Q("is_bold", "true"), null);
-                    string error = result == null ? "" : (result.Error ?? "");
-                    return result != null && !result.Success
-                        && error.IndexOf("unknown tool", StringComparison.OrdinalIgnoreCase) < 0
+                    JObject data = Hit(session, doc, "character", Q("is_bold", "true"), null, out string err);
+                    if (err != null && Num(data, "count") != 0)
+                    {
+                        return err;
+                    }
+
+                    JArray file = FileItems("format_search_character.json");
+                    return Num(data, "count") == 0 && Arr(data, "items").Count == 0 && file != null && file.Count == 0 && Txt(data, "path").Length > 0
                         ? null
-                        : Dump(result);
+                        : (data == null ? err : data.ToString());
                 }
             });
         }
@@ -650,7 +654,7 @@ namespace WordDocumentRoundtripTest
             });
             Case(run, "fq-file-overwrite", () =>
             {
-                using (FormatProbe doc = Fresh(session, "覆盖加粗再字号。"))
+                using (FormatProbe doc = Fresh(session, "只加粗。十六磅加粗。"))
                 {
                     string err = Prepare(doc, true, false);
                     if (err != null)
@@ -658,7 +662,8 @@ namespace WordDocumentRoundtripTest
                         return err;
                     }
 
-                    if (!session.SetTextChar(doc.Path, "覆盖加粗", "", 16, true, false))
+                    if (!session.SetTextChar(doc.Path, "只加粗", "", 0, true, false)
+                        || !session.SetTextChar(doc.Path, "十六磅加粗", "", 16, true, false))
                     {
                         return "铺覆盖字失败";
                     }
@@ -666,10 +671,27 @@ namespace WordDocumentRoundtripTest
                     Hit(session, doc, "character", Q("is_bold", "true"), null, out err);
                     JObject data = Hit(session, doc, "character", Q("font_size", "16"), null, out err);
                     JArray file = FileItems("format_search_character.json");
+                    JArray items = Arr(data, "items");
+                    bool second = err == null
+                        && items.Count > 0
+                        && Txt(data, "path").IndexOf("format_search_character.json", StringComparison.Ordinal) >= 0
+                        && SameItems(items, file);
+                    if (second)
+                    {
+                        foreach (JToken item in items)
+                        {
+                            JObject format = Obj(item, "char_format");
+                            if (!Flag(format, "is_bold") || !Txt(format, "font_size").StartsWith("16", StringComparison.Ordinal))
+                            {
+                                second = false;
+                                break;
+                            }
+                        }
+                    }
+
                     string blob = file == null ? "" : file.ToString();
-                    return err == null && Txt(data, "path").IndexOf("format_search_character.json", StringComparison.Ordinal) >= 0
-                        && blob.IndexOf("16", StringComparison.Ordinal) >= 0
-                        && blob.IndexOf("true", StringComparison.Ordinal) < 0
+                    return second && blob.IndexOf("十六磅加粗", StringComparison.Ordinal) >= 0
+                        && blob.IndexOf("只加粗", StringComparison.Ordinal) < 0
                         ? null
                         : (err ?? blob);
                 }
@@ -749,12 +771,13 @@ namespace WordDocumentRoundtripTest
                         return err;
                     }
 
-                    if (!RewriteBold(FormatProbe.FileOf(SessionDir, "format_search_character.json"), false))
+                    string file = FormatProbe.FileOf(SessionDir, "format_search_character.json");
+                    if (!RewriteBold(file, false))
                     {
                         return "改文件失败";
                     }
 
-                    ToolResult applied = session.ApplyDocumentFormat(Map(doc.Id, "path", Txt(data, "path")));
+                    ToolResult applied = session.ApplyDocumentFormat(Map(doc.Id, "path", file));
                     bool bold;
                     string font;
                     bool under;

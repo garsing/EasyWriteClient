@@ -332,9 +332,18 @@ namespace WordAddIn1
                 return false;
             }
 
-            if (query.Count > 1 && match != "and" && match != "or")
+            bool matchOk = match == "and" || match == "or";
+            if (string.IsNullOrEmpty(match))
             {
-                error = "多条 query 必须写 match：and 或 or";
+                if (query.Count > 1)
+                {
+                    error = "多条 query 必须写 match：and 或 or";
+                    return false;
+                }
+            }
+            else if (!matchOk)
+            {
+                error = "match 必须是 and 或 or";
                 return false;
             }
 
