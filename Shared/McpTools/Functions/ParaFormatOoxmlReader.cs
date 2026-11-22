@@ -138,6 +138,7 @@ namespace WordAddIn1
                 map[id] = new StyleRec
                 {
                     StyleId = id,
+                    Name = (string)style.Element(W + "name")?.Attribute(W + "val") ?? "",
                     BasedOn = basedOn,
                     Props = PprToPartial(style.Element(W + "pPr"))
                 };
@@ -192,6 +193,7 @@ namespace WordAddIn1
         public sealed class StyleRec
         {
             public string StyleId;
+            public string Name;
             public string BasedOn;
             public Dictionary<string, object> Props;
         }
@@ -257,6 +259,17 @@ namespace WordAddIn1
             }
 
             return rows[0].Elements(W + "tc").Count() == 1;
+        }
+
+        private static string StyleName(Dictionary<string, StyleRec> styles, string styleId)
+        {
+            if (string.IsNullOrEmpty(styleId) || styles == null || !styles.TryGetValue(styleId, out StyleRec rec))
+            {
+                return "";
+            }
+
+            string raw = string.IsNullOrEmpty(rec.Name) ? styleId : rec.Name;
+            return StructureStyleCatalog.VisibleStyleName(raw);
         }
 
         private static string GetParagraphStyleId(XElement paragraph)
@@ -442,6 +455,11 @@ namespace WordAddIn1
             direct = PprToPartial(paragraph?.Element(W + "pPr"));
             string styleId = GetParagraphStyleId(paragraph);
             style = MergeLayers(StyleChainParaProps(styleId, styles));
+            string styleName = StyleName(styles, styleId);
+            if (!string.IsNullOrEmpty(styleName))
+            {
+                style["paragraph_style"] = styleName;
+            }
             final = ExtractEffective(paragraph, styles, docDefaults);
             ParaFormatCatalog.OmitReadDefaults(final, "");
         }

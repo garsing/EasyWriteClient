@@ -353,6 +353,26 @@ namespace WordAddIn1
             };
         }
 
+        internal static string VisibleStyleName(string wName)
+        {
+            if (string.IsNullOrEmpty(wName))
+            {
+                return wName;
+            }
+
+            Match heading = Regex.Match(
+                wName.Trim(),
+                @"^heading\s+(\d+)(\s+Char)?$",
+                RegexOptions.IgnoreCase);
+            if (heading.Success)
+            {
+                string index = heading.Groups[1].Value;
+                return heading.Groups[2].Success ? "标题 " + index + " 字符" : "标题 " + index;
+            }
+
+            return DisplayName(wName);
+        }
+
         private static string DisplayName(string wName)
         {
             if (string.IsNullOrEmpty(wName))

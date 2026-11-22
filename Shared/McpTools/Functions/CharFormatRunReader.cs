@@ -401,6 +401,7 @@ namespace WordAddIn1
 
         private sealed class StyleRec
         {
+            public string Name;
             public string BasedOn;
             public XElement Rpr;
         }
@@ -443,6 +444,7 @@ namespace WordAddIn1
 
                 map[id] = new StyleRec
                 {
+                    Name = (string)style.Element(W + "name")?.Attribute(W + "val") ?? "",
                     BasedOn = (string)style.Element(W + "basedOn")?.Attribute(W + "val") ?? "",
                     Rpr = style.Element(W + "rPr")
                 };
@@ -856,7 +858,24 @@ namespace WordAddIn1
             }
 
             FinishFontName(format, theme);
+            PutStyleName(format, styles, "paragraph_style", pStyle);
+            PutStyleName(format, styles, "character_style", rStyle);
             return format;
+        }
+
+        private static void PutStyleName(
+            Dictionary<string, object> format,
+            Dictionary<string, StyleRec> styles,
+            string key,
+            string styleId)
+        {
+            if (string.IsNullOrEmpty(styleId) || styles == null || !styles.TryGetValue(styleId, out StyleRec rec))
+            {
+                return;
+            }
+
+            string raw = string.IsNullOrEmpty(rec.Name) ? styleId : rec.Name;
+            format[key] = StructureStyleCatalog.VisibleStyleName(raw);
         }
 
         private static List<XElement> Chain(Dictionary<string, StyleRec> styles, string styleId)
