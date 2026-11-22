@@ -53,7 +53,7 @@ namespace WordAddIn1
             DocumentState.BindAndActivate(doc);
 
             string validationError = ValidateArgs(args, out string mode, out List<string> targetParagraphCodes,
-                out Dictionary<string, object> paraFormat, out List<string> warnings);
+                out List<string> sentenceCodes, out Dictionary<string, object> paraFormat, out List<string> warnings);
             if (validationError != null)
             {
                 return Task.FromResult(new ToolResult { Success = false, Error = validationError });
@@ -65,10 +65,12 @@ namespace WordAddIn1
                 return Task.FromResult(new ToolResult { Success = false, Error = earlyTextError });
             }
 
+            bool sentenceInput = sentenceCodes.Count > 0;
+            List<string> locateCodes = sentenceInput ? sentenceCodes : targetParagraphCodes;
             InsertTargetLocatorHelper.LocateSpanBatchResult locatedBatch = InsertTargetLocatorHelper.LocateFormatSpan(
                 doc,
-                targetParagraphCodes,
-                paragraph: true,
+                locateCodes,
+                paragraph: !sentenceInput,
                 scopeArgs.TableId,
                 earlyTextSpan,
                 disallowBackendApi,
@@ -111,7 +113,8 @@ namespace WordAddIn1
 
             targetSpan = ApplyToTargetParagraphSpan(
                 doc,
-                targetParagraphCodes,
+                locateCodes,
+                sentenceInput,
                 scopeArgs,
                 paraFormat,
                 appliedParagraphCodes,
@@ -153,7 +156,8 @@ namespace WordAddIn1
 
         private static Word.Range ApplyToTargetParagraphSpan(
             Word.Document doc,
-            List<string> targetParagraphCodes,
+            List<string> targetCodes,
+            bool sentenceInput,
             ApplyFormatScopeArgs scopeArgs,
             Dictionary<string, object> paraFormat,
             List<string> appliedParagraphCodes,
@@ -166,21 +170,21 @@ namespace WordAddIn1
             TextSpan textSpan,
             Word.Range presetSpan)
         {
-            foreach (string code in targetParagraphCodes)
+            foreach (string code in targetCodes)
             {
-                if (!FormatContextHelper.IsParagraphCode(code))
+                if (!sentenceInput && !FormatContextHelper.IsParagraphCode(code))
                 {
                     skippedParagraphCodes.Add(code);
                     applyErrors.Add($"{code}: 非 P_ 编码");
                 }
-                else if (string.IsNullOrEmpty(DocumentState.GetParagraphContent(code)))
+                else if (!sentenceInput && string.IsNullOrEmpty(DocumentState.GetParagraphContent(code)))
                 {
                     skippedParagraphCodes.Add(code);
                     applyErrors.Add($"{code}: 映射表中不存在");
                 }
             }
 
-            if (skippedParagraphCodes.Count >= targetParagraphCodes.Count)
+            if (!sentenceInput && skippedParagraphCodes.Count >= targetCodes.Count)
             {
                 return null;
             }
@@ -188,7 +192,7 @@ namespace WordAddIn1
             Word.Range targetSpan = presetSpan;
             if (targetSpan == null)
             {
-                foreach (string code in targetParagraphCodes)
+                foreach (string code in targetCodes)
                 {
                     if (!skippedParagraphCodes.Contains(code))
                     {
@@ -204,7 +208,9 @@ namespace WordAddIn1
             {
                 List<string> fieldWarnings;
                 List<Dictionary<string, object>> fieldFormatWarnings;
-                List<string> appliedFields = ParaFormatWriter.Apply(
+                List<string> appliedFields = sentenceInput
+                    ? ApplyTouchedParagraphs(targetSpan, paraFormat, out fieldWarnings, out fieldFormatWarnings)
+                    : ParaFormatWriter.Apply(
                     targetSpan, paraFormat, out fieldWarnings, out fieldFormatWarnings);
                 if (fieldFormatWarnings != null)
                 {
@@ -226,7 +232,7 @@ namespace WordAddIn1
                     }
                 }
 
-                foreach (string code in targetParagraphCodes)
+                foreach (string code in targetCodes)
                 {
                     if (!skippedParagraphCodes.Contains(code))
                     {
@@ -236,7 +242,7 @@ namespace WordAddIn1
             }
             catch (Exception ex)
             {
-                foreach (string code in targetParagraphCodes)
+                foreach (string code in targetCodes)
                 {
                     if (!skippedParagraphCodes.Contains(code))
                     {
@@ -251,6 +257,73 @@ namespace WordAddIn1
             return targetSpan;
         }
 
+        private static List<string> ApplyTouchedParagraphs(
+            Word.Range range,
+            Dictionary<string, object> paraFormat,
+            out List<string> warnings,
+            out List<Dictionary<string, object>> formatWarnings)
+        {
+            warnings = new List<string>();
+            formatWarnings = new List<Dictionary<string, object>>();
+            var applied = new List<string>();
+            var seen = new HashSet<int>();
+            if (range?.Paragraphs == null)
+            {
+                return applied;
+            }
+
+            foreach (Word.Paragraph paragraph in range.Paragraphs)
+            {
+                if (paragraph?.Range == null)
+                {
+                    continue;
+                }
+
+                if (paragraph.Range.Start >= range.End || paragraph.Range.End <= range.Start)
+                {
+                    continue;
+                }
+
+                if (!seen.Add(paragraph.Range.Start))
+                {
+                    continue;
+                }
+
+                List<string> oneWarnings;
+                List<Dictionary<string, object>> oneFormats;
+                List<string> oneApplied = ParaFormatWriter.Apply(
+                    paragraph.Range, paraFormat, out oneWarnings, out oneFormats);
+                if (oneWarnings != null)
+                {
+                    foreach (string warning in oneWarnings)
+                    {
+                        if (!warnings.Contains(warning))
+                        {
+                            warnings.Add(warning);
+                        }
+                    }
+                }
+
+                if (oneFormats != null)
+                {
+                    formatWarnings.AddRange(oneFormats);
+                }
+
+                if (oneApplied != null)
+                {
+                    foreach (string field in oneApplied)
+                    {
+                        if (!applied.Contains(field))
+                        {
+                            applied.Add(field);
+                        }
+                    }
+                }
+            }
+
+            return applied;
+        }
+
         private static Dictionary<string, object> BuildResponseData(
             string mode,
             List<string> appliedParagraphCodes,
@@ -260,23 +333,10 @@ namespace WordAddIn1
             List<string> appliedFields,
             List<string> applyErrors)
         {
-            var sentenceCodes = new List<string>();
-            foreach (string pCode in appliedParagraphCodes)
-            {
-                foreach (string sCode in ParagraphCodeResolver.ExpandParagraphToSentenceCodes(pCode))
-                {
-                    if (!sentenceCodes.Contains(sCode))
-                    {
-                        sentenceCodes.Add(sCode);
-                    }
-                }
-            }
-
             var data = new Dictionary<string, object>
             {
                 ["mode"] = mode,
                 ["affected_paragraph_codes"] = appliedParagraphCodes,
-                ["sentence_codes_in_paragraph"] = sentenceCodes,
                 ["skipped_paragraph_codes"] = skippedParagraphCodes,
             };
 
@@ -320,7 +380,7 @@ namespace WordAddIn1
                 return false;
             }
 
-            string validationError = ValidateArgs(args, out _, out _, out _, out _);
+            string validationError = ValidateArgs(args, out _, out _, out _, out _, out _);
             if (validationError != null)
             {
                 failure = DocumentCheckpointMutatingTools.Fail(validationError);
@@ -334,16 +394,33 @@ namespace WordAddIn1
             Dictionary<string, object> args,
             out string mode,
             out List<string> targetParagraphCodes,
+            out List<string> sentenceCodes,
             out Dictionary<string, object> paraFormat,
             out List<string> warnings)
         {
             mode = "explicit";
             targetParagraphCodes = new List<string>();
+            sentenceCodes = new List<string>();
             paraFormat = null;
             warnings = new List<string>();
 
             ResolveTargetParagraphCodes(args, out targetParagraphCodes, warnings);
             if (targetParagraphCodes.Count == 0)
+            {
+                string sentenceCsv = args != null && args.ContainsKey("target_codes")
+                    ? args["target_codes"]?.ToString()?.Trim()
+                    : "";
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                foreach (string code in FormatContextHelper.ParseSentenceCodes(sentenceCsv))
+                {
+                    if (seen.Add(code))
+                    {
+                        sentenceCodes.Add(code);
+                    }
+                }
+            }
+
+            if (targetParagraphCodes.Count == 0 && sentenceCodes.Count == 0)
             {
                 return "缺少 target_paragraph_codes 或 target_codes";
             }
@@ -391,29 +468,6 @@ namespace WordAddIn1
                 }
 
                 return;
-            }
-
-            string sentenceCsv = args.ContainsKey("target_codes")
-                ? args["target_codes"]?.ToString()?.Trim()
-                : "";
-            if (string.IsNullOrEmpty(sentenceCsv))
-            {
-                return;
-            }
-
-            warnings.Add("deprecated_target_codes_resolved_to_paragraph");
-            foreach (string sentenceCode in FormatContextHelper.ParseSentenceCodes(sentenceCsv))
-            {
-                string paragraphCode = ParagraphCodeResolver.ResolveParagraphFromSentence(sentenceCode);
-                if (string.IsNullOrEmpty(paragraphCode))
-                {
-                    continue;
-                }
-
-                if (seen.Add(paragraphCode))
-                {
-                    targetParagraphCodes.Add(paragraphCode);
-                }
             }
         }
 

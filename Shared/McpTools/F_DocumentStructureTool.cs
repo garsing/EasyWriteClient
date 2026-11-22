@@ -248,24 +248,33 @@ namespace WordAddIn1
                 return new ToolResult { Success = false, Error = "all 不能和定位一起用。" };
             }
 
-            string display = ReadLocateDisplay();
-            if (all)
+            if (!all)
             {
-                Dictionary<string, object> one = StructureStyleClearer.ClearAll(
-                    doc,
-                    styles,
-                    display,
-                    body,
-                    disallowBackendApi);
-                bool ok = one.ContainsKey("ok") && one["ok"] is bool bit && bit;
+                // 按定位圈窗口先不能用：太复杂，而且 P_ 转 S_ 圈范围处理不了句子黏连。
                 return new ToolResult
                 {
-                    Success = ok,
-                    Data = one,
-                    Error = ok ? null : one["error"]?.ToString()
+                    Success = false,
+                    Error = "按定位清样式先不能用。圈窗口太复杂，而且 P_ 转 S_ 处理不了句子黏连。请用全文清。"
                 };
             }
 
+            string display = ReadLocateDisplay();
+            Dictionary<string, object> one = StructureStyleClearer.ClearAll(
+                doc,
+                styles,
+                display,
+                body,
+                disallowBackendApi);
+            bool ok = one.ContainsKey("ok") && one["ok"] is bool bit && bit;
+            return new ToolResult
+            {
+                Success = ok,
+                Data = one,
+                Error = ok ? null : one["error"]?.ToString()
+            };
+
+            // 按定位圈窗口先不能用：太复杂，而且 P_ 转 S_ 圈范围处理不了句子黏连。
+#if false
             Word.Application app = doc.Application;
             bool screen = true;
             try
@@ -318,6 +327,7 @@ namespace WordAddIn1
                     }
                 }
             }
+#endif
         }
 
         private static bool IsAll(Dictionary<string, object> args)

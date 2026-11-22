@@ -418,14 +418,12 @@ namespace WordAddIn1
                 return null;
             }
 
-            IReadOnlyList<string> sentenceCodes = ParagraphCodeResolver.ExpandParagraphToSentenceCodes(paragraphCode);
             var entry = new Dictionary<string, object>
             {
                 ["paragraph_code"] = paragraphCode,
                 ["text_preview"] = BuildTextPreview(content),
                 ["is_target"] = isTarget,
                 ["para_format"] = ParaFormatReader.Extract(paragraphRange),
-                ["sentence_codes_in_paragraph"] = sentenceCodes.ToList(),
             };
             FormatLayerLookup.ApplyParagraph(paragraphRange.Document, paragraphCode, entry);
             return entry;
@@ -470,17 +468,14 @@ namespace WordAddIn1
             };
             SemanticRoleHelper.RoleAnalysis role = SemanticRoleHelper.Analyze(code, content, roleSnap);
             Word.Range paragraphRange = range.Paragraphs?.Count > 0 ? range.Paragraphs[1].Range : range;
-            string paragraphCode = ParagraphCodeResolver.ResolveParagraphFromSentence(code) ?? "";
             var entry = new Dictionary<string, object>
             {
                 ["code"] = code,
-                ["paragraph_code"] = paragraphCode,
                 ["text_preview"] = BuildTextPreview(content),
                 ["is_target"] = isTarget,
                 ["runs"] = runs,
                 ["para_format"] = ParaFormatReader.Extract(paragraphRange)
             };
-            FormatLayerLookup.ApplyParagraph(paragraphRange.Document, paragraphCode, entry);
             SemanticRoleHelper.AppendRoleFields(entry, role);
             DbgLog(
                 $"entry {code} style_role={role.StyleRole} text_role={role.TextRole} " +

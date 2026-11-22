@@ -403,6 +403,7 @@ namespace WordAddIn1
         {
             public string Name;
             public string BasedOn;
+            public string Link;
             public XElement Rpr;
         }
 
@@ -446,6 +447,7 @@ namespace WordAddIn1
                 {
                     Name = (string)style.Element(W + "name")?.Attribute(W + "val") ?? "",
                     BasedOn = (string)style.Element(W + "basedOn")?.Attribute(W + "val") ?? "",
+                    Link = (string)style.Element(W + "link")?.Attribute(W + "val") ?? "",
                     Rpr = style.Element(W + "rPr")
                 };
             }
@@ -657,8 +659,8 @@ namespace WordAddIn1
             }
 
             Dictionary<string, object> snap = BuildSnapshot(run, styles, theme);
-            Dictionary<string, object> direct = BuildDirect(run, theme);
-            Dictionary<string, object> style = BuildStyle(run, styles, theme);
+            Dictionary<string, object> direct = BuildDirect(run, styles, theme);
+            List<Dictionary<string, object>> style = BuildStyle(run, styles, theme);
             CharFormatCatalog.OmitReadDefaults(snap);
             int runStart = joined.Length;
             joined.Append(text);
@@ -797,6 +799,11 @@ namespace WordAddIn1
                 ApplyRpr(format, layer, theme);
             }
 
+            foreach (XElement layer in Chain(styles, LinkOf(styles, pStyle)))
+            {
+                ApplyRpr(format, layer, theme);
+            }
+
             XElement direct = run.Element(W + "rPr");
             string rStyle = (string)direct?.Element(W + "rStyle")?.Attribute(W + "val");
             foreach (XElement layer in Chain(styles, rStyle))
@@ -829,38 +836,95 @@ namespace WordAddIn1
             }
         }
 
-        private static Dictionary<string, object> BuildDirect(XElement run, ThemeFonts theme)
-        {
-            var format = new Dictionary<string, object>();
-            ApplyRpr(format, run?.Element(W + "rPr"), theme);
-            FinishFontName(format, theme);
-            return format;
-        }
-
-        private static Dictionary<string, object> BuildStyle(
+        private static Dictionary<string, object> BuildDirect(
             XElement run,
             Dictionary<string, StyleRec> styles,
             ThemeFonts theme)
         {
             var format = new Dictionary<string, object>();
-            string rStyle = (string)run.Element(W + "rPr")?.Element(W + "rStyle")?.Attribute(W + "val");
-            if (string.IsNullOrEmpty(rStyle))
+            XElement paragraph = run?.Ancestors(W + "p").FirstOrDefault();
+            string pStyle = (string)paragraph?.Element(W + "pPr")?.Element(W + "pStyle")?.Attribute(W + "val");
+            foreach (XElement layer in Chain(styles, pStyle))
             {
-                return format;
+                ApplyRpr(format, layer, theme);
             }
 
-            foreach (XElement layer in Chain(styles, rStyle))
+            ApplyRpr(format, run?.Element(W + "rPr"), theme);
+            FinishFontName(format, theme);
+            return format;
+        }
+
+        private static List<Dictionary<string, object>> BuildStyle(
+            XElement run,
+            Dictionary<string, StyleRec> styles,
+            ThemeFonts theme)
+        {
+            var list = new List<Dictionary<string, object>>();
+            XElement paragraph = run?.Ancestors(W + "p").FirstOrDefault();
+            string pStyle = (string)paragraph?.Element(W + "pPr")?.Element(W + "pStyle")?.Attribute(W + "val");
+            string link = LinkOf(styles, pStyle);
+            if (!string.IsNullOrEmpty(link))
+            {
+                list.Add(StyleItem(styles, theme, link, "paragraph"));
+            }
+
+            string rStyle = (string)run?.Element(W + "rPr")?.Element(W + "rStyle")?.Attribute(W + "val");
+            if (!string.IsNullOrEmpty(rStyle))
+            {
+                list.Add(StyleItem(styles, theme, rStyle, "character"));
+            }
+
+            return list;
+        }
+
+        private static string LinkOf(Dictionary<string, StyleRec> styles, string styleId)
+        {
+            if (string.IsNullOrEmpty(styleId) || styles == null || !styles.TryGetValue(styleId, out StyleRec rec))
+            {
+                return "";
+            }
+
+            return rec.Link ?? "";
+        }
+
+        private static Dictionary<string, object> StyleItem(
+            Dictionary<string, StyleRec> styles,
+            ThemeFonts theme,
+            string styleId,
+            string linkKind)
+        {
+            var format = new Dictionary<string, object>();
+            foreach (XElement layer in Chain(styles, styleId))
             {
                 ApplyRpr(format, layer, theme);
             }
 
             FinishFontName(format, theme);
-            if (format.Count > 0)
+            var item = new Dictionary<string, object>();
+            foreach (KeyValuePair<string, object> pair in format)
             {
-                PutStyleName(format, styles, "character_style", rStyle);
+                if (pair.Key.StartsWith("__", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                item[pair.Key] = pair.Value;
             }
 
-            return format;
+            item["name"] = StyleVisibleName(styles, styleId);
+            item["link"] = linkKind;
+            return item;
+        }
+
+        private static string StyleVisibleName(Dictionary<string, StyleRec> styles, string styleId)
+        {
+            string raw = styleId ?? "";
+            if (styles != null && styles.TryGetValue(styleId ?? "", out StyleRec rec) && !string.IsNullOrEmpty(rec.Name))
+            {
+                raw = rec.Name;
+            }
+
+            return StructureStyleCatalog.VisibleStyleName(raw);
         }
 
         private static void PutStyleName(

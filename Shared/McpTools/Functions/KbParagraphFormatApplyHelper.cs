@@ -316,23 +316,10 @@ namespace WordAddIn1
             string docName,
             string kbUuid)
         {
-            var sentenceCodes = new List<string>();
-            foreach (string pCode in appliedParagraphCodes)
-            {
-                foreach (string sCode in ParagraphCodeResolver.ExpandParagraphToSentenceCodes(pCode))
-                {
-                    if (!sentenceCodes.Contains(sCode))
-                    {
-                        sentenceCodes.Add(sCode);
-                    }
-                }
-            }
-
             var data = new Dictionary<string, object>
             {
                 ["mode"] = "explicit",
                 ["affected_paragraph_codes"] = appliedParagraphCodes,
-                ["sentence_codes_in_paragraph"] = sentenceCodes,
                 ["skipped_paragraph_codes"] = skippedParagraphCodes,
                 ["target_storage_doc_uuid"] = storageUuid,
                 ["target_document_name"] = docName,

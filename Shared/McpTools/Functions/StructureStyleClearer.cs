@@ -18,6 +18,9 @@ namespace WordAddIn1
             XElement body,
             bool disallowBackendApi)
         {
+            // 按定位圈窗口先不能用：太复杂，而且 P_ 转 S_ 圈范围处理不了句子黏连。
+            return Fail("按定位清样式先不能用。圈窗口太复杂，而且 P_ 转 S_ 处理不了句子黏连。请用全文清。");
+#if false
             Stopwatch total = Stopwatch.StartNew();
             Stopwatch sw = Stopwatch.StartNew();
             string codeError = ReadCodes(item, out List<string> codes, out bool paragraph, out TextSpan span);
@@ -100,6 +103,7 @@ namespace WordAddIn1
             Dictionary<string, object> result = Unlink(doc, chosen, styles, disallowBackendApi);
             EasyWriteDiagnostics.LogTiming("style_clear.item_total", total.ElapsedMilliseconds);
             return result;
+#endif
         }
 
         public static Dictionary<string, object> ClearAll(

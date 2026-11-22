@@ -46,47 +46,49 @@ namespace WordAddIn1
                 return Fail("定位失败。");
             }
 
-            int fullCount = 0;
-            int partialCount = 0;
-            for (int i = 0; i < paragraphs.Count; i++)
-            {
-                if (CoversWhole(owners[i], paragraphs[i]))
-                {
-                    fullCount++;
-                }
-                else
-                {
-                    partialCount++;
-                }
-            }
-
             bool paragraphStyle = style.Support == "both" || style.Support == "paragraph";
-            if (style.Support == "paragraph" && fullCount == 0)
-            {
-                return Done(code, style, "text", warnings, ParagraphSkippedNote);
-            }
-
+            bool characterStyle = style.Support == "both" || style.Support == "character";
+            var seenParagraphs = new HashSet<int>();
             try
             {
-                for (int i = 0; i < paragraphs.Count; i++)
+                if (paragraphStyle)
                 {
-                    if (CoversWhole(owners[i], paragraphs[i]))
+                    foreach (Word.Range range in plan.Ranges)
                     {
-                        ApplyWhole(doc, style, paragraphs[i]);
+                        foreach (Word.Paragraph paragraph in range.Paragraphs)
+                        {
+                            if (!Intersects(range, paragraph) || paragraph.Range == null)
+                            {
+                                continue;
+                            }
+
+                            if (!seenParagraphs.Add(paragraph.Range.Start))
+                            {
+                                continue;
+                            }
+
+                            ApplyParagraphSide(doc, style, paragraph);
+                        }
                     }
                 }
 
-                for (int i = 0; i < paragraphs.Count; i++)
+                if (characterStyle)
                 {
-                    if (CoversWhole(owners[i], paragraphs[i]))
+                    foreach (Word.Range range in plan.Ranges)
                     {
-                        continue;
-                    }
+                        foreach (Word.Paragraph paragraph in range.Paragraphs)
+                        {
+                            if (!Intersects(range, paragraph))
+                            {
+                                continue;
+                            }
 
-                    Word.Range slice = Slice(doc, owners[i], paragraphs[i]);
-                    if (slice != null)
-                    {
-                        ApplySlice(doc, style, slice);
+                            Word.Range slice = Slice(doc, range, paragraph);
+                            if (slice != null)
+                            {
+                                ApplySlice(doc, style, slice);
+                            }
+                        }
                     }
                 }
             }
@@ -95,18 +97,19 @@ namespace WordAddIn1
                 return Fail(ex.Message);
             }
 
-            string scope = partialCount == 0 ? "paragraph" : "text";
-            string note = null;
-            if (paragraphStyle && fullCount == 0)
+            string scope = "text";
+            foreach (Word.Range range in plan.Ranges)
             {
-                note = CharacterApplyNote;
-            }
-            else if (paragraphStyle && partialCount > 0)
-            {
-                note = MixedParagraphNote;
+                foreach (Word.Paragraph paragraph in range.Paragraphs)
+                {
+                    if (Intersects(range, paragraph) && CoversWhole(range, paragraph))
+                    {
+                        scope = "paragraph";
+                    }
+                }
             }
 
-            return Done(code, style, scope, warnings, note);
+            return Done(code, style, scope, warnings, null);
         }
 
         private sealed class ApplyPlan
@@ -365,6 +368,15 @@ namespace WordAddIn1
             }
 
             return doc.Range(start, end);
+        }
+
+        private static void ApplyParagraphSide(
+            Word.Document doc,
+            StructureStyleRecord style,
+            Word.Paragraph paragraph)
+        {
+            paragraph.Format.Reset();
+            SetStyle(doc, paragraph.Range, Names(style, false), false);
         }
 
         private static void ApplyWhole(Word.Document doc, StructureStyleRecord style, Word.Paragraph paragraph)
