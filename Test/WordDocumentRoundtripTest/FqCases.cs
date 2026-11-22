@@ -151,7 +151,7 @@ namespace WordDocumentRoundtripTest
                     }
 
                     JObject item = OneItem(data);
-                    return item != null && Txt(item, "target_codes") == doc.Sentence("整句加粗") && item["text"] == null
+                    return item != null && Txt(item, "target_codes") == doc.Sentence("整句加粗") && Txt(item, "text") == "整句加粗"
                         ? null
                         : data.ToString();
                 }
@@ -207,11 +207,13 @@ namespace WordDocumentRoundtripTest
                         return err;
                     }
 
-                    JObject item = OneItem(data);
-                    string codes = doc.Sentence("连续甲句") + "," + doc.Sentence("连续乙句");
-                    return item != null && Txt(item, "target_codes") == codes && item["text"] == null
-                        ? null
-                        : data.ToString();
+                    JArray items = Arr(data, "items");
+                    bool two = items.Count == 2
+                        && Txt(items[0], "target_codes") == doc.Sentence("连续甲句")
+                        && Txt(items[0], "text") == "连续甲句"
+                        && Txt(items[1], "target_codes") == doc.Sentence("连续乙句")
+                        && Txt(items[1], "text") == "连续乙句";
+                    return two ? null : data.ToString();
                 }
             });
             Case(run, "fq-char-link", () =>
