@@ -692,6 +692,68 @@ namespace WordAddIn1
             return chunkParts;
         }
 
+        internal sealed class ParagraphMapProjection
+        {
+            public int SourceIndex = -1;
+            public string Text;
+        }
+
+        internal static List<ParagraphMapProjection> ProjectParagraphMap(
+            string readText,
+            List<WordReader.ParagraphMapSpan> spans)
+        {
+            var rows = new List<ParagraphMapProjection>();
+            if (string.IsNullOrEmpty(readText))
+            {
+                return rows;
+            }
+
+            List<string> parts = SplitTextByCells(readText, out _, false);
+            int pos = 0;
+            for (int i = 0; i < parts.Count; i++)
+            {
+                string part = parts[i] ?? "";
+                int partStart = pos;
+                pos += part.Length;
+                if (i % 2 == 0 || part.Length == 0)
+                {
+                    continue;
+                }
+
+                int local = 0;
+                foreach (ParagraphBlock block in SplitTextByParagraphs.Split(part))
+                {
+                    string stored = block.StoredText ?? "";
+                    int blockStart = partStart + local;
+                    int blockEnd = blockStart + stored.Length;
+                    local += stored.Length;
+                    int source = -1;
+                    if (spans != null)
+                    {
+                        for (int s = 0; s < spans.Count; s++)
+                        {
+                            WordReader.ParagraphMapSpan span = spans[s];
+                            if (span.Start < blockEnd && span.End > blockStart)
+                            {
+                                source = span.Index;
+                                break;
+                            }
+                        }
+                    }
+
+                    string text = UnescapeHtmlEntities(block.Text ?? "");
+                    text = AutonumConvert.ToVisible(text);
+                    rows.Add(new ParagraphMapProjection
+                    {
+                        SourceIndex = source,
+                        Text = text
+                    });
+                }
+            }
+
+            return rows;
+        }
+
         private static List<string> SplitTextByCells(string text, out List<int> segMarks, bool detailLog = false)
         {
             segMarks = new List<int>();
@@ -1009,6 +1071,7 @@ namespace WordAddIn1
 
             // 第二步半：移除 </cell>、</row> 和 </table> 后面的换行符 \n
             ExtractDetailLog(detailLog, "🔧 第二步半：移除表格与图表标签后的换行符...");
+            string readTextBeforeNewlineStrip = readText;
             readText = Regex.Replace(readText, @"</td>\n", "</td>");
             readText = Regex.Replace(readText, @"</th>\n", "</th>");
             readText = Regex.Replace(readText, @"</tr>\n", "</tr>");
@@ -1025,6 +1088,10 @@ namespace WordAddIn1
             readText = Regex.Replace(readText, @"<Column[^>]*>\n", m => m.Value.TrimEnd('\n'));
             readText = Regex.Replace(readText, @"</Row>\n", "</Row>");
             readText = Regex.Replace(readText, @"<Row>\n", "<Row>");
+            if (WordReader.RecordParagraphMap)
+            {
+                WordReader.RealignParagraphMap(readTextBeforeNewlineStrip, readText);
+            }
 
             
             if (verbose)

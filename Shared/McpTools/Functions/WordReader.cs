@@ -24,6 +24,132 @@ namespace WordAddIn1
         private static int _placeholderImageCounter;
         private static readonly List<TocFrame> _tocFrames = new List<TocFrame>();
 
+        internal static bool RecordParagraphMap { get; set; }
+
+        internal sealed class ParagraphMapSpan
+        {
+            public int Index;
+            public int Start;
+            public int End;
+        }
+
+        internal static List<ParagraphMapSpan> LastParagraphMap { get; private set; }
+
+        internal static string LastMappedReadText { get; private set; }
+
+        private static List<ParagraphMapSpan> _paragraphMap;
+        private static int _paragraphMapSeq;
+        private static int _paragraphMapOrigin;
+
+        private static void BeginParagraphMap()
+        {
+            _paragraphMapOrigin = 0;
+            _paragraphMapSeq = 0;
+            if (!RecordParagraphMap)
+            {
+                _paragraphMap = null;
+                LastParagraphMap = null;
+                LastMappedReadText = null;
+                return;
+            }
+
+            _paragraphMap = new List<ParagraphMapSpan>();
+        }
+
+        private static void FinishParagraphMap(string readText)
+        {
+            if (_paragraphMap == null)
+            {
+                return;
+            }
+
+            LastParagraphMap = _paragraphMap;
+            LastMappedReadText = readText ?? "";
+        }
+
+        internal static void RealignParagraphMap(string before, string after)
+        {
+            if (_paragraphMap == null || before == null || after == null)
+            {
+                return;
+            }
+
+            var at = new int[before.Length + 1];
+            int j = 0;
+            for (int i = 0; i < before.Length; i++)
+            {
+                at[i] = j;
+                if (j < after.Length && before[i] == after[j])
+                {
+                    j++;
+                }
+            }
+
+            at[before.Length] = j;
+            var kept = new List<ParagraphMapSpan>();
+            foreach (ParagraphMapSpan span in _paragraphMap)
+            {
+                int a = span.Start < 0 ? 0 : Math.Min(span.Start, before.Length);
+                int b = span.End < a ? a : Math.Min(span.End, before.Length);
+                int start = at[a];
+                int end = at[b];
+                if (end <= start)
+                {
+                    continue;
+                }
+
+                span.Start = start;
+                span.End = end;
+                kept.Add(span);
+            }
+
+            _paragraphMap = kept;
+            LastParagraphMap = kept;
+            LastMappedReadText = after;
+        }
+
+        private static void NoteMappedParagraph(int localStart, int localEnd)
+        {
+            if (_paragraphMap == null || localEnd <= localStart)
+            {
+                return;
+            }
+
+            _paragraphMap.Add(new ParagraphMapSpan
+            {
+                Index = _paragraphMapSeq++,
+                Start = _paragraphMapOrigin + localStart,
+                End = _paragraphMapOrigin + localEnd
+            });
+        }
+
+        private static void ShrinkMappedTail(int contentStart, int newContentEnd)
+        {
+            if (_paragraphMap == null)
+            {
+                return;
+            }
+
+            for (int i = _paragraphMap.Count - 1; i >= 0; i--)
+            {
+                ParagraphMapSpan span = _paragraphMap[i];
+                if (span.Start < contentStart)
+                {
+                    break;
+                }
+
+                if (span.End > newContentEnd)
+                {
+                    span.End = newContentEnd;
+                }
+
+                if (span.End <= span.Start)
+                {
+                    _paragraphMap.RemoveAt(i);
+                }
+            }
+        }
+
         private sealed class TocFrame
         {
             public bool Toc;
@@ -239,6 +365,7 @@ namespace WordAddIn1
                 BeginReadImageContext(extractImages, pathForImages, imageSaveDir, fileHash);
                 string result;
                 _autonum = OoxmlAutonum.TryCreate(xmlDoc);
+                BeginParagraphMap();
                 try
                 {
                     sw.Restart();
@@ -279,6 +406,7 @@ namespace WordAddIn1
 
                 BuildChartIdOrderFromText(result);
                 BuildImageIdOrderFromText(result);
+                FinishParagraphMap(result);
 
                 EasyWriteDiagnostics.LogTiming("ReadWord_total", readTotal.ElapsedMilliseconds);
                 return result;
@@ -1850,9 +1978,11 @@ namespace WordAddIn1
                             }
                         }
 
+                        int localStart = result.Length;
                         AppendParagraphToResult(
                             ref result, paraContent, hasChart, suppressTrailingR,
                             skipEmptyParagraphR || skipLayoutOnlyParagraphR);
+                        NoteMappedParagraph(localStart, result.Length);
                     }
                     // 处理表格 w:tbl
                     else if (child.Name == w + "tbl")
@@ -1862,8 +1992,12 @@ namespace WordAddIn1
 
                         // 先占 COM 序第 N 号，再进格。嵌套 w:tbl 在格内，后发号会把外表号发给内表。
                         string tableId = TakeWordSourcedTableId(null, child, w);
+                        string tableOpen = $"<table id=\"{tableId}\">";
+                        int savedOrigin = _paragraphMapOrigin;
+                        _paragraphMapOrigin = savedOrigin + result.Length + tableOpen.Length;
                         string tableContent = ProcessTableRecursive(child, w, document, mergeContext, docPath, imageSaveDir, fileHash);
-                        result += $"<table id=\"{tableId}\">";
+                        _paragraphMapOrigin = savedOrigin;
+                        result += tableOpen;
                         result += tableContent;
                         result += "</table>\n";
                     }
@@ -1879,8 +2013,11 @@ namespace WordAddIn1
                         XElement galleryContent = child.Element(w + "sdtContent");
                         if (galleryContent != null)
                         {
+                            int savedOrigin = _paragraphMapOrigin;
+                            _paragraphMapOrigin = savedOrigin + result.Length;
                             result += ProcessElementRecursive(
                                 galleryContent, w, document, docPath, imageSaveDir, fileHash);
+                            _paragraphMapOrigin = savedOrigin;
                         }
 
                         if (!string.IsNullOrEmpty(marker))
@@ -1890,7 +2027,10 @@ namespace WordAddIn1
                     }
                     else if (IsRevisionInsertion(child, w))
                     {
+                        int savedOrigin = _paragraphMapOrigin;
+                        _paragraphMapOrigin = savedOrigin + result.Length;
                         result += ProcessElementRecursive(child, w, document, docPath, imageSaveDir, fileHash);
+                        _paragraphMapOrigin = savedOrigin;
                     }
                     else if (IsRevisionDeletion(child, w))
                     {
@@ -1903,8 +2043,10 @@ namespace WordAddIn1
                         // 跳过属性元素（pPr, rPr, tcPr, tblPr 等）
                         if (!child.Name.LocalName.EndsWith("Pr"))
                         {
-                            // 如果不是属性元素，继续递归处理
+                            int savedOrigin = _paragraphMapOrigin;
+                            _paragraphMapOrigin = savedOrigin + result.Length;
                             result += ProcessElementRecursive(child, w, document, docPath, imageSaveDir, fileHash);
+                            _paragraphMapOrigin = savedOrigin;
                         }
                     }
                 }
@@ -1957,7 +2099,10 @@ namespace WordAddIn1
                     // 处理该行的所有单元格
                     foreach (var cell in cells)
                     {
+                        int savedOrigin = _paragraphMapOrigin;
+                        _paragraphMapOrigin = savedOrigin + result.Length;
                         result += ProcessCellWithMerge(cell, w, document, mergeContext, rowspanMap, docPath, imageSaveDir, fileHash);
+                        _paragraphMapOrigin = savedOrigin;
                     }
                     
                     result += "</" + TableMarkupTags.Tr + ">\n";
@@ -2098,14 +2243,22 @@ namespace WordAddIn1
                     LogExtractVerbose($"[DEBUG] 单元格合并属性: 行{mergeContext.CurrentRowIndex}, 列{mergeContext.CurrentLogicalColumnIndex}, 属性={attrStr}");
                 }
                 
-                // 5. 递归提取单元格内容（段落、文本、嵌套表格等）
+                string openTag = $"<{TableMarkupTags.Td}{attrStr}>";
+                int contentPlace = _paragraphMapOrigin + openTag.Length;
+                int savedOrigin = _paragraphMapOrigin;
+                _paragraphMapOrigin = contentPlace;
                 string cellContent = ProcessElementRecursive(cell, w, document, docPath, imageSaveDir, fileHash);
-                
-                // 5.1 只去掉格末 1 个 \r（格标配套）。格内真分段的 \r 要留。
-                cellContent = TrimLastCellParagraphMark(cellContent);
-                
+                _paragraphMapOrigin = savedOrigin;
+                string trimmed = TrimLastCellParagraphMark(cellContent);
+                if (trimmed.Length != (cellContent == null ? 0 : cellContent.Length))
+                {
+                    ShrinkMappedTail(contentPlace, contentPlace + trimmed.Length);
+                }
+
+                cellContent = trimmed;
+
                 // 6. 输出带合并信息的 cell 标签
-                result = $"<{TableMarkupTags.Td}{attrStr}>";
+                result = openTag;
                 result += cellContent;  // 递归提取的内容
                 result += $"</{TableMarkupTags.Td}>\n";
                 
@@ -2116,9 +2269,19 @@ namespace WordAddIn1
             {
                 LogExtractVerbose($"[DEBUG] 单元格处理失败: {ex.Message}");
                 // 降级处理：输出基本cell标签
+                string openTag = $"<{TableMarkupTags.Td}>";
+                int contentPlace = _paragraphMapOrigin + openTag.Length;
+                int savedOrigin = _paragraphMapOrigin;
+                _paragraphMapOrigin = contentPlace;
                 string cellContent = ProcessElementRecursive(cell, w, document, docPath, imageSaveDir, fileHash);
-                cellContent = TrimLastCellParagraphMark(cellContent);
-                result = $"<{TableMarkupTags.Td}>{cellContent}</{TableMarkupTags.Td}>\n";
+                _paragraphMapOrigin = savedOrigin;
+                string trimmed = TrimLastCellParagraphMark(cellContent);
+                if (trimmed.Length != (cellContent == null ? 0 : cellContent.Length))
+                {
+                    ShrinkMappedTail(contentPlace, contentPlace + trimmed.Length);
+                }
+
+                result = openTag + trimmed + $"</{TableMarkupTags.Td}>\n";
             }
             
             return result;
