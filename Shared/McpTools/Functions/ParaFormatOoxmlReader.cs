@@ -419,7 +419,31 @@ namespace WordAddIn1
                 }
             }
 
+            XElement outline = pPr.Element(W + "outlineLvl");
+            string outlineVal = (string)outline?.Attribute(W + "val");
+            if (int.TryParse(outlineVal, out int level))
+            {
+                partial["outline_level"] = level >= 0 && level <= 8
+                    ? "wdOutlineLevel" + (level + 1)
+                    : "wdOutlineLevelBodyText";
+            }
+
             return partial;
+        }
+
+        public static void ReadLayers(
+            XElement paragraph,
+            Dictionary<string, StyleRec> styles,
+            Dictionary<string, object> docDefaults,
+            out Dictionary<string, object> direct,
+            out Dictionary<string, object> style,
+            out Dictionary<string, object> final)
+        {
+            direct = PprToPartial(paragraph?.Element(W + "pPr"));
+            string styleId = GetParagraphStyleId(paragraph);
+            style = MergeLayers(StyleChainParaProps(styleId, styles));
+            final = ExtractEffective(paragraph, styles, docDefaults);
+            ParaFormatCatalog.OmitReadDefaults(final, "");
         }
 
         private static void TryAddTwip(Dictionary<string, object> dest, string key, string raw)

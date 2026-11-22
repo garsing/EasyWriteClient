@@ -419,7 +419,7 @@ namespace WordAddIn1
             }
 
             IReadOnlyList<string> sentenceCodes = ParagraphCodeResolver.ExpandParagraphToSentenceCodes(paragraphCode);
-            return new Dictionary<string, object>
+            var entry = new Dictionary<string, object>
             {
                 ["paragraph_code"] = paragraphCode,
                 ["text_preview"] = BuildTextPreview(content),
@@ -427,6 +427,8 @@ namespace WordAddIn1
                 ["para_format"] = ParaFormatReader.Extract(paragraphRange),
                 ["sentence_codes_in_paragraph"] = sentenceCodes.ToList(),
             };
+            FormatLayerLookup.ApplyParagraph(paragraphRange.Document, paragraphCode, entry);
+            return entry;
         }
 
         private static string ParagraphStyleName(Word.Range range)
@@ -478,6 +480,7 @@ namespace WordAddIn1
                 ["runs"] = runs,
                 ["para_format"] = ParaFormatReader.Extract(paragraphRange)
             };
+            FormatLayerLookup.ApplyParagraph(paragraphRange.Document, paragraphCode, entry);
             SemanticRoleHelper.AppendRoleFields(entry, role);
             DbgLog(
                 $"entry {code} style_role={role.StyleRole} text_role={role.TextRole} " +

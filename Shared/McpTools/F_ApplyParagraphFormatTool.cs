@@ -22,6 +22,16 @@ namespace WordAddIn1
                     string logPath = EasyWriteLog.BeginSession("apply_paragraph_format");
                     FormatContextHelper.DbgLog($"会话日志: {logPath}");
 
+                    if (!FormatFileArgs.TrySubstitute(
+                            args,
+                            FormatFileArgs.ParagraphConflicts,
+                            out Dictionary<string, object> loaded,
+                            out string pathError))
+                    {
+                        return new ToolResult { Success = false, Error = pathError };
+                    }
+
+                    args = loaded;
                     if (ParagraphFormatApplyHelper.TryGetContractParseFailure(args, out ToolResult contractFail))
                     {
                         return contractFail;

@@ -1146,6 +1146,51 @@ namespace WordAddIn1
             return BindPiece(displayChars, SentenceSlots(display, origin), piece);
         }
 
+        internal sealed class SentenceIndex
+        {
+            internal readonly string Chars;
+            private readonly List<SentenceSlot> _slots;
+            private readonly int[] _origin;
+
+            private SentenceIndex(string chars, int[] origin, List<SentenceSlot> slots)
+            {
+                Chars = chars;
+                _origin = origin;
+                _slots = slots;
+            }
+
+            internal static SentenceIndex Build(string display)
+            {
+                string chars = DisplayChars(display, out int[] origin);
+                return new SentenceIndex(chars, origin, SentenceSlots(display, origin));
+            }
+
+            internal List<StyledSpan> Bind(int streamStart, int streamEnd)
+            {
+                if (Chars == null || streamEnd <= streamStart || streamStart < 0 || streamEnd > Chars.Length)
+                {
+                    return new List<StyledSpan>();
+                }
+
+                string text = Chars.Substring(streamStart, streamEnd - streamStart);
+                int displayIndex = _origin != null && streamStart < _origin.Length ? _origin[streamStart] : 0;
+                var piece = new LocatedSpan
+                {
+                    Text = text,
+                    Start = displayIndex,
+                    End = displayIndex,
+                    StreamStart = streamStart,
+                    Scope = ""
+                };
+                return BindPiece(Chars, _slots, piece);
+            }
+        }
+
+        public static List<StyledSpan> BindRange(string display, int streamStart, int streamEnd)
+        {
+            return SentenceIndex.Build(display).Bind(streamStart, streamEnd);
+        }
+
         private static List<StyledSpan> BindPiece(
             string displayChars,
             List<SentenceSlot> slots,

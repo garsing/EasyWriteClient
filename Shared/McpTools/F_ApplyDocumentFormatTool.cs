@@ -27,6 +27,16 @@ namespace WordAddIn1
                     string logPath = EasyWriteLog.BeginSession("apply_document_format");
                     FormatContextHelper.DbgLog($"会话日志: {logPath}");
 
+                    if (!FormatFileArgs.TrySubstitute(
+                            args,
+                            FormatFileArgs.CharacterConflicts,
+                            out Dictionary<string, object> loaded,
+                            out string pathError))
+                    {
+                        return Done(false, pathError);
+                    }
+
+                    args = loaded;
                     if (TryGetContractParseFailure(args, out ToolResult contractFail))
                     {
                         return Task.FromResult(contractFail);

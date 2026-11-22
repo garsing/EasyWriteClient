@@ -31,6 +31,7 @@ namespace WordAddIn1
             public int Index;
             public int Start;
             public int End;
+            public XElement Paragraph;
         }
 
         internal static List<ParagraphMapSpan> LastParagraphMap { get; private set; }
@@ -45,14 +46,6 @@ namespace WordAddIn1
         {
             _paragraphMapOrigin = 0;
             _paragraphMapSeq = 0;
-            if (!RecordParagraphMap)
-            {
-                _paragraphMap = null;
-                LastParagraphMap = null;
-                LastMappedReadText = null;
-                return;
-            }
-
             _paragraphMap = new List<ParagraphMapSpan>();
         }
 
@@ -108,7 +101,7 @@ namespace WordAddIn1
             LastMappedReadText = after;
         }
 
-        private static void NoteMappedParagraph(int localStart, int localEnd)
+        private static void NoteMappedParagraph(XElement paragraph, int localStart, int localEnd)
         {
             if (_paragraphMap == null || localEnd <= localStart)
             {
@@ -118,6 +111,7 @@ namespace WordAddIn1
             _paragraphMap.Add(new ParagraphMapSpan
             {
                 Index = _paragraphMapSeq++,
+                Paragraph = paragraph == null ? null : new XElement(paragraph),
                 Start = _paragraphMapOrigin + localStart,
                 End = _paragraphMapOrigin + localEnd
             });
@@ -1982,7 +1976,7 @@ namespace WordAddIn1
                         AppendParagraphToResult(
                             ref result, paraContent, hasChart, suppressTrailingR,
                             skipEmptyParagraphR || skipLayoutOnlyParagraphR);
-                        NoteMappedParagraph(localStart, result.Length);
+                        NoteMappedParagraph(child, localStart, result.Length);
                     }
                     // 处理表格 w:tbl
                     else if (child.Name == w + "tbl")

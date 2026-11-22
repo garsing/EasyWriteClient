@@ -121,6 +121,7 @@ namespace WordAddIn1
                 { "document.getFormatContext", "F_get_format_context" },
                 { "document.applyDocumentFormat", "F_apply_document_format" },
                 { "document.applyParagraphFormat", "F_apply_paragraph_format" },
+                { "document.searchDocumentFormat", "F_search_document_format" },
                 { "document.documentStyleApply", "F_document_style_apply" },
                 { "document.documentStyle", "F_document_style" },
                 { "document.getFormatDisplay", "F_get_format_display" },

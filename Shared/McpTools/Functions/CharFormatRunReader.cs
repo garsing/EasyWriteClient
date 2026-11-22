@@ -18,6 +18,7 @@ namespace WordAddIn1
         private static readonly XNamespace W14 = "http://schemas.microsoft.com/office/word/2010/wordml";
         private static readonly XNamespace A = "http://schemas.openxmlformats.org/drawingml/2006/main";
         private static readonly XNamespace Mc = "http://schemas.openxmlformats.org/markup-compatibility/2006";
+        private static bool _trackRunOffsets;
 
         /// <summary>
         /// 读到默认黄突出显示时挂在区间上，不放进 char_format，避免被抄回去写成格式键。
@@ -54,6 +55,22 @@ namespace WordAddIn1
             runs = spans;
             joinedText = joined.ToString();
             return true;
+        }
+
+        public static bool TryCollectBody(
+            string wordOpenXml,
+            out List<Dictionary<string, object>> runs,
+            out string error)
+        {
+            _trackRunOffsets = true;
+            try
+            {
+                return TryParse(wordOpenXml, out runs, out _, out error);
+            }
+            finally
+            {
+                _trackRunOffsets = false;
+            }
         }
 
         public static bool TryRead(Word.Range range, out List<Dictionary<string, object>> runs, out string error)
@@ -112,6 +129,7 @@ namespace WordAddIn1
                 CharFormatCatalog.OmitReadDefaults(format);
             }
 
+            RefreshLayerFinal(runs);
             return true;
         }
 
@@ -637,7 +655,10 @@ namespace WordAddIn1
             }
 
             Dictionary<string, object> snap = BuildSnapshot(run, styles, theme);
+            Dictionary<string, object> direct = BuildDirect(run, theme);
+            Dictionary<string, object> style = BuildStyle(run, styles, theme);
             CharFormatCatalog.OmitReadDefaults(snap);
+            int runStart = joined.Length;
             joined.Append(text);
             if (spans.Count > 0)
             {
@@ -645,6 +666,11 @@ namespace WordAddIn1
                 if (CharFormatCatalog.SameSnapshot((Dictionary<string, object>)previous["char_format"], snap))
                 {
                     previous["text"] = (string)previous["text"] + text;
+                    if (_trackRunOffsets)
+                    {
+                        previous["end"] = joined.Length;
+                    }
+
                     return;
                 }
             }
@@ -652,8 +678,19 @@ namespace WordAddIn1
             var span = new Dictionary<string, object>
             {
                 ["text"] = text,
-                ["char_format"] = snap
+                ["char_format"] = snap,
+                ["format_layers"] = new Dictionary<string, object>
+                {
+                    ["direct"] = direct,
+                    ["style"] = style,
+                    ["final"] = new Dictionary<string, object>(snap)
+                }
             };
+            if (_trackRunOffsets)
+            {
+                span["start"] = runStart;
+                span["end"] = joined.Length;
+            }
             if (snap.TryGetValue("highlight_color_index", out object highlight)
                 && string.Equals(highlight?.ToString(), "wdYellow", StringComparison.OrdinalIgnoreCase))
             {
@@ -766,6 +803,58 @@ namespace WordAddIn1
             }
 
             ApplyRpr(format, direct, theme);
+            FinishFontName(format, theme);
+            return format;
+        }
+
+        private static void RefreshLayerFinal(List<Dictionary<string, object>> runs)
+        {
+            if (runs == null)
+            {
+                return;
+            }
+
+            foreach (Dictionary<string, object> run in runs)
+            {
+                if (run == null
+                    || !(run.TryGetValue("char_format", out object format) && format is Dictionary<string, object> final)
+                    || !(run.TryGetValue("format_layers", out object layers) && layers is Dictionary<string, object> layerMap))
+                {
+                    continue;
+                }
+
+                layerMap["final"] = new Dictionary<string, object>(final);
+            }
+        }
+
+        private static Dictionary<string, object> BuildDirect(XElement run, ThemeFonts theme)
+        {
+            var format = new Dictionary<string, object>();
+            ApplyRpr(format, run?.Element(W + "rPr"), theme);
+            FinishFontName(format, theme);
+            return format;
+        }
+
+        private static Dictionary<string, object> BuildStyle(
+            XElement run,
+            Dictionary<string, StyleRec> styles,
+            ThemeFonts theme)
+        {
+            var format = new Dictionary<string, object>();
+            XElement paragraph = run.Ancestors(W + "p").FirstOrDefault();
+            string pStyle = (string)paragraph?.Element(W + "pPr")?.Element(W + "pStyle")?.Attribute(W + "val");
+            foreach (XElement layer in Chain(styles, pStyle))
+            {
+                ApplyRpr(format, layer, theme);
+            }
+
+            XElement direct = run.Element(W + "rPr");
+            string rStyle = (string)direct?.Element(W + "rStyle")?.Attribute(W + "val");
+            foreach (XElement layer in Chain(styles, rStyle))
+            {
+                ApplyRpr(format, layer, theme);
+            }
+
             FinishFontName(format, theme);
             return format;
         }
