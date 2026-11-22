@@ -564,13 +564,16 @@ namespace WordDocumentRoundtripTest
                         return "铺字符样式失败";
                     }
 
-                    JObject data = Act(session, doc, "apply", doc.Sentence("列表几"), "列表段落", "几");
+                    string structure = session.IsWps ? "heading_1" : "列表段落";
+                    JObject data = Act(session, doc, "apply", doc.Sentence("列表几"), structure, "几");
                     string para = ParaStyle(doc, "列表几");
                     string kept = CharStyle(doc, "还在");
-                    bool list = para.IndexOf("列表", StringComparison.Ordinal) >= 0 || para.IndexOf("List", StringComparison.OrdinalIgnoreCase) >= 0;
+                    bool styled = session.IsWps
+                        ? para.IndexOf("标题", StringComparison.Ordinal) >= 0 || para.IndexOf("Heading", StringComparison.OrdinalIgnoreCase) >= 0
+                        : para.IndexOf("列表", StringComparison.Ordinal) >= 0 || para.IndexOf("List", StringComparison.OrdinalIgnoreCase) >= 0;
                     bool still = kept.IndexOf("超链接", StringComparison.Ordinal) >= 0
                         || kept.IndexOf("Hyperlink", StringComparison.OrdinalIgnoreCase) >= 0;
-                    return FlagOk(data) && list && still ? null : para + " / " + kept + " " + data;
+                    return FlagOk(data) && styled && still ? null : para + " / " + kept + " " + data;
                 }
             });
             Case(run, "fl-st-char-half", () =>
