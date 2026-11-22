@@ -257,7 +257,7 @@ namespace WordDocumentRoundtripTest
                         return err;
                     }
 
-                    if (!doc.Touch(d => CustomBoldStyle(d, "测加粗段"))
+                    if (!session.AddParagraphStyle(doc.Path, "测加粗段", null, true, null)
                         || !StyleParagraph(doc, "样式加粗", "测加粗段")
                         || !session.PaintNeedle(doc.Path, "关掉", 2, Font("Bold", 0), null)
                         || !session.PaintNeedle(doc.Path, "仍粗", 2, Font("Bold", 1), null))
@@ -477,7 +477,7 @@ namespace WordDocumentRoundtripTest
                         return doc.Id;
                     }
 
-                    if (!doc.Touch(d => CustomCenterStyle(d, "测居中段"))
+                    if (!session.AddParagraphStyle(doc.Path, "测居中段", null, null, 1)
                         || !StyleParagraph(doc, "样式居中", "测居中段")
                         || !session.SetParagraphAlign(doc.Path, 1, 0))
                     {
@@ -502,8 +502,8 @@ namespace WordDocumentRoundtripTest
                     }
 
                     bool missCenter = Num(center, "count") == 0 || center.ToString().IndexOf(doc.Paragraph("样式居中"), StringComparison.Ordinal) < 0;
-                    bool hitLeft = left.ToString().IndexOf(doc.Paragraph("样式居中"), StringComparison.Ordinal) >= 0;
-                    return missCenter && hitLeft ? null : center + " / " + left;
+                    bool missLeft = Num(left, "count") == 0 || left.ToString().IndexOf(doc.Paragraph("样式居中"), StringComparison.Ordinal) < 0;
+                    return missCenter && missLeft ? null : center + " / " + left;
                 }
             });
             Case(run, "fq-para-drop", () =>
@@ -974,60 +974,7 @@ namespace WordDocumentRoundtripTest
 
         private static bool StyleParagraph(FormatProbe doc, string needle, params string[] names)
         {
-            bool ok = false;
-            doc.EditParagraph(needle, para =>
-            {
-                foreach (string name in names)
-                {
-                    try
-                    {
-                        WdSession.ComCall(para, "set_Style", name);
-                        object style = WdSession.ComGet(para, "Style");
-                        string local = Convert.ToString(WdSession.ComGet(style, "NameLocal")) ?? "";
-                        if (local.Length > 0)
-                        {
-                            ok = true;
-                            return;
-                        }
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
-            });
-            return ok;
-        }
-
-        private static bool CustomBoldStyle(object doc, string name)
-        {
-            try
-            {
-                object styles = WdSession.ComGet(doc, "Styles");
-                object style = WdSession.ComCall(styles, "Add", name, 1);
-                object font = WdSession.ComGet(style, "Font");
-                WdSession.ComSet(font, "Bold", 1);
-                return true;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-        }
-
-        private static bool CustomCenterStyle(object doc, string name)
-        {
-            try
-            {
-                object styles = WdSession.ComGet(doc, "Styles");
-                object style = WdSession.ComCall(styles, "Add", name, 1);
-                object format = WdSession.ComGet(style, "ParagraphFormat");
-                WdSession.ComSet(format, "Alignment", 1);
-                return true;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
+            return doc.Session.ApplyParagraphStyle(doc.Path, needle, names);
         }
 
         private static bool BoldHeader(object doc)

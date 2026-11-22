@@ -90,6 +90,8 @@ namespace WordAddIn1
                 return false;
             }
 
+            xml = WithParagraphProperties(trimmed, xml);
+
             if (!TryParse(xml, out runs, out string joined, out error))
             {
                 runs = null;
@@ -397,6 +399,144 @@ namespace WordAddIn1
 
             error = string.IsNullOrEmpty(error) ? "WordOpenXML 为空" : "导出 WordOpenXML 失败: " + error;
             return null;
+        }
+
+        /// <summary>
+        /// 句子 Range 的 WordOpenXML 经常不带段上的 pPr。段落样式自己的字符格式和 w:link 在段上，这里从所在段补回来。
+        /// </summary>
+        private static string WithParagraphProperties(Word.Range range, string xml)
+        {
+            try
+            {
+                XDocument doc = XDocument.Parse(xml);
+                List<XElement> paragraphs = doc.Descendants(W + "body").Elements(W + "p").ToList();
+                if (paragraphs.Count == 0)
+                {
+                    return xml;
+                }
+
+                int count = range.Paragraphs.Count;
+                int n = Math.Min(count, paragraphs.Count);
+                bool changed = false;
+                for (int i = 1; i <= n; i++)
+                {
+                    XElement target = paragraphs[i - 1];
+                    if (target.Element(W + "pPr")?.Element(W + "pStyle") != null)
+                    {
+                        continue;
+                    }
+
+                    string paraXml;
+                    try
+                    {
+                        paraXml = range.Paragraphs[i].Range.WordOpenXML;
+                    }
+                    catch (Exception)
+                    {
+                        continue;
+                    }
+
+                    if (string.IsNullOrEmpty(paraXml))
+                    {
+                        continue;
+                    }
+
+                    XDocument paraDoc = XDocument.Parse(paraXml);
+                    XElement sourceP = paraDoc.Descendants(W + "p").FirstOrDefault();
+                    XElement sourcePr = sourceP?.Element(W + "pPr");
+                    if (sourceP != null && SameVisibleText(sourceP, target))
+                    {
+                        foreach (XElement child in target.Elements().Where(e => e.Name != W + "pPr").ToList())
+                        {
+                            child.Remove();
+                        }
+
+                        if (sourcePr != null)
+                        {
+                            target.Element(W + "pPr")?.Remove();
+                            target.AddFirst(new XElement(sourcePr));
+                        }
+
+                        foreach (XElement child in sourceP.Elements().Where(e => e.Name != W + "pPr"))
+                        {
+                            target.Add(new XElement(child));
+                        }
+
+                        CopyMissingStyles(doc, paraDoc);
+                        changed = true;
+                        continue;
+                    }
+
+                    if (sourcePr?.Element(W + "pStyle") == null)
+                    {
+                        continue;
+                    }
+
+                    target.Element(W + "pPr")?.Remove();
+                    target.AddFirst(new XElement(sourcePr));
+                    CopyMissingStyles(doc, paraDoc);
+                    changed = true;
+                }
+
+                return changed ? doc.ToString(SaveOptions.DisableFormatting) : xml;
+            }
+            catch (Exception)
+            {
+                return xml;
+            }
+        }
+
+        private static bool SameVisibleText(XElement left, XElement right)
+        {
+            return string.Equals(VisibleText(left), VisibleText(right), StringComparison.Ordinal);
+        }
+
+        private static string VisibleText(XElement paragraph)
+        {
+            if (paragraph == null)
+            {
+                return "";
+            }
+
+            var sb = new StringBuilder();
+            foreach (XElement text in paragraph.Descendants(W + "t"))
+            {
+                sb.Append(text.Value);
+            }
+
+            return sb.ToString();
+        }
+
+        private static void CopyMissingStyles(XDocument target, XDocument source)
+        {
+            XElement targetStyles = target.Descendants(W + "styles").FirstOrDefault();
+            XElement sourceStyles = source.Descendants(W + "styles").FirstOrDefault();
+            if (targetStyles == null || sourceStyles == null)
+            {
+                return;
+            }
+
+            var have = new HashSet<string>(StringComparer.Ordinal);
+            foreach (XElement style in targetStyles.Elements(W + "style"))
+            {
+                string id = (string)style.Attribute(W + "styleId");
+                if (!string.IsNullOrEmpty(id))
+                {
+                    have.Add(id);
+                }
+            }
+
+            foreach (XElement style in sourceStyles.Elements(W + "style"))
+            {
+                string id = (string)style.Attribute(W + "styleId");
+                if (string.IsNullOrEmpty(id) || have.Contains(id))
+                {
+                    continue;
+                }
+
+                targetStyles.Add(new XElement(style));
+                have.Add(id);
+            }
         }
 
         private sealed class StyleRec

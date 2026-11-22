@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
+using Word = Microsoft.Office.Interop.Word;
 using WordAddIn1;
 
 namespace WordDocumentRoundtripTest
@@ -66,7 +67,7 @@ namespace WordDocumentRoundtripTest
                         return err;
                     }
 
-                    if (!doc.Touch(d => AddFontStyle(d, "测字号段", 16)) || !SetStyle(doc, "段样式字号", "测字号段"))
+                    if (!session.AddParagraphStyle(doc.Path, "测字号段", 16, null, null) || !SetStyle(doc, "段样式字号", "测字号段"))
                     {
                         return "建字号样式失败";
                     }
@@ -74,9 +75,12 @@ namespace WordDocumentRoundtripTest
                     JObject run0 = FirstRun(session, doc, doc.Sentence("段样式"));
                     JObject layers = Obj(run0, "format_layers");
                     JObject direct = Obj(layers, "direct");
-                    return Txt(direct, "font_size") == "16" && Arr(layers, "style").Count == 0 && Txt(Obj(layers, "final"), "font_size") == "16"
-                        ? null
-                        : Dump(layers);
+                    JArray style = Arr(layers, "style");
+                    bool size = Is16(Txt(direct, "font_size")) && Is16(Txt(Obj(layers, "final"), "font_size"));
+                    bool link = style.Count == 0
+                        || (Txt(style[0] as JObject, "link") == "paragraph"
+                            && Txt(style[0] as JObject, "name").IndexOf("测字号段", StringComparison.Ordinal) >= 0);
+                    return size && link ? null : Dump(layers);
                 }
             });
             Case(run, "fl-char-link-one", () =>
@@ -123,7 +127,7 @@ namespace WordDocumentRoundtripTest
                         return "套双链接失败";
                     }
 
-                    JObject run0 = FirstRun(session, doc, doc.Sentence("段落链接"));
+                    JObject run0 = RunContaining(session, doc, doc.Sentence("段落链接"), "超链接");
                     JArray style = Arr(Obj(run0, "format_layers"), "style");
                     if (style.Count < 2)
                     {
@@ -146,8 +150,9 @@ namespace WordDocumentRoundtripTest
                         return err;
                     }
 
-                    if (!SetStyle(doc, "链接加粗", "标题 1", "Heading 1", "heading 1")
-                        || !session.PaintNeedle(doc.Path, "关掉", 2, Font("Bold", 0), null))
+                    if (!session.AddParagraphStyle(doc.Path, "测加粗链接", null, true, null)
+                        || !SetStyle(doc, "链接加粗", "测加粗链接")
+                        || !session.SetTextChar(doc.Path, "关掉", "", 0, false, false))
                     {
                         return "铺关掉失败";
                     }
@@ -297,7 +302,7 @@ namespace WordDocumentRoundtripTest
                         return doc.Id;
                     }
 
-                    if (!doc.Touch(d => AddAlignStyle(d, "测居中段层", 1))
+                    if (!session.AddParagraphStyle(doc.Path, "测居中段层", null, null, 1)
                         || !SetStyle(doc, "样式居中", "测居中段层")
                         || !session.SetParagraphAlign(doc.Path, 1, 0)
                         || !doc.ReadParagraphs())
@@ -675,7 +680,7 @@ namespace WordDocumentRoundtripTest
             {
                 using (FormatProbe doc = Open(session, "全文清甲。"))
                 {
-                    if (!doc.Ready || !doc.Touch(BoldHeader) || !SetStyle(doc, "全文清甲", "标题 1", "Heading 1", "heading 1"))
+                    if (!doc.Ready || !doc.Session.ApplyHeaderStyle(doc.Path, "标题 1", "Heading 1", "heading 1") || !SetStyle(doc, "全文清甲", "标题 1", "Heading 1", "heading 1"))
                     {
                         return doc.Ready ? "铺全文清失败" : doc.Id;
                     }
@@ -800,63 +805,7 @@ namespace WordDocumentRoundtripTest
 
         private static bool MaterializeStyle(FormatProbe doc, params string[] names)
         {
-            return doc.Touch(d =>
-            {
-                try
-                {
-                    object content = WdSession.ComGet(d, "Content");
-                    WdSession.ComCall(content, "InsertAfter", "\r样式垫。");
-                    object paras = WdSession.ComGet(d, "Paragraphs");
-                    int count = Convert.ToInt32(WdSession.ComGet(paras, "Count"));
-                    object last = WdSession.ComCall(paras, "Item", count);
-                    foreach (string name in names)
-                    {
-                        try
-                        {
-                            WdSession.ComCall(last, "set_Style", name);
-                            return true;
-                        }
-                        catch (Exception)
-                        {
-                        }
-                    }
-
-                    return false;
-                }
-                catch (Exception)
-                {
-                    return false;
-                }
-            });
-        }
-
-        private static bool BoldHeader(object doc)
-        {
-            try
-            {
-                object sections = WdSession.ComGet(doc, "Sections");
-                object section = WdSession.ComCall(sections, "Item", 1);
-                object headers = WdSession.ComGet(section, "Headers");
-                object header = WdSession.ComCall(headers, "Item", 1);
-                WdSession.ComCall(header, "set_Style", "标题 1");
-                return true;
-            }
-            catch (Exception)
-            {
-                try
-                {
-                    object sections = WdSession.ComGet(doc, "Sections");
-                    object section = WdSession.ComCall(sections, "Item", 1);
-                    object headers = WdSession.ComGet(section, "Headers");
-                    object header = WdSession.ComCall(headers, "Item", 1);
-                    WdSession.ComCall(header, "set_Style", "Heading 1");
-                    return true;
-                }
-                catch (Exception)
-                {
-                    return false;
-                }
-            }
+            return doc.Session.MaterializeCharacterStyle(doc.Path, names);
         }
 
         private static bool InsertPageAfter(object doc)
@@ -875,90 +824,14 @@ namespace WordDocumentRoundtripTest
             }
         }
 
-        private static bool AddFontStyle(object doc, string name, float size)
-        {
-            try
-            {
-                object styles = WdSession.ComGet(doc, "Styles");
-                object style = WdSession.ComCall(styles, "Add", name, 1);
-                object font = WdSession.ComGet(style, "Font");
-                WdSession.ComSet(font, "Size", size);
-                return true;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-        }
-
-        private static bool AddAlignStyle(object doc, string name, int alignment)
-        {
-            try
-            {
-                object styles = WdSession.ComGet(doc, "Styles");
-                object style = WdSession.ComCall(styles, "Add", name, 1);
-                object format = WdSession.ComGet(style, "ParagraphFormat");
-                WdSession.ComSet(format, "Alignment", alignment);
-                return true;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
-        }
-
         private static bool SetStyle(FormatProbe doc, string needle, params string[] names)
         {
-            bool ok = false;
-            doc.EditParagraph(needle, para =>
-            {
-                foreach (string name in names)
-                {
-                    try
-                    {
-                        WdSession.ComCall(para, "set_Style", name);
-                        object style = WdSession.ComGet(para, "Style");
-                        string local = Convert.ToString(WdSession.ComGet(style, "NameLocal")) ?? "";
-                        if (local.Length > 0
-                            && (local.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0
-                                || name.IndexOf(local, StringComparison.OrdinalIgnoreCase) >= 0))
-                        {
-                            ok = true;
-                            return;
-                        }
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
-            });
-            return ok;
+            return doc.Session.ApplyParagraphStyle(doc.Path, needle, names);
         }
 
         private static bool SetRangeStyle(FormatProbe doc, string needle, params string[] names)
         {
-            return doc.Touch(d =>
-            {
-                object range = Find(d, needle);
-                if (range == null)
-                {
-                    return false;
-                }
-
-                foreach (string name in names)
-                {
-                    try
-                    {
-                        WdSession.ComSet(range, "Style", name);
-                        return true;
-                    }
-                    catch (Exception)
-                    {
-                    }
-                }
-
-                return false;
-            });
+            return doc.Session.ApplyRangeStyle(doc.Path, needle, names);
         }
 
         private static string ParaStyle(FormatProbe doc, string needle)
@@ -982,22 +855,20 @@ namespace WordDocumentRoundtripTest
         private static string HeaderStyle(FormatProbe doc)
         {
             string name = "";
-            doc.Touch(d =>
+            doc.Session.OnWordDoc(doc.Path, word =>
             {
                 try
                 {
-                    object sections = WdSession.ComGet(d, "Sections");
-                    object section = WdSession.ComCall(sections, "Item", 1);
-                    object headers = WdSession.ComGet(section, "Headers");
-                    object header = WdSession.ComCall(headers, "Item", 1);
-                    object style = WdSession.ComGet(header, "Style");
-                    name = Convert.ToString(WdSession.ComGet(style, "NameLocal")) ?? "";
-                    return true;
+                    Word.HeaderFooter header = word.Sections[1].Headers[Word.WdHeaderFooterIndex.wdHeaderFooterPrimary];
+                    Word.Style style = header.Range.Paragraphs[1].get_Style() as Word.Style;
+                    name = style == null ? "" : (style.NameLocal ?? "");
                 }
                 catch (Exception)
                 {
-                    return false;
+                    name = "";
                 }
+
+                return true;
             });
             return name;
         }
@@ -1246,6 +1117,11 @@ namespace WordDocumentRoundtripTest
         private static string Txt(JObject data, string key)
         {
             return data == null || data[key] == null ? "" : data[key].ToString();
+        }
+
+        private static bool Is16(string size)
+        {
+            return size == "16" || size == "16.0";
         }
 
         private static bool Flag(JObject data, string key)

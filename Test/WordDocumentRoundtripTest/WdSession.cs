@@ -1403,6 +1403,447 @@ namespace WordDocumentRoundtripTest
                 });
         }
 
+        public bool ApplyParagraphStyle(string fullPath, string needle, params string[] names)
+        {
+            if (string.IsNullOrEmpty(needle) || names == null || names.Length == 0)
+            {
+                return false;
+            }
+
+            return IsWps
+                ? WithWpsDoc(fullPath, doc => ApplyParagraphStyleLate(doc, needle, names))
+                : WithWordDoc(fullPath, doc =>
+                {
+                    foreach (Word.Paragraph para in doc.Paragraphs)
+                    {
+                        string text = para.Range.Text ?? "";
+                        if (text.IndexOf(needle, StringComparison.Ordinal) < 0)
+                        {
+                            continue;
+                        }
+
+                        return TrySetParagraphStyle(para, names);
+                    }
+
+                    return false;
+                });
+        }
+
+        public bool ApplyRangeStyle(string fullPath, string needle, params string[] names)
+        {
+            if (string.IsNullOrEmpty(needle) || names == null || names.Length == 0)
+            {
+                return false;
+            }
+
+            return IsWps
+                ? WithWpsDoc(fullPath, doc =>
+                {
+                    object range = FindRangeLate(doc, needle);
+                    if (range == null)
+                    {
+                        return false;
+                    }
+
+                    foreach (string name in names)
+                    {
+                        try
+                        {
+                            SetProp(range, "Style", name);
+                            return true;
+                        }
+                        catch
+                        {
+                        }
+                    }
+
+                    return false;
+                })
+                : WithWordDoc(fullPath, doc =>
+                {
+                    Word.Range range = FindRange(doc, needle);
+                    return range != null && TrySetRangeStyle(doc, range, names);
+                });
+        }
+
+        public bool AddParagraphStyle(string fullPath, string name, float? fontSize, bool? bold, int? alignment)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                return false;
+            }
+
+            return IsWps
+                ? WithWpsDoc(fullPath, doc => AddParagraphStyleLate(doc, name, fontSize, bold, alignment))
+                : WithWordDoc(fullPath, doc =>
+                {
+                    Word.Style style = FindStyle(doc, name);
+                    if (style == null)
+                    {
+                        try
+                        {
+                            object type = Word.WdStyleType.wdStyleTypeParagraph;
+                            style = doc.Styles.Add(name, ref type);
+                        }
+                        catch
+                        {
+                            return false;
+                        }
+                    }
+
+                    if (style == null)
+                    {
+                        return false;
+                    }
+
+                    if (fontSize.HasValue)
+                    {
+                        style.Font.Size = fontSize.Value;
+                    }
+
+                    if (bold.HasValue)
+                    {
+                        style.Font.Bold = bold.Value ? 1 : 0;
+                    }
+
+                    if (alignment.HasValue)
+                    {
+                        style.ParagraphFormat.Alignment = (Word.WdParagraphAlignment)alignment.Value;
+                    }
+
+                    return true;
+                });
+        }
+
+        public bool MaterializeCharacterStyle(string fullPath, params string[] names)
+        {
+            if (names == null || names.Length == 0)
+            {
+                return false;
+            }
+
+            return !IsWps && WithWordDoc(fullPath, doc =>
+            {
+                Word.Style style = FindStyle(doc, names);
+                if (style == null)
+                {
+                    return false;
+                }
+
+                if (doc.Content.End > 1)
+                {
+                    doc.Content.InsertAfter("\r样式垫。");
+                }
+
+                Word.Range range = doc.Paragraphs.Last.Range.Duplicate;
+                if (range.End <= range.Start)
+                {
+                    range.InsertBefore("垫");
+                    range = doc.Paragraphs.Last.Range.Duplicate;
+                }
+
+                if (range.End > range.Start + 1)
+                {
+                    range.End = range.Start + 1;
+                }
+
+                return TrySetRangeStyle(doc, range, new[] { style.NameLocal });
+            });
+        }
+
+        public bool ApplyHeaderStyle(string fullPath, params string[] names)
+        {
+            if (names == null || names.Length == 0)
+            {
+                return false;
+            }
+
+            return !IsWps && WithWordDoc(fullPath, doc =>
+            {
+                Word.HeaderFooter header = doc.Sections[1].Headers[Word.WdHeaderFooterIndex.wdHeaderFooterPrimary];
+                if (header.Range.Paragraphs.Count < 1)
+                {
+                    return false;
+                }
+
+                return TrySetParagraphStyle(header.Range.Paragraphs[1], names);
+            });
+        }
+
+        private static bool ApplyParagraphStyleLate(object doc, string needle, string[] names)
+        {
+            object paras = GetProp(doc, "Paragraphs");
+            int count = Convert.ToInt32(GetProp(paras, "Count"));
+            for (int i = 1; i <= count; i++)
+            {
+                object para = Invoke(paras, "Item", i);
+                object range = GetProp(para, "Range");
+                string text = Convert.ToString(GetProp(range, "Text")) ?? "";
+                if (text.IndexOf(needle, StringComparison.Ordinal) < 0)
+                {
+                    continue;
+                }
+
+                foreach (string name in names)
+                {
+                    try
+                    {
+                        SetProp(para, "Style", name);
+                        return true;
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                return false;
+            }
+
+            return false;
+        }
+
+        private static bool AddParagraphStyleLate(object doc, string name, float? fontSize, bool? bold, int? alignment)
+        {
+            try
+            {
+                object styles = GetProp(doc, "Styles");
+                object style = Invoke(styles, "Add", name, 1);
+                if (fontSize.HasValue)
+                {
+                    SetProp(GetProp(style, "Font"), "Size", fontSize.Value);
+                }
+
+                if (bold.HasValue)
+                {
+                    SetProp(GetProp(style, "Font"), "Bold", bold.Value ? 1 : 0);
+                }
+
+                if (alignment.HasValue)
+                {
+                    SetProp(GetProp(style, "ParagraphFormat"), "Alignment", alignment.Value);
+                }
+
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TrySetParagraphStyle(Word.Paragraph para, string[] names)
+        {
+            foreach (string name in names)
+            {
+                if (AssignParagraphStyle(para, name))
+                {
+                    return true;
+                }
+            }
+
+            if (!WantsHeading1(names))
+            {
+                return false;
+            }
+
+            try
+            {
+                object builtin = Word.WdBuiltinStyle.wdStyleHeading1;
+                para.set_Style(ref builtin);
+                string local = (para.get_Style() as Word.Style)?.NameLocal ?? "";
+                return StyleNameHits(local, "标题") || StyleNameHits(local, "Heading");
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TrySetRangeStyle(Word.Document doc, Word.Range range, string[] names)
+        {
+            foreach (string name in names)
+            {
+                Word.Style known = FindStyle(doc, name);
+                if (AssignRangeStyle(range, known == null ? name : known.NameLocal))
+                {
+                    return true;
+                }
+            }
+
+            if (!WantsHyperlink(names))
+            {
+                return false;
+            }
+
+            try
+            {
+                object builtin = Word.WdBuiltinStyle.wdStyleHyperlink;
+                Word.Style link = doc.Styles[builtin];
+                return link != null && AssignRangeStyle(range, link.NameLocal);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool AssignParagraphStyle(Word.Paragraph para, string name)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                return false;
+            }
+
+            try
+            {
+                object style = name;
+                para.set_Style(ref style);
+                string local = (para.get_Style() as Word.Style)?.NameLocal ?? "";
+                return StyleNameHits(local, name);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool AssignRangeStyle(Word.Range range, string name)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                return false;
+            }
+
+            try
+            {
+                object style = name;
+                range.set_Style(ref style);
+                string local = (range.get_Style() as Word.Style)?.NameLocal ?? "";
+                return StyleNameHits(local, name);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static Word.Style FindStyle(Word.Document doc, params string[] names)
+        {
+            if (doc == null || names == null)
+            {
+                return null;
+            }
+
+            foreach (string name in names)
+            {
+                if (string.IsNullOrEmpty(name))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    Word.Style style = doc.Styles[name];
+                    if (style != null)
+                    {
+                        return style;
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            if (WantsHyperlink(names))
+            {
+                try
+                {
+                    object builtin = Word.WdBuiltinStyle.wdStyleHyperlink;
+                    return doc.Styles[builtin];
+                }
+                catch
+                {
+                }
+            }
+
+            return null;
+        }
+
+        private static Word.Range FindRange(Word.Document doc, string needle)
+        {
+            Word.Range hit = doc.Range(doc.Content.Start, doc.Content.End);
+            object findText = needle;
+            object missing = Type.Missing;
+            bool found = hit.Find.Execute(
+                ref findText,
+                ref missing, ref missing, ref missing, ref missing,
+                ref missing, ref missing, ref missing, ref missing,
+                ref missing, ref missing, ref missing, ref missing,
+                ref missing, ref missing);
+            return found ? hit : null;
+        }
+
+        private static object FindRangeLate(object doc, string needle)
+        {
+            try
+            {
+                object content = GetProp(doc, "Content");
+                object find = GetProp(content, "Find");
+                Invoke(find, "ClearFormatting");
+                object hit = Invoke(find, "Execute", needle);
+                if (hit is bool && (bool)hit)
+                {
+                    return GetProp(find, "Parent");
+                }
+            }
+            catch
+            {
+            }
+
+            return null;
+        }
+
+        private static bool WantsHeading1(string[] names)
+        {
+            foreach (string name in names)
+            {
+                if (name != null
+                    && (name.IndexOf("标题 1", StringComparison.Ordinal) >= 0
+                        || name.IndexOf("Heading 1", StringComparison.OrdinalIgnoreCase) >= 0))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool WantsHyperlink(string[] names)
+        {
+            foreach (string name in names)
+            {
+                if (name != null
+                    && (name.IndexOf("超链接", StringComparison.Ordinal) >= 0
+                        || name.IndexOf("Hyperlink", StringComparison.OrdinalIgnoreCase) >= 0))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool StyleNameHits(string local, string wanted)
+        {
+            if (string.IsNullOrEmpty(local) || string.IsNullOrEmpty(wanted))
+            {
+                return false;
+            }
+
+            return local.IndexOf(wanted, StringComparison.OrdinalIgnoreCase) >= 0
+                || wanted.IndexOf(local, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         public List<string> ParaListStrings(string fullPath)
         {
             var list = new List<string>();
