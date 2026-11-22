@@ -340,7 +340,7 @@ namespace WordDocumentRoundtripTest
                     var tab = new Dictionary<string, object>
                     {
                         ["position"] = 72,
-                        ["alignment"] = "left",
+                        ["alignment"] = "wdAlignTabLeft",
                     };
                     ToolResult planted = ApplyPara(
                         session,
@@ -351,7 +351,7 @@ namespace WordDocumentRoundtripTest
                     JObject plantedFinal = Obj(ParaLayers(session, doc, code), "final");
                     if (!Ok(planted) || Arr(plantedFinal, "tab_stops").Count < 1)
                     {
-                        return "铺制表位失败 " + Fail(planted, plantedFinal);
+                        return "铺制表位失败 " + Fail(planted, plantedFinal) + " " + FormatProbe.Data(planted);
                     }
 
                     ToolResult applied = ApplyPara(session, doc, "target_paragraph_codes", code, Map("tab_stops", "default"));

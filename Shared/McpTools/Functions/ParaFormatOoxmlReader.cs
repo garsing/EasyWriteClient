@@ -333,6 +333,14 @@ namespace WordAddIn1
                         continue;
                     }
 
+                    if (kv.Key == "tab_stops")
+                    {
+                        result["tab_stops"] = MergeTabStops(
+                            result.TryGetValue("tab_stops", out object have) ? have : null,
+                            kv.Value);
+                        continue;
+                    }
+
                     result[kv.Key] = kv.Value;
                 }
             }
@@ -441,7 +449,177 @@ namespace WordAddIn1
                     : "wdOutlineLevelBodyText";
             }
 
+            List<Dictionary<string, object>> tabs = ReadTabs(pPr.Element(W + "tabs"));
+            if (tabs.Count > 0)
+            {
+                partial["tab_stops"] = tabs;
+            }
+
             return partial;
+        }
+
+        private static List<Dictionary<string, object>> ReadTabs(XElement tabs)
+        {
+            var list = new List<Dictionary<string, object>>();
+            if (tabs == null)
+            {
+                return list;
+            }
+
+            foreach (XElement tab in tabs.Elements(W + "tab"))
+            {
+                string pos = (string)tab.Attribute(W + "pos");
+                if (!int.TryParse(pos, out int twip))
+                {
+                    continue;
+                }
+
+                string alignment = MapTabAlign((string)tab.Attribute(W + "val"));
+                if (alignment.Length == 0)
+                {
+                    continue;
+                }
+
+                var item = new Dictionary<string, object>
+                {
+                    ["position"] = Math.Round(twip / 20.0, 1),
+                    ["alignment"] = alignment,
+                };
+                if (alignment != "clear")
+                {
+                    item["leader"] = MapTabLeader((string)tab.Attribute(W + "leader"));
+                }
+
+                list.Add(item);
+            }
+
+            return list;
+        }
+
+        private static List<Dictionary<string, object>> MergeTabStops(object lower, object upper)
+        {
+            var merged = new List<Dictionary<string, object>>();
+            foreach (Dictionary<string, object> tab in AsTabList(lower))
+            {
+                merged.Add(tab);
+            }
+
+            foreach (Dictionary<string, object> tab in AsTabList(upper))
+            {
+                double position = TabPosition(tab);
+                merged.RemoveAll(one => Math.Abs(TabPosition(one) - position) < 0.2);
+                if (!string.Equals(tab.TryGetValue("alignment", out object align) ? align?.ToString() : "", "clear", StringComparison.Ordinal))
+                {
+                    merged.Add(tab);
+                }
+            }
+
+            return merged;
+        }
+
+        private static List<Dictionary<string, object>> AsTabList(object raw)
+        {
+            var list = new List<Dictionary<string, object>>();
+            if (!(raw is System.Collections.IEnumerable seq) || raw is string)
+            {
+                return list;
+            }
+
+            foreach (object item in seq)
+            {
+                if (item is Dictionary<string, object> tab)
+                {
+                    list.Add(tab);
+                }
+            }
+
+            return list;
+        }
+
+        private static double TabPosition(Dictionary<string, object> tab)
+        {
+            if (tab == null || !tab.TryGetValue("position", out object raw) || raw == null)
+            {
+                return 0;
+            }
+
+            try
+            {
+                return Convert.ToDouble(raw);
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        private static void DropClearedTabs(Dictionary<string, object> format)
+        {
+            if (format == null || !format.TryGetValue("tab_stops", out object raw))
+            {
+                return;
+            }
+
+            var kept = new List<Dictionary<string, object>>();
+            foreach (Dictionary<string, object> tab in AsTabList(raw))
+            {
+                string alignment = tab.TryGetValue("alignment", out object align) ? align?.ToString() ?? "" : "";
+                if (!string.Equals(alignment, "clear", StringComparison.Ordinal))
+                {
+                    kept.Add(tab);
+                }
+            }
+
+            if (kept.Count == 0)
+            {
+                format.Remove("tab_stops");
+            }
+            else
+            {
+                format["tab_stops"] = kept;
+            }
+        }
+
+        private static string MapTabAlign(string val)
+        {
+            switch ((val ?? "").Trim())
+            {
+                case "left":
+                    return "wdAlignTabLeft";
+                case "center":
+                    return "wdAlignTabCenter";
+                case "right":
+                    return "wdAlignTabRight";
+                case "decimal":
+                    return "wdAlignTabDecimal";
+                case "bar":
+                    return "wdAlignTabBar";
+                case "num":
+                    return "wdAlignTabList";
+                case "clear":
+                    return "clear";
+                default:
+                    return "";
+            }
+        }
+
+        private static string MapTabLeader(string val)
+        {
+            switch ((val ?? "").Trim())
+            {
+                case "dot":
+                    return "wdTabLeaderDots";
+                case "hyphen":
+                    return "wdTabLeaderDashes";
+                case "underscore":
+                    return "wdTabLeaderLines";
+                case "heavy":
+                    return "wdTabLeaderHeavy";
+                case "middleDot":
+                    return "wdTabLeaderMiddleDot";
+                default:
+                    return "wdTabLeaderSpaces";
+            }
         }
 
         public static void ReadLayers(
@@ -458,6 +636,9 @@ namespace WordAddIn1
             string styleName = StyleName(styles, styleId);
             style["paragraph_style"] = string.IsNullOrEmpty(styleName) ? "正文" : styleName;
             final = ExtractEffective(paragraph, styles, docDefaults);
+            DropClearedTabs(direct);
+            DropClearedTabs(style);
+            DropClearedTabs(final);
             ParaFormatCatalog.OmitReadDefaults(final, "");
         }
 
