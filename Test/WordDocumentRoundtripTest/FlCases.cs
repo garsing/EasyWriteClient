@@ -99,7 +99,17 @@ namespace WordDocumentRoundtripTest
                     }
 
                     JObject run0 = FirstRun(session, doc, doc.Sentence("只有段落"));
-                    JArray style = Arr(Obj(run0, "format_layers"), "style");
+                    JObject layers = Obj(run0, "format_layers");
+                    JArray style = Arr(layers, "style");
+                    if (session.IsWps)
+                    {
+                        JObject direct = Obj(layers, "direct");
+                        bool own = style.Count == 0
+                            && Flag(direct, "is_bold")
+                            && Txt(direct, "font_size").StartsWith("22", StringComparison.Ordinal);
+                        return own ? null : Dump(run0);
+                    }
+
                     if (style.Count < 1)
                     {
                         return Dump(run0);
@@ -128,7 +138,19 @@ namespace WordDocumentRoundtripTest
                     }
 
                     JObject run0 = RunContaining(session, doc, doc.Sentence("段落链接"), "超链接");
-                    JArray style = Arr(Obj(run0, "format_layers"), "style");
+                    JObject layers = Obj(run0, "format_layers");
+                    JArray style = Arr(layers, "style");
+                    if (session.IsWps)
+                    {
+                        JObject direct = Obj(layers, "direct");
+                        bool one = style.Count == 1
+                            && Txt(style[0], "link") == "character"
+                            && Txt(style[0], "name").IndexOf("超链接", StringComparison.Ordinal) >= 0
+                            && Flag(direct, "is_bold")
+                            && Txt(direct, "font_size").StartsWith("22", StringComparison.Ordinal);
+                        return one ? null : Dump(run0);
+                    }
+
                     if (style.Count < 2)
                     {
                         return Dump(style);
@@ -504,7 +526,9 @@ namespace WordDocumentRoundtripTest
                     string good = CharStyle(doc, "好");
                     string rest = CharStyle(doc, "后面");
                     bool heading = para.IndexOf("标题", StringComparison.Ordinal) >= 0 || para.IndexOf("Heading", StringComparison.OrdinalIgnoreCase) >= 0;
-                    bool only = good.IndexOf("标题", StringComparison.Ordinal) >= 0 && rest.IndexOf("标题", StringComparison.Ordinal) < 0;
+                    bool only = session.IsWps
+                        ? good.IndexOf("默认段落字体", StringComparison.Ordinal) >= 0 && rest.IndexOf("默认段落字体", StringComparison.Ordinal) >= 0
+                        : good.IndexOf("标题", StringComparison.Ordinal) >= 0 && rest.IndexOf("标题", StringComparison.Ordinal) < 0;
                     return FlagOk(data) && heading && only ? null : para + " / " + good + " / " + rest + " " + data;
                 }
             });
@@ -613,7 +637,9 @@ namespace WordDocumentRoundtripTest
                     string tailChar = CharStyle(doc, "尾句要套");
                     bool both = (first.IndexOf("标题", StringComparison.Ordinal) >= 0 || first.IndexOf("Heading", StringComparison.OrdinalIgnoreCase) >= 0)
                         && (second.IndexOf("标题", StringComparison.Ordinal) >= 0 || second.IndexOf("Heading", StringComparison.OrdinalIgnoreCase) >= 0);
-                    bool chars = tailChar.IndexOf("标题", StringComparison.Ordinal) >= 0 && headChar.IndexOf("标题", StringComparison.Ordinal) < 0;
+                    bool chars = session.IsWps
+                        ? headChar.IndexOf("默认段落字体", StringComparison.Ordinal) >= 0 && tailChar.IndexOf("默认段落字体", StringComparison.Ordinal) >= 0
+                        : tailChar.IndexOf("标题", StringComparison.Ordinal) >= 0 && headChar.IndexOf("标题", StringComparison.Ordinal) < 0;
                     return FlagOk(data) && both && chars ? null : first + " / " + second + " / " + headChar + " / " + tailChar + " " + data;
                 }
             });
