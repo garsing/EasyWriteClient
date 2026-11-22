@@ -958,6 +958,41 @@ namespace WordDocumentRoundtripTest
                 return tocRun.CasesFailed == 0 ? 0 : 1;
             }
 
+            if (caseFilter.StartsWith("fd-", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(caseFilter, "fd", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("文字 格式属性恢复默认（fd-）");
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
+                Console.WriteLine("不 Quit 用户 Word / WPS。只关本夹临时稿。");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop（已尝试自动拉起）。请手动打开易写应用，再跑本套。");
+                    return 1;
+                }
+
+                var defaultRun = new TestRun { TotalTarget = FdCases.Target };
+                var defaultWatch = Stopwatch.StartNew();
+                WdSession.SweepBeforeRun(host);
+                try
+                {
+                    FdCases.Run(defaultRun, host, caseFilter);
+                }
+                finally
+                {
+                    WdSession.SweepAfterRun(host);
+                }
+
+                defaultWatch.Stop();
+                Console.WriteLine();
+                Console.WriteLine("正式用例 通过 " + defaultRun.CasesPassed
+                    + "  失败 " + defaultRun.CasesFailed
+                    + "  跳过 " + defaultRun.CasesSkipped
+                    + "  （目标 " + defaultRun.TotalTarget + "）");
+                Console.WriteLine("ELAPSED_SEC=" + defaultWatch.Elapsed.TotalSeconds.ToString("F1"));
+                return defaultRun.CasesFailed == 0 ? 0 : 1;
+            }
+
             if (caseFilter.StartsWith("fq-", StringComparison.OrdinalIgnoreCase)
                 || caseFilter.StartsWith("fl-", StringComparison.OrdinalIgnoreCase))
             {
