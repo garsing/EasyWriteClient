@@ -8,7 +8,7 @@ namespace WordDocumentRoundtripTest
     /// <summary>格式属性恢复默认。对照 docs/测试/word测试/格式属性恢复默认。前缀 fd-。</summary>
     internal static class FdCases
     {
-        public const int Target = 12;
+        public const int Target = 13;
 
         private static HashSet<string> Only;
 
@@ -138,7 +138,31 @@ namespace WordDocumentRoundtripTest
 
                     ToolResult applied = ApplyChar(session, doc, doc.Sentence("大小写"), Map("is_bold", "Default"));
                     JObject final = CharFinal(session, doc, doc.Sentence("大小写"), "大小写");
-                    return Ok(applied) && Flag(final, "is_bold") ? null : Fail(applied, final);
+                    return Ok(applied) && Off(final, "is_bold") ? null : Fail(applied, final);
+                }
+            });
+
+            Case(run, "fd-char-reject", () =>
+            {
+                using (FormatProbe doc = Open(session, "认不出。"))
+                {
+                    string err = ReadSent(doc);
+                    if (err != null)
+                    {
+                        return err;
+                    }
+
+                    if (!session.PaintNeedle(doc.Path, "认不出", 0, Font("Bold", 1), null))
+                    {
+                        return "铺加粗失败";
+                    }
+
+                    ToolResult applied = ApplyChar(session, doc, doc.Sentence("认不出"), Map("is_bold", "yes"));
+                    JObject final = CharFinal(session, doc, doc.Sentence("认不出"), "认不出");
+                    string error = applied == null ? "" : (applied.Error ?? "");
+                    bool reported = applied != null && !applied.Success
+                        && error.IndexOf("布尔值无法识别", StringComparison.Ordinal) >= 0;
+                    return reported && Flag(final, "is_bold") ? null : Fail(applied, final);
                 }
             });
 

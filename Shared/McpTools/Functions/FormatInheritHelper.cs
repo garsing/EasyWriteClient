@@ -371,6 +371,17 @@ namespace WordAddIn1
                     }
                 }
 
+                if (CharFormatCatalog.IsBoolKey(key))
+                {
+                    if (!CharFormatCatalog.TryCoerceBool(value, out bool bit))
+                    {
+                        NoteFormatWarning(key, "布尔值无法识别");
+                        continue;
+                    }
+
+                    value = bit;
+                }
+
                 if (CharFormatCatalog.IsSentinel(value))
                 {
                     NoteFormatWarning(key, "值为 wdUndefined 或 wdToggle，已忽略");

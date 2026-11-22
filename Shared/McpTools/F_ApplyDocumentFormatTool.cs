@@ -257,6 +257,15 @@ namespace WordAddIn1
                     snapshot = FormatInheritHelper.BuildSnapshotFromCharFormat(charFormat);
                     if (snapshot == null || snapshot.Count == 0)
                     {
+                        List<Dictionary<string, object>> rejected = FormatInheritHelper.TakeFormatWarnings();
+                        if (rejected != null && rejected.Count > 0)
+                        {
+                            string detail = string.Join(
+                                "；",
+                                rejected.Select(one => (one.TryGetValue("key", out object key) ? key : "") + " " + (one.TryGetValue("message", out object message) ? message : "")));
+                            return Done(false, detail.Trim());
+                        }
+
                         return Done(false, "须至少提供 char_format 字段；para_format 不会写入 Word");
                     }
 

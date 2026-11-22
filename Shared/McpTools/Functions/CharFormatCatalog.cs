@@ -52,10 +52,85 @@ namespace WordAddIn1
             return !string.IsNullOrEmpty(key) && KeySet.Contains(key);
         }
 
+        private static readonly HashSet<string> BoolKeys = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "is_bold", "bold_bi", "is_italic", "italic_bi",
+            "has_underline", "has_strikethrough", "double_strikethrough",
+            "is_subscript", "is_superscript",
+            "shadow", "outline", "emboss", "engrave", "small_caps", "all_caps",
+            "disable_character_space_grid", "contextual_alternates", "no_proofing",
+        };
+
+        public static bool IsBoolKey(string key)
+        {
+            return !string.IsNullOrEmpty(key) && BoolKeys.Contains(key);
+        }
+
         public static bool IsDefaultToken(object value)
         {
             string text = value as string;
-            return text != null && string.Equals(text.Trim(), "default", StringComparison.Ordinal);
+            return text != null && string.Equals(text.Trim(), "default", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>布尔只认 true/false、0、1、-1。其它字符串不收成 false。</summary>
+        public static bool TryCoerceBool(object value, out bool result)
+        {
+            result = false;
+            if (value is bool bit)
+            {
+                result = bit;
+                return true;
+            }
+
+            if (value is string text)
+            {
+                text = text.Trim();
+                if (string.Equals(text, "true", StringComparison.OrdinalIgnoreCase))
+                {
+                    result = true;
+                    return true;
+                }
+
+                if (string.Equals(text, "false", StringComparison.OrdinalIgnoreCase))
+                {
+                    result = false;
+                    return true;
+                }
+
+                if (text == "1" || text == "-1")
+                {
+                    result = true;
+                    return true;
+                }
+
+                if (text == "0")
+                {
+                    result = false;
+                    return true;
+                }
+
+                return false;
+            }
+
+            if (!TryGetFiniteNumber(value, out double number))
+            {
+                return false;
+            }
+
+            int rounded = (int)Math.Round(number);
+            if (rounded == 0)
+            {
+                result = false;
+                return true;
+            }
+
+            if (rounded == 1 || rounded == -1)
+            {
+                result = true;
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>文档默认层有该键就用它。没有则用与读省略同一含义的回退值。字体名和字号没有回退。</summary>

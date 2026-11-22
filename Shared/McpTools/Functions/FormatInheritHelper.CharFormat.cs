@@ -306,24 +306,12 @@ namespace WordAddIn1
 
         private static bool ReadBool(object value)
         {
-            if (value is bool result)
+            if (!CharFormatCatalog.TryCoerceBool(value, out bool result))
             {
-                return result;
+                throw new InvalidOperationException("布尔值无法识别");
             }
-            string text = value?.ToString();
-            int result2;
-            switch (text)
-            {
-            default:
-                result2 = ((text == "-1") ? 1 : 0);
-                break;
-            case "true":
-            case "True":
-            case "1":
-                result2 = 1;
-                break;
-            }
-            return (byte)result2 != 0;
+
+            return result;
         }
 
         private static float ParseFloat(object value)

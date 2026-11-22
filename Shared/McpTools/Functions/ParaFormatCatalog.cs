@@ -137,6 +137,11 @@ namespace WordAddIn1
             return CharFormatCatalog.IsDefaultToken(value);
         }
 
+        public static bool IsBoolKey(string key)
+        {
+            return FalseDefaultKeys.Contains(key) || TrueDefaultKeys.Contains(key);
+        }
+
         /// <summary>文档默认层有该键就用它。没有则用与读省略同一含义的回退值。paragraph_style 不在这里。</summary>
         public static bool TryResolveWriteDefault(
             string key,
@@ -307,6 +312,17 @@ namespace WordAddIn1
                         Warn(warnings, kv.Key, "解析不出文档默认");
                         continue;
                     }
+                }
+
+                if (IsBoolKey(kv.Key))
+                {
+                    if (!CharFormatCatalog.TryCoerceBool(value, out bool bit))
+                    {
+                        Warn(warnings, kv.Key, "布尔值无法识别");
+                        continue;
+                    }
+
+                    value = bit;
                 }
 
                 if (IsSentinel(value))
