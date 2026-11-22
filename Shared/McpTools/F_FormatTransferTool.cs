@@ -29,6 +29,8 @@ namespace WordAddIn1
                     }
 
                     Word.Document doc = docHandle.Document;
+                    using (FormatDefaultSource.Begin(doc))
+                    {
                     Word.Application app = ResolveApplication(wordApplication, doc);
                     if (app == null)
                     {
@@ -59,6 +61,7 @@ namespace WordAddIn1
                         pageLayoutContentMode,
                         applyPageSetup,
                         doc).ConfigureAwait(false);
+                    }
                 }
                 catch (Exception ex)
                 {

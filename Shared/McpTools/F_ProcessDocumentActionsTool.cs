@@ -62,8 +62,10 @@ namespace WordAddIn1
 
                     var swTotal = Stopwatch.StartNew();
                     int timedActionCount = 0;
+                    IDisposable formatDefaults = null;
                     try
                     {
+                    formatDefaults = FormatDefaultSource.Begin(document);
 
                     string logPath = EasyWriteLog.BeginSession("process_document_actions");
                     WrittenFormatGlueHelper.ClearPlans();
@@ -210,6 +212,11 @@ namespace WordAddIn1
                     }
                     finally
                     {
+                        if (formatDefaults != null)
+                        {
+                            formatDefaults.Dispose();
+                        }
+
                         EasyWriteDiagnostics.LogTiming(
                             "process_actions.total",
                             swTotal.ElapsedMilliseconds,

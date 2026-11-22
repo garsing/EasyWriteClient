@@ -39,6 +39,8 @@ namespace WordAddIn1
                     }
 
                     Word.Document document = docHandle.Document;
+                    using (FormatDefaultSource.Begin(document))
+                    {
                     string action = Arg(args, "action").Trim().ToLowerInvariant();
                     try
                     {
@@ -64,6 +66,7 @@ namespace WordAddIn1
 
                     await Task.CompletedTask;
                     return result;
+                    }
                 }
                 catch (Exception ex)
                 {

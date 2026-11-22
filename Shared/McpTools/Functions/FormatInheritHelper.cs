@@ -349,6 +349,7 @@ namespace WordAddIn1
                 return snapshot;
             }
 
+            IReadOnlyDictionary<string, object> documentLayer = FormatDefaultSource.Current?.Character;
             foreach (string key in CharFormatCatalog.ApplyOrder)
             {
                 if (!includeBackgroundColor && key == "background_color")
@@ -359,6 +360,15 @@ namespace WordAddIn1
                 if (!charFormat.TryGetValue(key, out object value) || value == null)
                 {
                     continue;
+                }
+
+                if (CharFormatCatalog.IsDefaultToken(value))
+                {
+                    if (!CharFormatCatalog.TryResolveWriteDefault(key, documentLayer, out value))
+                    {
+                        NoteFormatWarning(key, "解析不出文档默认");
+                        continue;
+                    }
                 }
 
                 if (CharFormatCatalog.IsSentinel(value))

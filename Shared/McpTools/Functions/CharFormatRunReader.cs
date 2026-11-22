@@ -26,6 +26,42 @@ namespace WordAddIn1
         public const string InsertHighlightNote =
             "highlight_color_index 为 wdYellow 时，可能是插入或替换自动加上的突出显示，用来标出写入位置，不要当成异常格式。";
 
+        /// <summary>只读 docDefaults 的字符 rPr，不含段落样式和链接。</summary>
+        public static Dictionary<string, object> ReadDocCharDefaults(OpenXmlPackage package)
+        {
+            var format = new Dictionary<string, object>(StringComparer.Ordinal);
+            if (package == null)
+            {
+                return format;
+            }
+
+            XElement styles = package.FindPartRoot("styles.xml", W + "styles");
+            XElement defaults = styles?.Element(W + "docDefaults")?.Element(W + "rPrDefault")?.Element(W + "rPr");
+            if (defaults == null)
+            {
+                return format;
+            }
+
+            ThemeFonts theme = LoadTheme(package);
+            ApplyRpr(format, defaults, theme);
+            FinishFontName(format, theme);
+            var drop = new List<string>();
+            foreach (string key in format.Keys)
+            {
+                if (key.StartsWith("__", StringComparison.Ordinal))
+                {
+                    drop.Add(key);
+                }
+            }
+
+            foreach (string key in drop)
+            {
+                format.Remove(key);
+            }
+
+            return format;
+        }
+
         public static bool TryParse(
             string wordOpenXml,
             out List<Dictionary<string, object>> runs,

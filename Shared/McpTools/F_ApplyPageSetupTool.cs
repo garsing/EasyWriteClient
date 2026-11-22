@@ -40,6 +40,8 @@ namespace WordAddIn1
                     }
 
                     Word.Document doc = docHandle.Document;
+                    using (FormatDefaultSource.Begin(doc))
+                    {
                     System.Diagnostics.Debug.WriteLine(
                         $"[F_apply_page_setup] host={docHandle.HostName}, channel_id={docHandle.ChannelId}");
 
@@ -190,6 +192,7 @@ namespace WordAddIn1
                     }
 
                     return new ToolResult { Success = true, Data = data };
+                    }
                 }
                 catch (Exception ex)
                 {

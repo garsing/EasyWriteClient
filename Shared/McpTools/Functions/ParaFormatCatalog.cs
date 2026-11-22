@@ -132,6 +132,110 @@ namespace WordAddIn1
             return !string.IsNullOrEmpty(key) && KnownKeys.Contains(key);
         }
 
+        public static bool IsDefaultToken(object value)
+        {
+            return CharFormatCatalog.IsDefaultToken(value);
+        }
+
+        /// <summary>文档默认层有该键就用它。没有则用与读省略同一含义的回退值。paragraph_style 不在这里。</summary>
+        public static bool TryResolveWriteDefault(
+            string key,
+            IReadOnlyDictionary<string, object> documentLayer,
+            out object value)
+        {
+            value = null;
+            if (string.IsNullOrEmpty(key) || key == "paragraph_style" || !IsKnownKey(key))
+            {
+                return false;
+            }
+
+            if (documentLayer != null
+                && documentLayer.TryGetValue(key, out object fromDocument)
+                && fromDocument != null
+                && !string.IsNullOrWhiteSpace(fromDocument.ToString()))
+            {
+                value = fromDocument;
+                return true;
+            }
+
+            if (ZeroNumberKeys.Contains(key))
+            {
+                value = 0d;
+                return true;
+            }
+
+            if (FalseDefaultKeys.Contains(key))
+            {
+                value = false;
+                return true;
+            }
+
+            if (TrueDefaultKeys.Contains(key))
+            {
+                value = true;
+                return true;
+            }
+
+            switch (key)
+            {
+                case "alignment":
+                    value = "left";
+                    return true;
+                case "line_spacing_rule":
+                    value = "single";
+                    return true;
+                case "line_spacing":
+                    value = 1d;
+                    return true;
+                case "outline_level":
+                    value = "wdOutlineLevelBodyText";
+                    return true;
+                case "baseline_alignment":
+                    value = "wdBaselineAlignAuto";
+                    return true;
+                case "reading_order":
+                    value = "wdReadingOrderLtr";
+                    return true;
+                case "textbox_tight_wrap":
+                    value = "wdTightNone";
+                    return true;
+                case "tab_stops":
+                    value = new List<object>();
+                    return true;
+                case "shading":
+                    value = new Dictionary<string, object>
+                    {
+                        ["texture"] = "wdTextureNone",
+                        ["background_pattern_color"] = "automatic",
+                        ["foreground_pattern_color"] = "automatic",
+                    };
+                    return true;
+                case "borders":
+                    value = new Dictionary<string, object>
+                    {
+                        ["top"] = NoneEdge(),
+                        ["bottom"] = NoneEdge(),
+                        ["left"] = NoneEdge(),
+                        ["right"] = NoneEdge(),
+                        ["horizontal"] = NoneEdge(),
+                    };
+                    return true;
+                case "list":
+                    value = new Dictionary<string, object> { ["kind"] = "none" };
+                    return true;
+                case "drop_cap":
+                    value = new Dictionary<string, object> { ["position"] = "none" };
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private static Dictionary<string, object> NoneEdge()
+        {
+            return new Dictionary<string, object> { ["line_style"] = "wdLineStyleNone" };
+        }
+
         public static bool IsSentinel(object value)
         {
             if (value == null)
@@ -180,6 +284,7 @@ namespace WordAddIn1
                 warnings = new List<Dictionary<string, object>>();
             }
 
+            IReadOnlyDictionary<string, object> documentLayer = FormatDefaultSource.Current?.Paragraph;
             foreach (KeyValuePair<string, object> kv in paraFormat)
             {
                 if (!IsKnownKey(kv.Key))
@@ -188,13 +293,29 @@ namespace WordAddIn1
                     continue;
                 }
 
-                if (IsSentinel(kv.Value))
+                object value = kv.Value;
+                if (IsDefaultToken(value))
+                {
+                    if (kv.Key == "paragraph_style")
+                    {
+                        Warn(warnings, kv.Key, "不接受 default，套样式走样式工具");
+                        continue;
+                    }
+
+                    if (!TryResolveWriteDefault(kv.Key, documentLayer, out value))
+                    {
+                        Warn(warnings, kv.Key, "解析不出文档默认");
+                        continue;
+                    }
+                }
+
+                if (IsSentinel(value))
                 {
                     Warn(warnings, kv.Key, "哨兵值不写入");
                     continue;
                 }
 
-                snap[kv.Key] = kv.Value;
+                snap[kv.Key] = value;
             }
 
             if (snap.TryGetValue("alignment", out object alignObj))

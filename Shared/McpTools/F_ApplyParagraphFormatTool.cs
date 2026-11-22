@@ -84,6 +84,8 @@ namespace WordAddIn1
             Word.Document doc,
             bool disallowBackendApi)
         {
+            using (FormatDefaultSource.Begin(doc))
+            {
             string siblingIndex = TextSpanArg.RejectSiblingIndex(args);
             if (siblingIndex != null)
             {
@@ -173,6 +175,7 @@ namespace WordAddIn1
             }
 
             return new ToolResult { Success = true, Data = data };
+            }
         }
 
         private static Word.Application ResolveApplication(object wordApplication, Word.Document doc)

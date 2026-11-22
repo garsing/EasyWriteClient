@@ -75,6 +75,8 @@ namespace WordAddIn1
             InteropDocumentHandle docHandle,
             object wordApplication)
         {
+            using (FormatDefaultSource.Begin(doc))
+            {
             string siblingIndex = TextSpanArg.RejectSiblingIndex(args);
             if (siblingIndex != null)
             {
@@ -161,6 +163,7 @@ namespace WordAddIn1
             }
 
             return Task.FromResult(new ToolResult { Success = true, Data = data });
+            }
         }
 
         private static Task<ToolResult> ApplyOne(

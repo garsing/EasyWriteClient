@@ -52,6 +52,136 @@ namespace WordAddIn1
             return !string.IsNullOrEmpty(key) && KeySet.Contains(key);
         }
 
+        public static bool IsDefaultToken(object value)
+        {
+            string text = value as string;
+            return text != null && string.Equals(text.Trim(), "default", StringComparison.Ordinal);
+        }
+
+        /// <summary>文档默认层有该键就用它。没有则用与读省略同一含义的回退值。字体名和字号没有回退。</summary>
+        public static bool TryResolveWriteDefault(
+            string key,
+            IReadOnlyDictionary<string, object> documentLayer,
+            out object value)
+        {
+            value = null;
+            if (string.IsNullOrEmpty(key) || !IsKnownKey(key))
+            {
+                return false;
+            }
+
+            if (documentLayer != null
+                && documentLayer.TryGetValue(key, out object fromDocument)
+                && fromDocument != null
+                && !string.IsNullOrWhiteSpace(fromDocument.ToString()))
+            {
+                value = fromDocument;
+                return true;
+            }
+
+            if (key == "font_name" || key == "font_size" || key == "size_bi"
+                || key == "name" || key == "name_ascii" || key == "name_far_east"
+                || key == "name_bi" || key == "name_other")
+            {
+                return false;
+            }
+
+            switch (key)
+            {
+                case "is_bold":
+                case "bold_bi":
+                case "is_italic":
+                case "italic_bi":
+                case "has_underline":
+                case "has_strikethrough":
+                case "double_strikethrough":
+                case "is_subscript":
+                case "is_superscript":
+                case "shadow":
+                case "outline":
+                case "emboss":
+                case "engrave":
+                case "small_caps":
+                case "all_caps":
+                case "contextual_alternates":
+                case "disable_character_space_grid":
+                case "no_proofing":
+                    value = false;
+                    return true;
+                case "font_color":
+                case "background_color":
+                case "underline_color":
+                case "diacritic_color":
+                    value = "automatic";
+                    return true;
+                case "color_index":
+                case "color_index_bi":
+                    value = "wdAuto";
+                    return true;
+                case "underline":
+                    value = "wdUnderlineNone";
+                    return true;
+                case "emphasis_mark":
+                    value = "wdEmphasisMarkNone";
+                    return true;
+                case "scaling":
+                    value = 100d;
+                    return true;
+                case "spacing":
+                case "position":
+                case "fit_text_width":
+                case "kerning":
+                    value = 0d;
+                    return true;
+                case "ligatures":
+                    value = "wdLigaturesNone";
+                    return true;
+                case "number_form":
+                    value = "wdNumberFormDefault";
+                    return true;
+                case "number_spacing":
+                    value = "wdNumberSpacingDefault";
+                    return true;
+                case "stylistic_set":
+                    value = "wdStylisticSetDefault";
+                    return true;
+                case "highlight_color_index":
+                    value = "wdNoHighlight";
+                    return true;
+                case "language_id":
+                case "language_id_far_east":
+                    value = "wdLanguageNone";
+                    return true;
+                case "text_color":
+                    value = new Dictionary<string, object> { ["rgb"] = "automatic" };
+                    return true;
+                case "shading":
+                    value = new Dictionary<string, object>
+                    {
+                        ["texture"] = "wdTextureNone",
+                        ["background_pattern_color"] = "automatic",
+                        ["foreground_pattern_color"] = "automatic",
+                    };
+                    return true;
+                case "borders":
+                    value = new Dictionary<string, object> { ["outside_line_style"] = "wdLineStyleNone" };
+                    return true;
+                case "fill":
+                case "line":
+                case "text_shadow":
+                    value = new Dictionary<string, object> { ["visible"] = false };
+                    return true;
+                case "glow":
+                    value = new Dictionary<string, object> { ["radius"] = 0d };
+                    return true;
+                case "reflection":
+                    value = new Dictionary<string, object> { ["type"] = "msoReflectionTypeNone" };
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
         public static bool IsSentinel(object value)
         {
             if (value == null)
