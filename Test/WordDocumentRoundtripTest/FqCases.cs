@@ -516,7 +516,8 @@ namespace WordDocumentRoundtripTest
                         return err;
                     }
 
-                    if (!session.InsertTable(doc.Path, 1, 1, new[] { "格内甲。" }) || !doc.Touch(OutlineCellTail))
+                    if (!session.InsertTable(doc.Path, 1, 1, new[] { "格内甲。" })
+                        || !session.SetCellLastParagraphOutline(doc.Path, 1))
                     {
                         return "铺格子末段失败";
                     }
@@ -538,23 +539,11 @@ namespace WordDocumentRoundtripTest
             {
                 using (FormatProbe doc = Fresh(session, "空段前。\r\r空段后。"))
                 {
-                    if (!doc.Ready || !doc.ReadParagraphs())
+                    if (!doc.Ready || !session.SetEmptyParagraphOutline(doc.Path, 1) || !doc.ReadParagraphs())
                     {
-                        return doc.Ready ? "没有空段码" : doc.Id;
+                        return doc.Ready ? "空段大纲失败" : doc.Id;
                     }
 
-                    if (!doc.Touch(d =>
-                    {
-                        object paras = WdSession.ComGet(d, "Paragraphs");
-                        object para = WdSession.ComCall(paras, "Item", 2);
-                        WdSession.ComSet(para, "OutlineLevel", 1);
-                        return true;
-                    }))
-                    {
-                        return "空段大纲失败";
-                    }
-
-                    doc.ReadParagraphs();
                     string empty = "";
                     foreach (Marker marker in doc.Paragraphs)
                     {
@@ -902,18 +891,16 @@ namespace WordDocumentRoundtripTest
 
         private static string Outline(FormatProbe doc, string needle, int level)
         {
-            string err = Prepare(doc, false, true);
-            if (err != null)
+            if (!doc.Ready)
             {
-                return err;
+                return doc.Id;
             }
 
-            if (!doc.EditParagraph(needle, para => WdSession.ComSet(para, "OutlineLevel", level)))
+            if (!doc.Session.SetOutlineLevel(doc.Path, needle, level) || !doc.ReadParagraphs())
             {
                 return "大纲失败 " + needle;
             }
 
-            doc.ReadParagraphs();
             return string.IsNullOrEmpty(doc.Paragraph(needle)) ? "没有这段码 " + needle : null;
         }
 

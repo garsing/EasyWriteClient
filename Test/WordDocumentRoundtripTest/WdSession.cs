@@ -1107,8 +1107,116 @@ namespace WordDocumentRoundtripTest
 
                     doc.Paragraphs[paraIndex].Range.ParagraphFormat.Alignment =
                         (Word.WdParagraphAlignment)alignment;
+                    doc.Save();
                     return true;
                 });
+        }
+
+        public bool SetOutlineLevel(string fullPath, string needle, int level)
+        {
+            if (string.IsNullOrEmpty(needle))
+            {
+                return false;
+            }
+
+            Word.WdOutlineLevel target = (Word.WdOutlineLevel)level;
+            return IsWps
+                ? WithWpsDoc(fullPath, doc => SetOutlineLate(doc, needle, level))
+                : WithWordDoc(fullPath, doc =>
+                {
+                    foreach (Word.Paragraph para in doc.Paragraphs)
+                    {
+                        string text = para.Range.Text ?? "";
+                        if (text.IndexOf(needle, StringComparison.Ordinal) < 0)
+                        {
+                            continue;
+                        }
+
+                        para.OutlineLevel = target;
+                        doc.Save();
+                        return para.OutlineLevel == target;
+                    }
+
+                    return false;
+                });
+        }
+
+        public bool SetEmptyParagraphOutline(string fullPath, int level)
+        {
+            Word.WdOutlineLevel target = (Word.WdOutlineLevel)level;
+            return !IsWps && WithWordDoc(fullPath, doc =>
+            {
+                foreach (Word.Paragraph para in doc.Paragraphs)
+                {
+                    string text = (para.Range.Text ?? "").Replace("\r", "").Replace("\a", "").Trim();
+                    if (text.Length > 0)
+                    {
+                        continue;
+                    }
+
+                    para.OutlineLevel = target;
+                    doc.Save();
+                    return para.OutlineLevel == target;
+                }
+
+                return false;
+            });
+        }
+
+        public bool SetCellLastParagraphOutline(string fullPath, int level)
+        {
+            Word.WdOutlineLevel target = (Word.WdOutlineLevel)level;
+            return !IsWps && WithWordDoc(fullPath, doc =>
+            {
+                if (doc.Tables.Count < 1)
+                {
+                    return false;
+                }
+
+                Word.Cell cell = doc.Tables[1].Cell(1, 1);
+                Word.Paragraphs paras = cell.Range.Paragraphs;
+                if (paras.Count < 1)
+                {
+                    return false;
+                }
+
+                Word.Paragraph last = paras[paras.Count];
+                if (paras.Count > 1)
+                {
+                    paras[1].OutlineLevel = Word.WdOutlineLevel.wdOutlineLevelBodyText;
+                }
+
+                last.OutlineLevel = target;
+                doc.Save();
+                return last.OutlineLevel == target;
+            });
+        }
+
+        private static bool SetOutlineLate(object doc, string needle, int level)
+        {
+            try
+            {
+                object paras = GetProp(doc, "Paragraphs");
+                int count = Convert.ToInt32(GetProp(paras, "Count"));
+                for (int i = 1; i <= count; i++)
+                {
+                    object para = Invoke(paras, "Item", i);
+                    object range = GetProp(para, "Range");
+                    string text = Convert.ToString(GetProp(range, "Text")) ?? "";
+                    if (text.IndexOf(needle, StringComparison.Ordinal) < 0)
+                    {
+                        continue;
+                    }
+
+                    SetProp(para, "OutlineLevel", level);
+                    return Convert.ToInt32(GetProp(para, "OutlineLevel")) == level;
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
         }
 
         public bool TryNthParagraphAlign(string fullPath, string needle, int nth, out int alignment)
