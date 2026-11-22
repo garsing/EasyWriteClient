@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text.RegularExpressions;
-using System.Web.Script.Serialization;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Word = Microsoft.Office.Interop.Word;
 
@@ -69,7 +69,7 @@ namespace WordAddIn1
             {
                 fullPath = WorkspacePathResolver.ResolveWritePath(fileName);
                 var body = new Dictionary<string, object> { ["items"] = items };
-                string json = new JavaScriptSerializer { MaxJsonLength = int.MaxValue }.Serialize(body);
+                string json = JToken.FromObject(body).ToString(Formatting.None);
                 File.WriteAllText(fullPath, json);
             }
             catch (Exception ex)
