@@ -535,7 +535,7 @@ namespace WordDocumentRoundtripTest
                         return err;
                     }
 
-                    if (!SetRangeStyle(doc, "还在", "标题 1 字符", "Heading 1 Char", "heading 1 Char"))
+                    if (!SetRangeStyle(doc, "还在", "超链接", "Hyperlink"))
                     {
                         return "铺字符样式失败";
                     }
@@ -544,7 +544,9 @@ namespace WordDocumentRoundtripTest
                     string para = ParaStyle(doc, "列表几");
                     string kept = CharStyle(doc, "还在");
                     bool list = para.IndexOf("列表", StringComparison.Ordinal) >= 0 || para.IndexOf("List", StringComparison.OrdinalIgnoreCase) >= 0;
-                    return FlagOk(data) && list && kept.IndexOf("标题", StringComparison.Ordinal) >= 0 ? null : para + " / " + kept + " " + data;
+                    bool still = kept.IndexOf("超链接", StringComparison.Ordinal) >= 0
+                        || kept.IndexOf("Hyperlink", StringComparison.OrdinalIgnoreCase) >= 0;
+                    return FlagOk(data) && list && still ? null : para + " / " + kept + " " + data;
                 }
             });
             Case(run, "fl-st-char-half", () =>
