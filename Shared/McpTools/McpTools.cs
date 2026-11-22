@@ -110,6 +110,7 @@ namespace WordAddIn1
             F_ApplyDocumentFormatTool.Register(toolRegistry, wordApplication);
             F_ApplyParagraphFormatTool.Register(toolRegistry, wordApplication);
             F_SearchDocumentFormatTool.Register(toolRegistry, wordApplication);
+            F_ApplySourceParagraphFormatTool.Register(toolRegistry, wordApplication);
             F_DocumentStructureTool.Register(toolRegistry, wordApplication);
             F_ApplySourceTableFormatTool.Register(toolRegistry, wordApplication);
             F_GetFormatDisplayTool.Register(toolRegistry, wordApplication);

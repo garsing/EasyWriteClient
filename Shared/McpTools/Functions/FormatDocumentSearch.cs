@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Text.RegularExpressions;
 using System.Web.Script.Serialization;
+using Newtonsoft.Json.Linq;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
@@ -286,7 +287,8 @@ namespace WordAddIn1
 
             foreach (object item in list)
             {
-                if (!(item is Dictionary<string, object> row))
+                Dictionary<string, object> row = AsRow(item);
+                if (row == null)
                 {
                     error = "query 的每一项都要有 attr 和 pattern";
                     return false;
@@ -337,6 +339,22 @@ namespace WordAddIn1
             }
 
             return true;
+        }
+
+        private static Dictionary<string, object> AsRow(object item)
+        {
+            if (item is Dictionary<string, object> row)
+            {
+                return row;
+            }
+
+            JObject obj = item as JObject;
+            if (obj == null)
+            {
+                return null;
+            }
+
+            return obj.ToObject<Dictionary<string, object>>();
         }
 
         private static ToolResult Fail(string error)

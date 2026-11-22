@@ -958,6 +958,49 @@ namespace WordDocumentRoundtripTest
                 return tocRun.CasesFailed == 0 ? 0 : 1;
             }
 
+            if (caseFilter.StartsWith("fq-", StringComparison.OrdinalIgnoreCase)
+                || caseFilter.StartsWith("fl-", StringComparison.OrdinalIgnoreCase))
+            {
+                bool search = caseFilter.StartsWith("fq-", StringComparison.OrdinalIgnoreCase);
+                Console.WriteLine(search ? "文字 格式搜索（fq-）" : "文字 字符格式来源三层（fl-）");
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
+                Console.WriteLine("不 Quit 用户 Word / WPS。只关本夹临时稿。");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop（已尝试自动拉起）。请手动打开易写应用，再跑本套。");
+                    return 1;
+                }
+
+                var layerRun = new TestRun { TotalTarget = search ? FqCases.Target : FlCases.Target };
+                var layerWatch = Stopwatch.StartNew();
+                WdSession.SweepBeforeRun(host);
+                try
+                {
+                    if (search)
+                    {
+                        FqCases.Run(layerRun, host, caseFilter);
+                    }
+                    else
+                    {
+                        FlCases.Run(layerRun, host, caseFilter);
+                    }
+                }
+                finally
+                {
+                    WdSession.SweepAfterRun(host);
+                }
+
+                layerWatch.Stop();
+                Console.WriteLine();
+                Console.WriteLine("正式用例 通过 " + layerRun.CasesPassed
+                    + "  失败 " + layerRun.CasesFailed
+                    + "  跳过 " + layerRun.CasesSkipped
+                    + "  （目标 " + layerRun.TotalTarget + "）");
+                Console.WriteLine("ELAPSED_SEC=" + layerWatch.Elapsed.TotalSeconds.ToString("F1"));
+                return layerRun.CasesFailed == 0 ? 0 : 1;
+            }
+
             if (caseFilter.StartsWith("ds-", StringComparison.OrdinalIgnoreCase))
             {
                 Console.WriteLine("文字 样式工具（ds-）");

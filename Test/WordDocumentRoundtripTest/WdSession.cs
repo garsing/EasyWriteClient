@@ -152,6 +152,27 @@ namespace WordDocumentRoundtripTest
                 args ?? new Dictionary<string, object>());
         }
 
+        public ToolResult SearchDocumentFormat(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_search_document_format",
+                args ?? new Dictionary<string, object>());
+        }
+
+        public ToolResult GetFormatDisplay(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_get_format_display",
+                args ?? new Dictionary<string, object>());
+        }
+
+        public ToolResult ApplySourceParagraphFormat(Dictionary<string, object> args)
+        {
+            return DesktopToolPipe.Call(
+                "F_apply_source_paragraph_format",
+                args ?? new Dictionary<string, object>());
+        }
+
         public ToolResult DocumentStructure(Dictionary<string, object> args)
         {
             args = args ?? new Dictionary<string, object>();
