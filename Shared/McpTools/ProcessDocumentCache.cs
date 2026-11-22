@@ -90,7 +90,13 @@ namespace WordAddIn1
         private static readonly HashSet<string> FormattingPrLocalNames =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
-                "pPr", "rPr", "tblPr", "trPr"
+                "rPr", "tblPr", "trPr"
+            };
+
+        private static readonly HashSet<string> RevisionChangeLocalNames =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "pPrChange", "rPrChange"
             };
 
         private static readonly HashSet<string> TcPrKeepChildLocalNames =
@@ -191,7 +197,7 @@ namespace WordAddIn1
             foreach (XElement child in element.Elements().ToList())
             {
                 string localName = child.Name.LocalName;
-                if (FormattingPrLocalNames.Contains(localName))
+                if (ShouldDropFormattingElement(element, localName))
                 {
                     child.Remove();
                 }
@@ -202,6 +208,26 @@ namespace WordAddIn1
             }
 
             StripVolatileAttributes(element);
+        }
+
+        /// <summary>
+        /// 段上 w:pPr（含段落标记 w:rPr）留在指纹里，大纲、对齐、样式才会让缓存失效。
+        /// 字上的直接 w:rPr、表上的 tblPr/trPr 仍整段丢掉。pPrChange/rPrChange 是修订号，不进哈希。
+        /// </summary>
+        private static bool ShouldDropFormattingElement(XElement parent, string localName)
+        {
+            if (RevisionChangeLocalNames.Contains(localName))
+            {
+                return true;
+            }
+
+            if (!FormattingPrLocalNames.Contains(localName))
+            {
+                return false;
+            }
+
+            return !string.Equals(localName, "rPr", StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(parent?.Name.LocalName, "pPr", StringComparison.OrdinalIgnoreCase);
         }
 
         private static void StripVolatileAttributes(XElement element)
