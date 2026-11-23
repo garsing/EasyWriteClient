@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Text.RegularExpressions;
 using WordAddIn1;
 
@@ -49,6 +48,7 @@ namespace WordDocumentRoundtripTest
             var s = new WdSession(host);
             RunBody(run, s);
             RunTwoParaCell(run, s);
+            RunLastOfManyDelete(run, s);
             RunOnlyCell(run, s);
             RunGrid(run, s);
             RunThree(run, s);
@@ -96,7 +96,6 @@ namespace WordDocumentRoundtripTest
             if (!Want("pc-cell-first-replace")
                 && !Want("pc-cell-last-replace")
                 && !Want("pc-cell-last-insert")
-                && !Want("pc-cell-last-delete")
                 && !Want("pc-last-text-slice")
                 && !Want("pc-first-keep-last"))
             {
@@ -109,7 +108,6 @@ namespace WordDocumentRoundtripTest
                     "pc-cell-first-replace",
                     "pc-cell-last-replace",
                     "pc-cell-last-insert",
-                    "pc-cell-last-delete",
                     "pc-last-text-slice",
                     "pc-first-keep-last"))
                 {
@@ -124,7 +122,6 @@ namespace WordDocumentRoundtripTest
                         "pc-cell-first-replace",
                         "pc-cell-last-replace",
                         "pc-cell-last-insert",
-                        "pc-cell-last-delete",
                         "pc-last-text-slice",
                         "pc-first-keep-last");
                     return;
@@ -177,55 +174,38 @@ namespace WordDocumentRoundtripTest
                     doc.Reread(s);
                 }
 
-                if (Want("pc-cell-last-delete"))
+            }
+        }
+
+        /// <summary>
+        /// 格里两段，删最后一段。后插不会另起段，不能接在 insert 后面当「上一行还在」。
+        /// </summary>
+        private static void RunLastOfManyDelete(TestRun run, WdSession s)
+        {
+            if (!Want("pc-cell-last-delete"))
+            {
+                return;
+            }
+
+            using (Planted doc = PlantTable(s, 1, 1, "格首甲。\r格末乙。\r"))
+            {
+                if (!Ready(run, doc, "pc-cell-last-delete"))
                 {
-                    string firstCode = doc.Paragraph("格首甲");
-                    string prevCode = doc.Paragraph("格末乙");
-                    string toDelete = doc.Paragraph("插在格末");
-                    bool deletingInserted = !string.IsNullOrEmpty(toDelete);
-                    if (!deletingInserted)
-                    {
-                        toDelete = doc.Paragraph("格末乙");
-                    }
-
-                    Console.WriteLine("[pc-cell-last-delete] first=" + firstCode
-                        + " prev乙=" + prevCode
-                        + " toDelete=" + toDelete
-                        + " sameP=" + (deletingInserted && prevCode == toDelete));
-                    Console.WriteLine("[pc-cell-last-delete] before " + Snip(doc.Body));
-                    ToolResult deleted = s.ProcessActions(doc.Id, DeletePara(toDelete));
-                    Console.WriteLine("[pc-cell-last-delete] success=" + deleted.Success
-                        + " err=" + (deleted.Error ?? ""));
-                    DumpCellDeleteTrace();
-                    bool hasFirst = doc.Has("格首甲");
-                    bool previousKept = deletingInserted ? doc.Has("格末乙") : true;
-                    bool targetGone = deletingInserted ? !doc.Has("插在格末") : !doc.Has("格末乙");
-                    Console.WriteLine("[pc-cell-last-delete] hasFirst=" + hasFirst
-                        + " previousKept=" + previousKept
-                        + " targetGone=" + targetGone);
-                    Console.WriteLine("[pc-cell-last-delete] after " + Snip(doc.Body));
-                    string why;
-                    if (!deleted.Success)
-                    {
-                        why = deleted.Error ?? "";
-                    }
-                    else if (!hasFirst || !previousKept)
-                    {
-                        why = "删格末段把前一段带走了";
-                    }
-                    else if (!targetGone)
-                    {
-                        why = "格末目标段还在";
-                    }
-                    else
-                    {
-                        why = "";
-                    }
-
-                    Ok(run, "pc-cell-last-delete",
-                        deleted.Success && hasFirst && previousKept && targetGone,
-                        why);
+                    return;
                 }
+
+                string first = doc.Paragraph("格首甲");
+                string last = doc.Paragraph("格末乙");
+                if (string.IsNullOrEmpty(first) || string.IsNullOrEmpty(last) || first == last)
+                {
+                    Ok(run, "pc-cell-last-delete", false, "铺稿不是格内两段");
+                    return;
+                }
+
+                ToolResult deleted = s.ProcessActions(doc.Id, DeletePara(last));
+                Ok(run, "pc-cell-last-delete",
+                    deleted.Success && doc.Has("格首甲") && !doc.Has("格末乙"),
+                    deleted.Success ? "删格末段失败或把前一段带走了" : (deleted.Error ?? ""));
             }
         }
 
@@ -610,30 +590,6 @@ namespace WordDocumentRoundtripTest
                     run.CaseFail(id, reason);
                 }
             }
-        }
-
-        private static string Snip(string text)
-        {
-            string s = (text ?? "").Replace("\r", "\\r").Replace("\n", "\\n");
-            if (s.Length > 400)
-            {
-                s = s.Substring(0, 400) + "…";
-            }
-
-            return s;
-        }
-
-        private static void DumpCellDeleteTrace()
-        {
-            string path = Path.Combine(Path.GetTempPath(), "yiwrite-pc-cell-delete.txt");
-            if (!File.Exists(path))
-            {
-                Console.WriteLine("[pc-cell-last-delete] no trace " + path);
-                return;
-            }
-
-            Console.WriteLine("[pc-cell-last-delete] --- tool ---");
-            Console.WriteLine(File.ReadAllText(path));
         }
 
         private static void Ok(TestRun run, string id, bool pass, string reason)

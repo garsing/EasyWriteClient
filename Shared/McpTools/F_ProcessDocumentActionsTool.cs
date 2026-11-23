@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -2930,18 +2929,24 @@ namespace WordAddIn1
                 }
 
                 Word.Range targetRange = locate.Range;
+                string beforeDump = DumpDeleteLocate(doc, names, targetRange, out Word.Table probeTable, out int probeRow, out int probeCol);
 
                 int cursorPos = targetRange.Start;
-                if (!TryDeleteWritableRange(doc, targetRange, out string deleteError))
+                if (!TryDeleteWritableRange(doc, targetRange, out string deleteError, out string deletePath))
                 {
                     result.ErrorMessage = deleteError ?? "删除失败";
+                    result.DebugDump = beforeDump + " path=" + deletePath;
+                    Debug.WriteLine("[cell-del] " + result.DebugDump);
                     return result;
                 }
 
                 MoveSelectionAfterDelete(doc, cursorPos);
 
                 result.Success = true;
-                System.Diagnostics.Debug.WriteLine($"[删除操作] 已删除 {names.Count} 个句子");
+                result.DebugDump = beforeDump
+                    + " path=" + deletePath
+                    + " after=" + DumpCellParas(probeTable, probeRow, probeCol);
+                Debug.WriteLine("[cell-del] " + result.DebugDump);
                 return result;
             }
             catch (Exception ex)
@@ -2952,32 +2957,202 @@ namespace WordAddIn1
             }
         }
 
-        internal static readonly string CellDeleteTracePath =
-            Path.Combine(Path.GetTempPath(), "yiwrite-pc-cell-delete.txt");
-
-        private static void TraceCellDelete(string line)
+        private static bool TryDeleteWritableRange(
+            Word.Document doc,
+            Word.Range targetRange,
+            out string error,
+            out string path)
         {
+            error = null;
+            path = "none";
+            if (targetRange == null)
+            {
+                error = "未找到定位 Range";
+                return false;
+            }
+
             try
             {
-                File.AppendAllText(CellDeleteTracePath, line + "\r\n", Encoding.UTF8);
+                if (TryClearCellWhenDeleteWouldHitMark(doc, targetRange))
+                {
+                    path = "clear-body";
+                    return true;
+                }
+
+                path = "Range.Delete";
+                targetRange.Delete();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        private static string DumpDeleteLocate(
+            Word.Document doc,
+            IList<string> names,
+            Word.Range targetRange,
+            out Word.Table table,
+            out int row,
+            out int col)
+        {
+            table = null;
+            row = 0;
+            col = 0;
+            var sb = new StringBuilder();
+            try
+            {
+                if (names != null)
+                {
+                    for (int i = 0; i < names.Count; i++)
+                    {
+                        string code = names[i];
+                        int k = DisplayParagraphIndexMap.ResolveParaIndex(code);
+                        sb.Append(code).Append("->k=").Append(k);
+                        AppendParaBrief(sb, doc, k - 1, " prev");
+                        AppendParaBrief(sb, doc, k, " hit");
+                        AppendParaBrief(sb, doc, k + 1, " next");
+                    }
+                }
+
+                if (targetRange != null)
+                {
+                    sb.Append(" tgt=").Append(targetRange.Start).Append('-').Append(targetRange.End);
+                    sb.Append(" t=").Append(EscapeProbeText(SafeRangeText(targetRange)));
+                }
+
+                if (TryGetCell(targetRange, out Word.Cell cell))
+                {
+                    table = cell.Range.Tables[1];
+                    row = cell.RowIndex;
+                    col = cell.ColumnIndex;
+                    sb.Append(" cell=").Append(row).Append(',').Append(col);
+                    sb.Append(" n=").Append(cell.Range.Paragraphs.Count);
+                    sb.Append(" paras=").Append(DumpCellParas(table, row, col));
+                }
+            }
+            catch (Exception ex)
+            {
+                sb.Append(" dump-ex=").Append(ex.Message);
+            }
+
+            return sb.ToString();
+        }
+
+        private static void AppendParaBrief(StringBuilder sb, Word.Document doc, int k, string tag)
+        {
+            if (doc == null || k < 1)
+            {
+                return;
+            }
+
+            try
+            {
+                if (k > doc.Paragraphs.Count)
+                {
+                    return;
+                }
+
+                Word.Range r = doc.Paragraphs[k].Range;
+                sb.Append(tag).Append('[').Append(k).Append(']');
+                sb.Append(r.Start).Append('-').Append(r.End);
+                sb.Append('=').Append(EscapeProbeText(SafeRangeText(r)));
             }
             catch
             {
             }
-
-            System.Diagnostics.Debug.WriteLine("[cell-delete] " + line);
         }
 
-        private static string DumpRangeChars(string text)
+        private static string DumpCellParas(Word.Table table, int row, int col)
+        {
+            if (table == null || row < 1 || col < 1)
+            {
+                return "-";
+            }
+
+            var sb = new StringBuilder();
+            try
+            {
+                Word.Cell cell = table.Cell(row, col);
+                int n = cell.Range.Paragraphs.Count;
+                for (int i = 1; i <= n; i++)
+                {
+                    if (i > 1)
+                    {
+                        sb.Append('|');
+                    }
+
+                    Word.Range r = cell.Range.Paragraphs[i].Range;
+                    sb.Append(i).Append(':').Append(r.Start).Append('-').Append(r.End);
+                    sb.Append('=').Append(EscapeProbeText(SafeRangeText(r)));
+                }
+            }
+            catch (Exception ex)
+            {
+                return "ex:" + ex.Message;
+            }
+
+            return sb.ToString();
+        }
+
+        private static bool TryGetCell(Word.Range range, out Word.Cell cell)
+        {
+            cell = null;
+            if (range == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                object inTableObj = range.Information[Word.WdInformation.wdWithInTable];
+                bool inTable = inTableObj is bool flag
+                    ? flag
+                    : Convert.ToInt32(inTableObj) != 0;
+                if (!inTable || range.Cells == null || range.Cells.Count < 1)
+                {
+                    return false;
+                }
+
+                cell = range.Cells[1];
+                return cell != null;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string SafeRangeText(Word.Range range)
+        {
+            try
+            {
+                return range == null ? "" : (range.Text ?? "");
+            }
+            catch
+            {
+                return "<dead>";
+            }
+        }
+
+        private static string EscapeProbeText(string text)
         {
             if (text == null)
             {
-                return "null";
+                return "";
             }
 
             var sb = new StringBuilder();
             int n = text.Length;
-            for (int i = 0; i < n && sb.Length < 240; i++)
+            if (n > 48)
+            {
+                text = text.Substring(0, 24) + "…" + text.Substring(n - 16);
+                n = text.Length;
+            }
+
+            for (int i = 0; i < n; i++)
             {
                 char c = text[i];
                 if (c == '\r')
@@ -2992,6 +3167,10 @@ namespace WordAddIn1
                 {
                     sb.Append("\\n");
                 }
+                else if (c == '\t')
+                {
+                    sb.Append("\\t");
+                }
                 else if (c < 32)
                 {
                     sb.Append("\\x").Append(((int)c).ToString("X2"));
@@ -3002,57 +3181,11 @@ namespace WordAddIn1
                 }
             }
 
-            if (n > 80)
-            {
-                sb.Append("…len=").Append(n);
-            }
-
             return sb.ToString();
         }
 
-        private static bool TryDeleteWritableRange(Word.Document doc, Word.Range targetRange, out string error)
-        {
-            error = null;
-            if (targetRange == null)
-            {
-                error = "未找到定位 Range";
-                return false;
-            }
-
-            try
-            {
-                try
-                {
-                    File.WriteAllText(CellDeleteTracePath, "", Encoding.UTF8);
-                }
-                catch
-                {
-                }
-
-                TraceCellDelete(
-                    "target Start=" + targetRange.Start
-                    + " End=" + targetRange.End
-                    + " Text=" + DumpRangeChars(targetRange.Text));
-                if (TryClearCellWhenDeleteWouldHitMark(doc, targetRange))
-                {
-                    TraceCellDelete("branch=cell-handled");
-                    return true;
-                }
-
-                TraceCellDelete("branch=Range.Delete");
-                targetRange.Delete();
-                return true;
-            }
-            catch (Exception ex)
-            {
-                TraceCellDelete("ex=" + ex.Message);
-                error = ex.Message;
-                return false;
-            }
-        }
-
         /// <summary>
-        /// 格子必须留一段。定位已削 \a 后：唯一段 / 整格改清文字；多段里删最后一段再削 \r，只删正文。
+        /// 格子必须留一段。后面没有正文的那段（含格末空段前面那条）不能 Delete 段标，只清字。
         /// </summary>
         private static bool TryClearCellWhenDeleteWouldHitMark(Word.Document doc, Word.Range targetRange)
         {
@@ -3074,51 +3207,82 @@ namespace WordAddIn1
             int paraCount = cell.Range.Paragraphs.Count;
             if (paraCount < 1)
             {
-                TraceCellDelete("cell paraCount=0");
+                return false;
+            }
+
+            int hit = CellParaIndexAt(cell, targetRange.Start);
+            if (hit < 1)
+            {
                 return false;
             }
 
             int cellContentStart = cell.Range.Paragraphs[1].Range.Start;
-            int lastStart = cell.Range.Paragraphs[paraCount].Range.Start;
             Word.Range writableCell = ParagraphRangeLocator.ExcludeTrailingCellMarks(doc, cell.Range);
             bool coversCell = writableCell != null && targetRange.End >= writableCell.End;
-            TraceCellDelete(
-                "cell paras=" + paraCount
-                + " firstStart=" + cellContentStart
-                + " lastStart=" + lastStart
-                + " writableEnd=" + (writableCell == null ? -1 : writableCell.End)
-                + " coversCell=" + coversCell);
-            for (int i = 1; i <= paraCount; i++)
-            {
-                Word.Range p = cell.Range.Paragraphs[i].Range;
-                TraceCellDelete(
-                    "  P[" + i + "] " + p.Start + ".." + p.End
-                    + " " + DumpRangeChars(p.Text));
-            }
-
             if (paraCount == 1 || (coversCell && targetRange.Start <= cellContentStart))
             {
-                TraceCellDelete("branch=ClearCellKeepOneParagraph");
                 TableCellContentWriter.ClearCellKeepOneParagraph(cell.Range);
                 return true;
             }
 
-            if (targetRange.Start < lastStart)
+            if (CellHasLaterBody(doc, cell, hit))
             {
-                TraceCellDelete("branch=not-last-para → Delete");
                 return false;
             }
 
-            Word.Range body = ParagraphRangeLocator.ExcludeTrailingParagraphMark(doc, targetRange);
-            TraceCellDelete(
-                "branch=last-para body "
-                + (body == null ? "null" : (body.Start + ".." + body.End + " " + DumpRangeChars(body.Text))));
+            Word.Range hitRange = cell.Range.Paragraphs[hit].Range;
+            Word.Range body = ParagraphRangeLocator.ExcludeTrailingParagraphMark(doc, hitRange);
             if (body != null && body.End > body.Start)
             {
                 body.Text = "";
             }
 
             return true;
+        }
+
+        private static int CellParaIndexAt(Word.Cell cell, int start)
+        {
+            int n = cell.Range.Paragraphs.Count;
+            for (int i = 1; i <= n; i++)
+            {
+                Word.Range para = cell.Range.Paragraphs[i].Range;
+                int paraStart = para.Start;
+                int paraEnd = para.End;
+                if (start >= paraStart && start < paraEnd)
+                {
+                    return i;
+                }
+
+                if (i == n && start >= paraStart)
+                {
+                    return i;
+                }
+            }
+
+            return 0;
+        }
+
+        private static bool CellHasLaterBody(Word.Document doc, Word.Cell cell, int hit)
+        {
+            int n = cell.Range.Paragraphs.Count;
+            for (int i = hit + 1; i <= n; i++)
+            {
+                Word.Range body = ParagraphRangeLocator.ExcludeTrailingParagraphMark(
+                    doc,
+                    cell.Range.Paragraphs[i].Range);
+                if (body == null || body.End <= body.Start)
+                {
+                    continue;
+                }
+
+                string text = body.Text ?? "";
+                if (text.Trim().Length > 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -3866,7 +4030,13 @@ namespace WordAddIn1
         {
             ar.affected_codes = del.AffectedCodes ?? new List<string>();
             ar.success = del.Success;
-            ar.message = del.Success ? "删除成功" : (del.ErrorMessage ?? "删除失败");
+            string msg = del.Success ? "删除成功" : (del.ErrorMessage ?? "删除失败");
+            if (!string.IsNullOrEmpty(del.DebugDump))
+            {
+                msg = msg + " " + del.DebugDump;
+            }
+
+            ar.message = msg;
         }
 
         private static void FillInsertActionResult(ActionResult ar, InsertExecutionResult ins, LocatorSpec target)
@@ -3947,6 +4117,7 @@ namespace WordAddIn1
             public bool Success { get; set; }
             public string ErrorMessage { get; set; }
             public List<string> AffectedCodes { get; set; }
+            public string DebugDump { get; set; }
         }
 
         private sealed class InsertExecutionResult
