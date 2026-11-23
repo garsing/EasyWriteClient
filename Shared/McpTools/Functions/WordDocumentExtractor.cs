@@ -2285,8 +2285,7 @@ namespace WordAddIn1
                                         {
                                             ChunkIdx = chunkData["chunk_idx"]?.Value<int>() ?? 0,
                                             Content = chunkData["content"]?.Value<string>() ?? "",
-                                            DisplayContent = WordAddIn1.DocumentMapping.InTableBoundaryMarker.AnnotateSentences(
-                                                chunkData["display_content"]?.Value<string>() ?? ""),
+                                            DisplayContent = "",
                                             ParagraphDisplayContent = WordAddIn1.DocumentMapping.InTableBoundaryMarker.AnnotateParagraphs(
                                                 chunkData["paragraph_display_content"]?.Value<string>() ?? ""),
                                             Summary = chunkData["summary"]?.Value<string>() ?? ""

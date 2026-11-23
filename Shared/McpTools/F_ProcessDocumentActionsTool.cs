@@ -889,11 +889,16 @@ namespace WordAddIn1
             List<string> list = ParseCodeList(codes);
             if (list.Count == 1 && list[0].StartsWith("S_", StringComparison.Ordinal))
             {
-                return "码 " + list[0]
-                    + " 当前定位列表里没有这颗码（上一批或本批前面的写入已重切，或该句已被替换文本吞掉）";
+                return InsertTargetLocatorHelper.CodesRejectSentenceError;
             }
 
-            return fallback ?? "未找到任何句子 Range";
+            if (list.Count == 1 && list[0].StartsWith("P_", StringComparison.Ordinal))
+            {
+                return "码 " + list[0]
+                    + " 当前定位列表里没有这颗码（上一批或本批前面的写入已重切，或该段已被替换文本吞掉）";
+            }
+
+            return fallback ?? "未找到定位 Range";
         }
 
         private static void TakeLocateProblems(
@@ -2246,7 +2251,7 @@ namespace WordAddIn1
             var locate = TakenSpan(located);
             if (!locate.Success || locate.Range == null)
             {
-                result.ErrorMessage = LocateMissMessage(sentenceNames, locate.Error ?? "未找到任何句子 Range");
+                result.ErrorMessage = LocateMissMessage(sentenceNames, locate.Error ?? "未找到定位 Range");
                 return result;
             }
 
@@ -2740,7 +2745,7 @@ namespace WordAddIn1
                 var locate = TakenSpan(located);
                 if (!locate.Success || locate.Range == null)
                 {
-                    result.ErrorMessage = LocateMissMessage(sentenceNames, locate.Error ?? "未找到任何句子 Range");
+                    result.ErrorMessage = LocateMissMessage(sentenceNames, locate.Error ?? "未找到定位 Range");
                     System.Diagnostics.Debug.WriteLine($"[替换操作] {result.ErrorMessage}");
                     return result;
                 }
@@ -2918,7 +2923,7 @@ namespace WordAddIn1
                 var locate = TakenSpan(located);
                 if (!locate.Success || locate.Range == null)
                 {
-                    result.ErrorMessage = LocateMissMessage(sentenceNames, locate.Error ?? "未找到任何句子 Range");
+                    result.ErrorMessage = LocateMissMessage(sentenceNames, locate.Error ?? "未找到定位 Range");
                     System.Diagnostics.Debug.WriteLine($"[删除操作] {result.ErrorMessage}");
                     return result;
                 }
@@ -3235,15 +3240,15 @@ namespace WordAddIn1
             {
                 if (isTableCode && !code.StartsWith("T_"))
                 {
-                    return $"错误：编码序列中混合了不同类型的编码。表格编码（T_）、图表编码（C_）和句子编码（S_）不能混用。";
+                    return $"错误：编码序列中混合了不同类型的编码。表格编码（T_）、图表编码（C_）和段落编码（P_）不能混用。";
                 }
                 if (isChartCode && !code.StartsWith("C_"))
                 {
-                    return $"错误：编码序列中混合了不同类型的编码。表格编码（T_）、图表编码（C_）和句子编码（S_）不能混用。";
+                    return $"错误：编码序列中混合了不同类型的编码。表格编码（T_）、图表编码（C_）和段落编码（P_）不能混用。";
                 }
                 if (isSentenceCode && !code.StartsWith("S_"))
                 {
-                    return $"错误：编码序列中混合了不同类型的编码。表格编码（T_）、图表编码（C_）和句子编码（S_）不能混用。";
+                    return $"错误：编码序列中混合了不同类型的编码。表格编码（T_）、图表编码（C_）和段落编码（P_）不能混用。";
                 }
             }
 
@@ -3270,7 +3275,7 @@ namespace WordAddIn1
                         || tableCodes == null
                         || tableCodes.Count == 0)
                     {
-                        return $"错误：表格 {tableId} 内无句子编码，无法验证表内连续性。";
+                        return $"错误：表格 {tableId} 内无段落编码，无法验证表内连续性。";
                     }
 
                     snapshotList = tableCodes.ToList();

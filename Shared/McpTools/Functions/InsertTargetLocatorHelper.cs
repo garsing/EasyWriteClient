@@ -2003,7 +2003,7 @@ namespace WordAddIn1
             {
                 Success = false,
                 Error = ambiguity?.SummaryMessage
-                    ?? $"locate_failed: 句子编码歧义（{DisplaySequenceLocator.ErrorAmbiguousSentenceCode}）",
+                    ?? $"locate_failed: 定位码歧义（{DisplaySequenceLocator.ErrorAmbiguousSentenceCode}）",
                 Ambiguity = ambiguity
             };
         }
