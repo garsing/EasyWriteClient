@@ -1037,7 +1037,6 @@ namespace WordAddIn1
                         spec.Row = parsed.Row;
                         spec.Col = parsed.Col;
                         spec.Codes = parsed.Code;
-                        spec.InTableId = parsed.TableId;
                     }
                 }
 

@@ -51,12 +51,10 @@ namespace WordAddIn1
                 return false;
             }
 
-            string tableId = anchor.TableId;
             var spec = new InsertTargetLocatorHelper.LocatorSpec
             {
                 Kind = InsertTargetLocatorHelper.LocatorKind.Sentence,
-                Codes = string.Join(",", codeList),
-                InTableId = tableId
+                Codes = string.Join(",", codeList)
             };
             InsertTargetLocatorHelper.LocateSpanBatchResult batch = InsertTargetLocatorHelper.TryLocateSpans(
                 doc,

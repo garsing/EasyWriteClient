@@ -367,7 +367,6 @@ namespace WordAddIn1
                             Kind = LocatorKind.EmptyCell,
                             Codes = parsedCell.Code,
                             TableId = parsedCell.TableId,
-                            InTableId = parsedCell.TableId,
                             Row = parsedCell.Row,
                             Col = parsedCell.Col
                         }
@@ -1440,6 +1439,9 @@ namespace WordAddIn1
             return null;
         }
 
+        /// <summary>
+        /// 回显给二次解析用。定位对象已不收 in_table；几何码表号在 T_…_r_c 里，不要再写出这个键。
+        /// </summary>
         public static Dictionary<string, object> BuildTargetEcho(LocatorSpec spec)
         {
             if (spec == null)
@@ -1451,18 +1453,10 @@ namespace WordAddIn1
             if (spec.Kind == LocatorKind.Sentence)
             {
                 echo["codes"] = spec.Codes;
-                if (!string.IsNullOrEmpty(spec.InTableId))
-                {
-                    echo["in_table"] = spec.InTableId;
-                }
             }
             else if (spec.Kind == LocatorKind.Paragraph)
             {
                 echo["paragraph_codes"] = spec.Codes;
-                if (!string.IsNullOrEmpty(spec.InTableId))
-                {
-                    echo["in_table"] = spec.InTableId;
-                }
             }
             else if (spec.Kind == LocatorKind.Table)
             {
@@ -1483,10 +1477,6 @@ namespace WordAddIn1
             else if (spec.Kind == LocatorKind.EmptyCell)
             {
                 echo["codes"] = spec.Codes;
-                if (!string.IsNullOrEmpty(spec.InTableId))
-                {
-                    echo["in_table"] = spec.InTableId;
-                }
             }
 
             if (spec.TextSpan != null && !string.IsNullOrEmpty(spec.TextSpan.Value))
