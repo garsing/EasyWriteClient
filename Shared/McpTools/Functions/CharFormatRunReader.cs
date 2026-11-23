@@ -146,7 +146,7 @@ namespace WordAddIn1
                 return false;
             }
 
-            if (!string.Equals(joined, story, StringComparison.Ordinal))
+            if (!SameStoryAfterTrailingMarks(joined, story))
             {
                 error = "字符格式与正文对不上：区间 " + joined.Length + " 字，Range.Text " + story.Length + " 字";
                 runs = null;
@@ -169,6 +169,37 @@ namespace WordAddIn1
 
             RefreshLayerFinal(runs);
             return true;
+        }
+
+        /// <summary>对账前只剥尾巴上的段标/格标/软换行。句中换行留下。</summary>
+        public static string StripTrailingStoryMarks(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return text ?? "";
+            }
+
+            int end = text.Length;
+            while (end > 0)
+            {
+                char c = text[end - 1];
+                if (c != '\r' && c != '\a' && c != '\n' && c != '\v')
+                {
+                    break;
+                }
+
+                end--;
+            }
+
+            return end == text.Length ? text : text.Substring(0, end);
+        }
+
+        public static bool SameStoryAfterTrailingMarks(string joined, string story)
+        {
+            return string.Equals(
+                StripTrailingStoryMarks(joined),
+                StripTrailingStoryMarks(story),
+                StringComparison.Ordinal);
         }
 
         private static void FillWordClassicBools(Word.Range range, List<Dictionary<string, object>> runs)
