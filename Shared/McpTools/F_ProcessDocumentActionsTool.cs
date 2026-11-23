@@ -3185,7 +3185,8 @@ namespace WordAddIn1
         }
 
         /// <summary>
-        /// 格子必须留一段。后面没有正文的那段（含格末空段前面那条）不能 Delete 段标，只清字。
+        /// 格子必须留一段。只有命中格内 COM 最后一段时才清字、不 Delete 段标。
+        /// 后面还有空段时走 Range.Delete，否则只清字会留下自动编号。
         /// </summary>
         private static bool TryClearCellWhenDeleteWouldHitMark(Word.Document doc, Word.Range targetRange)
         {
@@ -3225,12 +3226,20 @@ namespace WordAddIn1
                 return true;
             }
 
-            if (CellHasLaterBody(doc, cell, hit))
+            if (hit < paraCount)
             {
                 return false;
             }
 
             Word.Range hitRange = cell.Range.Paragraphs[hit].Range;
+            try
+            {
+                hitRange.ListFormat.RemoveNumbers();
+            }
+            catch
+            {
+            }
+
             Word.Range body = ParagraphRangeLocator.ExcludeTrailingParagraphMark(doc, hitRange);
             if (body != null && body.End > body.Start)
             {
@@ -3260,29 +3269,6 @@ namespace WordAddIn1
             }
 
             return 0;
-        }
-
-        private static bool CellHasLaterBody(Word.Document doc, Word.Cell cell, int hit)
-        {
-            int n = cell.Range.Paragraphs.Count;
-            for (int i = hit + 1; i <= n; i++)
-            {
-                Word.Range body = ParagraphRangeLocator.ExcludeTrailingParagraphMark(
-                    doc,
-                    cell.Range.Paragraphs[i].Range);
-                if (body == null || body.End <= body.Start)
-                {
-                    continue;
-                }
-
-                string text = body.Text ?? "";
-                if (text.Trim().Length > 0)
-                {
-                    return true;
-                }
-            }
-
-            return false;
         }
 
         /// <summary>
