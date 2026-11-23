@@ -624,7 +624,7 @@ namespace WordDocumentRoundtripTest
             if (caseFilter.StartsWith("wt-ec-", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(caseFilter, "wt-ec", StringComparison.OrdinalIgnoreCase))
             {
-                Console.WriteLine("文字 空格码填空短套（wt-ec）");
+                Console.WriteLine("文字 空格码填空短套（wt-ec），含几何码不得带 in_table");
                 Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
                 Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
                 if (!DesktopLauncher.EnsureAvailable())
@@ -639,6 +639,8 @@ namespace WordDocumentRoundtripTest
                 bool wpsWinBeforeEc = OfficeAlive.HasWindow("wps");
                 var ecRun = new TestRun();
                 WtCases.RunEmptyCell(
+                    ecRun, host, wordBeforeEc, wpsBeforeEc, wordWinBeforeEc, wpsWinBeforeEc);
+                WtCases.RunGeoInTableSidecar(
                     ecRun, host, wordBeforeEc, wpsBeforeEc, wordWinBeforeEc, wpsWinBeforeEc);
                 Console.WriteLine("正式用例 通过 " + ecRun.CasesPassed
                     + "  失败 " + ecRun.CasesFailed

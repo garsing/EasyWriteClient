@@ -15,7 +15,7 @@ namespace WordDocumentRoundtripTest
     /// </summary>
     internal static class WtCases
     {
-        public const int Target = 149;
+        public const int Target = 159;
 
         private const string LabelA = "易写表指标";
         private const string LabelB = "易写表WACC";
@@ -299,6 +299,256 @@ namespace WordDocumentRoundtripTest
             {
                 s.CloseDocByPath(path);
             }
+        }
+
+        /// <summary>
+        /// 几何码不得再走 in_table 旁路：误传应失败，不传应能写格。
+        /// </summary>
+        public static void RunGeoInTableSidecar(
+            TestRun run,
+            string host,
+            int wordBefore,
+            int wpsBefore,
+            bool wordWinBefore,
+            bool wpsWinBefore)
+        {
+            const string Title = "实验操作方法和步骤";
+            const string FillA = "加固甲。";
+            const string FillB = "加固乙。";
+            const string Reject = "不再接受 in_table";
+            var ids = new[]
+            {
+                "wt-ec-it-replace-fail", "wt-ec-it-insert-fail", "wt-ec-it-delete-fail",
+                "wt-ec-it-deletion-fail", "wt-ec-it-sent-fail", "wt-ec-it-wrong-tid",
+                "wt-ec-it-still-empty", "wt-ec-it-delete-ok", "wt-ec-it-replace-ok",
+                "wt-ec-it-two-ok"
+            };
+            var s = new WdSession(host);
+            string path, id;
+            if (!TryOpen(run, s, out path, out id, ids))
+            {
+                return;
+            }
+
+            try
+            {
+                s.ActivateDoc(path);
+                ToolResult created = s.CreateTableFromXml(CreateArgs(id, WriteXml(GridXml(Title, "", "备注", ""))));
+                if (!created.Success)
+                {
+                    FailMany(run, created.Error ?? "建表失败", ids);
+                    return;
+                }
+
+                string body = ReadBody(s, id);
+                List<string> geos = CollectGeoCodes(body);
+                if (geos.Count < 2)
+                {
+                    FailMany(run, "缺两个空格码", ids);
+                    return;
+                }
+
+                EmptyCellCode.Parsed parsed;
+                string tableId = EmptyCellCode.TryParse(geos[0], out parsed) ? parsed.TableId : "";
+                Match titleMatch = Regex.Match(body, @"\[(S_[0-9a-zA-Z]{5})-start\]" + Regex.Escape(Title));
+                string titleCode = titleMatch.Success ? titleMatch.Groups[1].Value : "";
+
+                ExpectFail(
+                    run,
+                    "wt-ec-it-replace-fail",
+                    s.ProcessActions(id, new List<Dictionary<string, object>>
+                    {
+                        GeoWrite("replace", "original", geos[0], tableId, FillA)
+                    }),
+                    Reject);
+                ExpectFail(
+                    run,
+                    "wt-ec-it-insert-fail",
+                    s.ProcessActions(id, new List<Dictionary<string, object>>
+                    {
+                        GeoWrite("insert", "target", geos[1], tableId, FillB)
+                    }),
+                    Reject);
+                ExpectFail(
+                    run,
+                    "wt-ec-it-delete-fail",
+                    s.ProcessActions(id, new List<Dictionary<string, object>>
+                    {
+                        GeoDelete("original", geos[0], tableId)
+                    }),
+                    Reject);
+                ExpectFail(
+                    run,
+                    "wt-ec-it-deletion-fail",
+                    s.ProcessActions(id, new List<Dictionary<string, object>>
+                    {
+                        GeoDelete("deletion", geos[1], tableId)
+                    }),
+                    Reject);
+
+                if (string.IsNullOrEmpty(titleCode))
+                {
+                    Ok(run, "wt-ec-it-sent-fail", false, "无题目 S_");
+                }
+                else
+                {
+                    ExpectFail(
+                        run,
+                        "wt-ec-it-sent-fail",
+                        s.ProcessActions(id, new List<Dictionary<string, object>>
+                        {
+                            GeoWrite("replace", "original", titleCode, tableId, Title + "改")
+                        }),
+                        Reject);
+                }
+
+                ExpectFail(
+                    run,
+                    "wt-ec-it-wrong-tid",
+                    s.ProcessActions(id, new List<Dictionary<string, object>>
+                    {
+                        GeoWrite("replace", "original", geos[0], "T_zzzzz", FillA)
+                    }),
+                    Reject);
+
+                string afterFail = ReadBody(s, id);
+                Ok(run, "wt-ec-it-still-empty",
+                    afterFail.IndexOf("[" + geos[0] + "-start][EMPTY][" + geos[0] + "-end]", StringComparison.Ordinal) >= 0
+                        && afterFail.IndexOf("[" + geos[1] + "-start][EMPTY][" + geos[1] + "-end]", StringComparison.Ordinal) >= 0
+                        && afterFail.IndexOf(FillA, StringComparison.Ordinal) < 0
+                        && afterFail.IndexOf(FillB, StringComparison.Ordinal) < 0,
+                    "误传 in_table 后格应仍空");
+
+                ToolResult delOk = s.ProcessActions(id, new List<Dictionary<string, object>>
+                {
+                    GeoDelete("original", geos[0], null)
+                });
+                Ok(run, "wt-ec-it-delete-ok",
+                    delOk.Success && !Contains(delOk.Error, "in_table"),
+                    delOk.Success ? "真空格 delete 不该带 in_table" : (delOk.Error ?? ""));
+
+                ToolResult repOk = s.ProcessActions(id, new List<Dictionary<string, object>>
+                {
+                    GeoWrite("replace", "original", geos[0], null, FillA)
+                });
+                string afterRep = ReadBody(s, id);
+                Ok(run, "wt-ec-it-replace-ok",
+                    repOk.Success
+                        && afterRep.IndexOf(FillA, StringComparison.Ordinal) >= 0
+                        && afterRep.IndexOf("[" + geos[0] + "-start][EMPTY]", StringComparison.Ordinal) < 0,
+                    repOk.Success ? "不传 in_table 应能写格" : (repOk.Error ?? ""));
+
+                string path2, id2;
+                if (!TryOpen(run, s, out path2, out id2, "wt-ec-it-two-ok"))
+                {
+                    return;
+                }
+
+                try
+                {
+                    s.ActivateDoc(path2);
+                    s.CreateTableFromXml(CreateArgs(id2, WriteXml(GridXml(Title, "", "备注", ""))));
+                    string body2 = ReadBody(s, id2);
+                    List<string> geos2 = CollectGeoCodes(body2);
+                    if (geos2.Count < 2)
+                    {
+                        Ok(run, "wt-ec-it-two-ok", false, "缺两个空格码");
+                    }
+                    else
+                    {
+                        ToolResult two = s.ProcessActions(id2, new List<Dictionary<string, object>>
+                        {
+                            GeoWrite("replace", "original", geos2[0], null, FillA),
+                            GeoWrite("replace", "original", geos2[1], null, FillB)
+                        });
+                        string afterTwo = ReadBody(s, id2);
+                        Ok(run, "wt-ec-it-two-ok",
+                            two.Success
+                                && afterTwo.IndexOf(FillA, StringComparison.Ordinal) >= 0
+                                && afterTwo.IndexOf(FillB, StringComparison.Ordinal) >= 0
+                                && !Contains(two.Error, "in_table"),
+                            two.Success ? "同批两格不传 in_table" : (two.Error ?? ""));
+                    }
+                }
+                finally
+                {
+                    s.CloseDocByPath(path2);
+                }
+            }
+            finally
+            {
+                s.CloseDocByPath(path);
+            }
+        }
+
+        private static List<string> CollectGeoCodes(string body)
+        {
+            var codes = new List<string>();
+            if (string.IsNullOrEmpty(body))
+            {
+                return codes;
+            }
+
+            foreach (Match m in Regex.Matches(body, @"T_[0-9A-Za-z]+_r[0-9]+_c[0-9]+"))
+            {
+                if (!codes.Contains(m.Value))
+                {
+                    codes.Add(m.Value);
+                }
+            }
+
+            return codes;
+        }
+
+        private static Dictionary<string, object> GeoLocator(string codes, string inTable)
+        {
+            var loc = new Dictionary<string, object> { ["codes"] = codes };
+            if (!string.IsNullOrEmpty(inTable))
+            {
+                loc["in_table"] = inTable;
+            }
+
+            return loc;
+        }
+
+        private static Dictionary<string, object> GeoWrite(
+            string type,
+            string locatorKey,
+            string codes,
+            string inTable,
+            string text)
+        {
+            var detail = new Dictionary<string, object>
+            {
+                [locatorKey] = GeoLocator(codes, inTable),
+                ["format"] = DefaultFormat()
+            };
+            if (string.Equals(type, "insert", StringComparison.OrdinalIgnoreCase))
+            {
+                detail["insert"] = text;
+            }
+            else
+            {
+                detail["new"] = text;
+            }
+
+            return new Dictionary<string, object>
+            {
+                ["type"] = type,
+                ["detail"] = detail
+            };
+        }
+
+        private static Dictionary<string, object> GeoDelete(string locatorKey, string codes, string inTable)
+        {
+            return new Dictionary<string, object>
+            {
+                ["type"] = "delete",
+                ["detail"] = new Dictionary<string, object>
+                {
+                    [locatorKey] = GeoLocator(codes, inTable)
+                }
+            };
         }
 
         public static void RunGeoPlan(
