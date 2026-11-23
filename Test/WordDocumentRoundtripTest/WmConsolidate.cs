@@ -213,7 +213,7 @@ namespace WordDocumentRoundtripTest
                     WmCases.Count("step=geo_run", 2),
                     WmCases.Count("locate via=geo_run", 2),
                     WmCases.Count("write via=map", 4),
-                    WmCases.Count("post_pd mode=geo_run", 2),
+                    WmCases.Count("post_pd mode=batch", 1),
                     WmCases.Count("map=once", 2)
                 }));
             TwoT(run, s, "wm-c-2t-one-each", (p1, p2) =>
@@ -224,7 +224,7 @@ namespace WordDocumentRoundtripTest
             }, new Expect(
                 new[] { "plan geo_runs=0", "singles=2", "step=single", "locate via=single" },
                 new[] { "step=geo_run", "locate via=geo_run", "write via=map" },
-                new[] { WmCases.Count("step=single", 2), WmCases.Count("post_pd mode=single", 2) }));
+                new[] { WmCases.Count("step=single", 2), WmCases.Count("post_pd mode=batch", 1) }));
             TwoT(run, s, "wm-c-2t-mix", (p1, p2) =>
             {
                 var a = Rep(p1, 2);
@@ -382,26 +382,26 @@ namespace WordDocumentRoundtripTest
                 "locate via=geo_run n=1",
                 "map=once",
                 "write via=map",
-                "post_pd mode=geo_run"
+                "post_pd mode=batch"
             };
             have.AddRange(extraHave);
             return new Expect(
                 have.ToArray(),
-                new[] { "locate via=single", "step=single", "post_pd mode=single" },
+                new[] { "locate via=single", "step=single", "post_pd mode=single", "post_pd mode=geo_run" },
                 new[]
                 {
                     WmCases.Count("write via=map", cells),
                     WmCases.Count("locate via=geo_run", 1),
-                    WmCases.Count("post_pd mode=geo_run", 1)
+                    WmCases.Count("post_pd mode=batch", 1)
                 });
         }
 
         private static Expect SingleGeo(int n)
         {
             return new Expect(
-                new[] { "plan geo_runs=0", "singles=" + n, "step=single", "geo=true", "locate via=single" },
-                new[] { "step=geo_run", "locate via=geo_run", "write via=map", "post_pd mode=geo_run" },
-                new[] { WmCases.Count("step=single", n), WmCases.Count("locate via=single", n) });
+                new[] { "plan geo_runs=0", "singles=" + n, "step=single", "geo=true", "locate via=single", "post_pd mode=batch" },
+                new[] { "step=geo_run", "locate via=geo_run", "write via=map", "post_pd mode=geo_run", "post_pd mode=single" },
+                new[] { WmCases.Count("step=single", n), WmCases.Count("locate via=single", n), WmCases.Count("post_pd mode=batch", 1) });
         }
 
         private static Expect Mixed(int geoRuns, int singles, params string[] extraHave)
@@ -422,7 +422,8 @@ namespace WordDocumentRoundtripTest
                 {
                     WmCases.Count("step=geo_run", geoRuns),
                     WmCases.Count("step=single", singles),
-                    WmCases.Count("locate via=geo_run", geoRuns)
+                    WmCases.Count("locate via=geo_run", geoRuns),
+                    WmCases.Count("post_pd mode=batch", 1)
                 });
         }
 

@@ -94,7 +94,7 @@ namespace WordDocumentRoundtripTest
                     "locate via=geo_run n=1",
                     "map=once",
                     "write via=map",
-                    "post_pd mode=geo_run",
+                    "post_pd mode=batch",
                     "flash table="
                 },
                 forbid: new[]
@@ -105,7 +105,7 @@ namespace WordDocumentRoundtripTest
                 },
                 Count("write via=map", 2),
                 Count("locate via=geo_run", 1),
-                Count("post_pd mode=geo_run", 1),
+                Count("post_pd mode=batch", 1),
                 Count("map=once", 1),
                 Count("flash table=", 1));
             s.CloseDocByPath(path);
@@ -133,7 +133,7 @@ namespace WordDocumentRoundtripTest
                     "step=single",
                     "geo=true",
                     "locate via=single n=1",
-                    "post_pd mode=single"
+                    "post_pd mode=batch"
                 },
                 forbid: new[]
                 {
@@ -144,7 +144,7 @@ namespace WordDocumentRoundtripTest
                     "post_pd mode=geo_run"
                 },
                 Count("locate via=single", 1),
-                Count("post_pd mode=single", 1));
+                Count("post_pd mode=batch", 1));
             s.CloseDocByPath(path);
         }
 
@@ -180,7 +180,7 @@ namespace WordDocumentRoundtripTest
                     "singles=3",
                     "step=single",
                     "locate via=single",
-                    "post_pd mode=single"
+                    "post_pd mode=batch"
                 },
                 forbid: new[]
                 {
@@ -191,7 +191,7 @@ namespace WordDocumentRoundtripTest
                     "post_pd mode=geo_run"
                 },
                 Count("step=single", 3),
-                Count("post_pd mode=single", 3));
+                Count("post_pd mode=batch", 1));
             s.CloseDocByPath(path);
         }
 
@@ -218,7 +218,7 @@ namespace WordDocumentRoundtripTest
                     "locate via=geo_run n=1",
                     "write via=map type=insert",
                     "write via=map type=replace",
-                    "post_pd mode=geo_run"
+                    "post_pd mode=batch"
                 },
                 forbid: new[]
                 {
@@ -252,7 +252,7 @@ namespace WordDocumentRoundtripTest
                     "step=geo_run cells=2",
                     "locate via=geo_run n=1",
                     "write via=map type=delete",
-                    "post_pd mode=geo_run"
+                    "post_pd mode=batch"
                 },
                 forbid: new[]
                 {
@@ -261,7 +261,7 @@ namespace WordDocumentRoundtripTest
                 },
                 Count("write via=map type=delete", 2),
                 Count("locate via=geo_run", 1),
-                Count("post_pd mode=geo_run", 1));
+                Count("post_pd mode=batch", 1));
             s.CloseDocByPath(path);
         }
 

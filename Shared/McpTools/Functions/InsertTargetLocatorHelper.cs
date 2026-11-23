@@ -146,6 +146,138 @@ namespace WordAddIn1
             public List<LocateSpanItem> Items { get; set; } = new List<LocateSpanItem>();
             public AmbiguityCheckResult Ambiguity { get; set; }
             public TableScopeIndex TableScope { get; set; }
+            public List<LocateOverlapNote> Overlaps { get; set; } = new List<LocateOverlapNote>();
+            public List<LocateDuplicateNote> Duplicates { get; set; } = new List<LocateDuplicateNote>();
+        }
+
+        /// <summary>两个成功 Range 半开区间相交。定位只出示，不把项标失败。</summary>
+        public sealed class LocateOverlapNote
+        {
+            public int ActionIndexA { get; set; }
+            public string CodesA { get; set; }
+            public int ActionIndexB { get; set; }
+            public string CodesB { get; set; }
+        }
+
+        /// <summary>同一颗码出现在多条动作。定位只出示，不把项标失败。</summary>
+        public sealed class LocateDuplicateNote
+        {
+            public string Codes { get; set; }
+            public List<int> ActionIndexes { get; set; } = new List<int>();
+        }
+
+        /// <summary>无 COM，供重叠/重复清单和单测。</summary>
+        public struct LocateSpanMetrics
+        {
+            public int ActionIndex;
+            public string Codes;
+            public bool HasRange;
+            public int Start;
+            public int End;
+        }
+
+        /// <summary>半开区间 [start, end)，首尾相接不算重叠。</summary>
+        public static bool RangesOverlapHalfOpen(int startA, int endA, int startB, int endB)
+        {
+            return startA < endB && startB < endA;
+        }
+
+        public static void CollectLocateProblems(
+            IReadOnlyList<LocateSpanMetrics> spans,
+            out List<LocateOverlapNote> overlaps,
+            out List<LocateDuplicateNote> duplicates)
+        {
+            overlaps = new List<LocateOverlapNote>();
+            duplicates = new List<LocateDuplicateNote>();
+            if (spans == null || spans.Count == 0)
+            {
+                return;
+            }
+
+            var tokenToActions = new Dictionary<string, List<int>>(StringComparer.Ordinal);
+            for (int i = 0; i < spans.Count; i++)
+            {
+                LocateSpanMetrics span = spans[i];
+                foreach (string token in SplitLocateCodes(span.Codes))
+                {
+                    List<int> list;
+                    if (!tokenToActions.TryGetValue(token, out list))
+                    {
+                        list = new List<int>();
+                        tokenToActions[token] = list;
+                    }
+
+                    if (!list.Contains(span.ActionIndex))
+                    {
+                        list.Add(span.ActionIndex);
+                    }
+                }
+            }
+
+            foreach (KeyValuePair<string, List<int>> pair in tokenToActions)
+            {
+                if (pair.Value.Count < 2)
+                {
+                    continue;
+                }
+
+                duplicates.Add(new LocateDuplicateNote
+                {
+                    Codes = pair.Key,
+                    ActionIndexes = pair.Value
+                });
+            }
+
+            for (int i = 0; i < spans.Count; i++)
+            {
+                LocateSpanMetrics a = spans[i];
+                if (!a.HasRange)
+                {
+                    continue;
+                }
+
+                for (int j = i + 1; j < spans.Count; j++)
+                {
+                    LocateSpanMetrics b = spans[j];
+                    if (!b.HasRange)
+                    {
+                        continue;
+                    }
+
+                    if (!RangesOverlapHalfOpen(a.Start, a.End, b.Start, b.End))
+                    {
+                        continue;
+                    }
+
+                    overlaps.Add(new LocateOverlapNote
+                    {
+                        ActionIndexA = a.ActionIndex,
+                        CodesA = a.Codes ?? "",
+                        ActionIndexB = b.ActionIndex,
+                        CodesB = b.Codes ?? ""
+                    });
+                }
+            }
+        }
+
+        private static List<string> SplitLocateCodes(string codes)
+        {
+            var list = new List<string>();
+            if (string.IsNullOrWhiteSpace(codes))
+            {
+                return list;
+            }
+
+            foreach (string part in codes.Split(','))
+            {
+                string token = part.Trim();
+                if (token.Length > 0)
+                {
+                    list.Add(token);
+                }
+            }
+
+            return list;
         }
 
         /// <summary>
@@ -980,7 +1112,58 @@ namespace WordAddIn1
                 FillWholeSpan(doc, item);
             }
 
+            FillLocateProblems(result, inputs);
             return result;
+        }
+
+        private static void FillLocateProblems(LocateSpanBatchResult result, IReadOnlyList<LocateInput> inputs)
+        {
+            var metrics = new List<LocateSpanMetrics>();
+            int count = result?.Items == null ? 0 : result.Items.Count;
+            for (int i = 0; i < count; i++)
+            {
+                LocateSpanItem item = result.Items[i];
+                int actionIndex = i;
+                if (inputs != null && i < inputs.Count && inputs[i] != null && inputs[i].ActionIndex >= 0)
+                {
+                    actionIndex = inputs[i].ActionIndex;
+                }
+
+                int start = 0;
+                int end = 0;
+                bool hasRange = false;
+                if (item != null && item.Success && item.Range != null)
+                {
+                    try
+                    {
+                        start = item.Range.Start;
+                        end = item.Range.End;
+                        hasRange = true;
+                    }
+                    catch (Exception)
+                    {
+                        hasRange = false;
+                    }
+                }
+
+                metrics.Add(new LocateSpanMetrics
+                {
+                    ActionIndex = actionIndex,
+                    Codes = item?.Spec?.Codes,
+                    HasRange = hasRange,
+                    Start = start,
+                    End = end
+                });
+            }
+
+            List<LocateOverlapNote> overlaps;
+            List<LocateDuplicateNote> duplicates;
+            CollectLocateProblems(metrics, out overlaps, out duplicates);
+            if (result != null)
+            {
+                result.Overlaps = overlaps;
+                result.Duplicates = duplicates;
+            }
         }
 
         private static bool ItemMatchesFailureField(LocateInput input, PrecheckResult precheck)

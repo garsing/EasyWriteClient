@@ -121,6 +121,7 @@ namespace WordAddIn1
                     }
                     else if (locatedBatch != null)
                     {
+                        TakeLocateProblems(actions, itemFailed, locatedBatch);
                         TakeUnlocated(actions, itemFailed);
                     }
 
@@ -896,15 +897,122 @@ namespace WordAddIn1
             return fallback ?? "未找到任何句子 Range";
         }
 
-        private static void DropPending(List<ParagraphAction> pending, IReadOnlyList<int> doneIndexes)
+        private static void TakeLocateProblems(
+            List<ParagraphAction> actions,
+            List<ActionResult> failed,
+            InsertTargetLocatorHelper.LocateSpanBatchResult located)
         {
-            if (pending == null || doneIndexes == null)
+            if (actions == null || located == null)
             {
                 return;
             }
 
-            var done = new HashSet<int>(doneIndexes);
-            pending.RemoveAll(action => action != null && done.Contains(action.ActionIndex));
+            var reject = new HashSet<int>();
+            var reasons = new Dictionary<int, List<string>>();
+            if (located.Overlaps != null)
+            {
+                foreach (InsertTargetLocatorHelper.LocateOverlapNote overlap in located.Overlaps)
+                {
+                    if (overlap == null)
+                    {
+                        continue;
+                    }
+
+                    string line = "码 " + (overlap.CodesA ?? "")
+                        + " 与 " + (overlap.CodesB ?? "")
+                        + " 的 Range 重叠，这两条都未写";
+                    MarkReject(reject, reasons, overlap.ActionIndexA, line);
+                    MarkReject(reject, reasons, overlap.ActionIndexB, line);
+                }
+            }
+
+            if (located.Duplicates != null)
+            {
+                foreach (InsertTargetLocatorHelper.LocateDuplicateNote dup in located.Duplicates)
+                {
+                    if (dup == null || dup.ActionIndexes == null || dup.ActionIndexes.Count < 2)
+                    {
+                        continue;
+                    }
+
+                    var sb = new System.Text.StringBuilder();
+                    sb.Append("码 ").Append(dup.Codes ?? "").Append(" 在 ");
+                    for (int i = 0; i < dup.ActionIndexes.Count; i++)
+                    {
+                        if (i > 0)
+                        {
+                            sb.Append("、");
+                        }
+
+                        sb.Append("action[").Append(dup.ActionIndexes[i]).Append("]");
+                    }
+
+                    sb.Append(" 重复出现，这些条目都未写");
+                    string line = sb.ToString();
+                    foreach (int index in dup.ActionIndexes)
+                    {
+                        MarkReject(reject, reasons, index, line);
+                    }
+                }
+            }
+
+            for (int i = actions.Count - 1; i >= 0; i--)
+            {
+                int index = actions[i].ActionIndex;
+                if (!reject.Contains(index))
+                {
+                    continue;
+                }
+
+                List<string> list;
+                string message = reasons.TryGetValue(index, out list)
+                    ? string.Join("；", DistinctReasons(list))
+                    : "定位问题清单拒绝";
+                failed.Add(FailedAction(actions[i].ActionIndex, actions[i].Type, message));
+                actions.RemoveAt(i);
+            }
+        }
+
+        private static void MarkReject(
+            HashSet<int> reject,
+            Dictionary<int, List<string>> reasons,
+            int actionIndex,
+            string line)
+        {
+            reject.Add(actionIndex);
+            List<string> list;
+            if (!reasons.TryGetValue(actionIndex, out list))
+            {
+                list = new List<string>();
+                reasons[actionIndex] = list;
+            }
+
+            if (!string.IsNullOrEmpty(line) && !list.Contains(line))
+            {
+                list.Add(line);
+            }
+        }
+
+        private static List<string> DistinctReasons(List<string> list)
+        {
+            if (list == null)
+            {
+                return new List<string>();
+            }
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var result = new List<string>();
+            foreach (string item in list)
+            {
+                if (string.IsNullOrEmpty(item) || !seen.Add(item))
+                {
+                    continue;
+                }
+
+                result.Add(item);
+            }
+
+            return result;
         }
 
         private static void TakeUnlocated(List<ParagraphAction> actions, List<ActionResult> failed)
@@ -1383,18 +1491,10 @@ namespace WordAddIn1
 
                 int actionTotal = actions == null ? 0 : actions.Count;
                 int finishedCount = 0;
-                bool locateFresh = true;
-                var pending = new List<ParagraphAction>(actions);
                 foreach (DocumentActionPlan.Run step in plan)
                 {
                     AgentRunCancellation.ThrowIfCancelled();
                     ToolUiProgress.Report(toolCallId, finishedCount + 1, actionTotal);
-                    if (!locateFresh)
-                    {
-                        AssignLocatedSpans(doc, pending, disallowBackendApi);
-                    }
-
-                    locateFresh = false;
                     if (step.IsGeoRun)
                     {
                         var members = new List<IndexedAction>();
@@ -1409,15 +1509,8 @@ namespace WordAddIn1
 
                         List<ActionResult> geoResults = ExecuteGeoRun(
                             doc, members, tableScope, disallowBackendApi);
-                        ActionResult anyOk = geoResults.Find(r => r.success);
-                        if (anyOk != null)
-                        {
-                            await RemapAndAssignNewCodes(doc, anyOk, disallowBackendApi, "geo_run");
-                        }
-
                         results.AddRange(geoResults);
                         finishedCount += step.OriginalIndices == null ? 0 : step.OriginalIndices.Count;
-                        DropPending(pending, step.OriginalIndices);
                         continue;
                     }
 
@@ -1429,10 +1522,17 @@ namespace WordAddIn1
                         + " geo=" + (TryGetGeoCell(oneAction, out _) ? "true" : "false"));
                     ActionResult one = ExecuteOneAction(
                         doc, oneAction, oneIndex, tableScope, disallowBackendApi);
-                    await RemapAndAssignNewCodes(doc, one, disallowBackendApi, "single");
                     results.Add(one);
                     finishedCount += 1;
-                    DropPending(pending, step.OriginalIndices);
+                }
+
+                if (results.Exists(r => r.success))
+                {
+                    await RemapAndAssignNewCodes(
+                        doc,
+                        results.Find(r => r.success),
+                        disallowBackendApi,
+                        "batch");
                 }
 
                 ToolUiProgress.Report(toolCallId, actionTotal, actionTotal);
@@ -1454,12 +1554,37 @@ namespace WordAddIn1
 
         private static int GetActionSortKey(ParagraphAction action)
         {
+            int rangeStart;
+            if (TryLocatedRangeStart(action, out rangeStart))
+            {
+                return rangeStart;
+            }
+
             if (string.Equals(action?.Type, "insert", StringComparison.OrdinalIgnoreCase))
             {
                 return GetInsertSnapshotSortPosition(action);
             }
 
             return GetSnapshotSortPosition(action?.SentenceNames);
+        }
+
+        private static bool TryLocatedRangeStart(ParagraphAction action, out int start)
+        {
+            start = 0;
+            if (action?.Located == null || !action.Located.Success || action.Located.Range == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                start = action.Located.Range.Start;
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
 
         private static DocumentActionPlan.Item ToPlanItem(IndexedAction item)
