@@ -2207,13 +2207,13 @@ namespace WordAddIn1
                     }
                 }
                 
-                // 3. 如果是纵向合并的延续单元格，按照HTML格式，不输出（rowspan已经表示占据多行）
-                if (isVerticalMergeContinue)
+                // 3. 真合并的延续格（上格有 restart、rowspan>1）不输出，由 rowspan 占位。
+                // 残缺 vMerge（没有配对的 restart）当普通格写，不能整格丢掉。
+                if (isVerticalMergeContinue && rowspan > 1)
                 {
                     LogExtractVerbose($"[DEBUG] 跳过延续单元格输出（HTML格式）: 行{mergeContext.CurrentRowIndex}, 列{mergeContext.CurrentLogicalColumnIndex}");
-                    // 更新逻辑列索引（重要！即使不输出也要更新）
                     mergeContext.CurrentLogicalColumnIndex += colspan;
-                    return "";  // 返回空字符串，不输出延续单元格
+                    return "";
                 }
                 
                 // 4. 构建 cell 标签属性（只对起始单元格和普通单元格）
