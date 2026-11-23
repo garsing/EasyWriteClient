@@ -798,11 +798,10 @@ namespace WordAddIn1
                 ["geo_plan_log"] = DocumentActionPathLog.Snapshot()
             };
 
-            string display = F_GetDocumentContentTool.TryBuildSentenceDisplayFromLastCache(out string displayError);
+            string display = F_GetDocumentContentTool.TryBuildParagraphDisplayFromLastCache(out string displayError);
             if (!string.IsNullOrEmpty(display))
             {
                 data["document_content"] = display;
-                data["code_level"] = "sentence";
                 data["channel_id"] = channelPublicId ?? "";
             }
             else
@@ -2731,7 +2730,7 @@ namespace WordAddIn1
                     && names.Any(n => n.StartsWith("T_", StringComparison.Ordinal)
                     || n.StartsWith("C_", StringComparison.Ordinal)))
                 {
-                    result.ErrorMessage = "replace 仅支持 S_ 编码；T_/C_ 仅用于 insert 锚点";
+                    result.ErrorMessage = "replace 仅支持 paragraph_codes 或真空几何码；T_/C_ 仅用于 insert 锚点";
                     return result;
                 }
 

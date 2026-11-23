@@ -211,7 +211,7 @@ namespace WordAddIn1
                     {
                         var item = new Dictionary<string, object>
                         {
-                            ["target_codes"] = part.Code,
+                            ["target_paragraph_codes"] = part.Code,
                             ["char_format"] = new Dictionary<string, object>(format)
                         };
                         if (!string.IsNullOrEmpty(part.TextValue))

@@ -184,21 +184,22 @@ namespace WordAddIn1
                         && args["target_paragraph_codes"] != null
                         && !string.IsNullOrWhiteSpace(args["target_paragraph_codes"].ToString());
 
-                    if (hasTargetCodes && hasTargetParagraphCodes)
+                    if (hasTargetCodes)
                     {
                         return Task.FromResult(new ToolResult
                         {
                             Success = false,
-                            Error = "target_codes 与 target_paragraph_codes 互斥，请二选一（mutually_exclusive_targets）"
+                            Error = InsertTargetLocatorHelper.CodesRejectSentenceError.Replace(
+                                "paragraph_codes", "target_paragraph_codes")
                         });
                     }
 
-                    if (!hasTargetCodes && !hasTargetParagraphCodes)
+                    if (!hasTargetParagraphCodes)
                     {
                         return Task.FromResult(new ToolResult
                         {
                             Success = false,
-                            Error = "缺少 target_codes 或 target_paragraph_codes（missing_target）"
+                            Error = "缺少 target_paragraph_codes（missing_target）"
                         });
                     }
 
@@ -211,94 +212,40 @@ namespace WordAddIn1
                         }
                     }
 
-                    FormatContextHelper.FormatContextBuildResult built;
-                    if (hasTargetParagraphCodes)
+                    string targetParagraphCodes = args["target_paragraph_codes"].ToString()?.Trim() ?? "";
+                    var parsedParagraphTargets = FormatContextHelper.ParseParagraphCodes(targetParagraphCodes);
+                    ApplyFormatScopeArgs scopeArgs = ApplyFormatAmbiguityHelper.ParseScopeArgs(args);
+                    InsertTargetLocatorHelper.LocateSpanBatchResult paraPrecheck = InsertTargetLocatorHelper.LocateFormatSpan(
+                        doc,
+                        parsedParagraphTargets,
+                        paragraph: true,
+                        scopeArgs.TableId,
+                        textSpan,
+                        docHandle.DisallowBackendApi,
+                        InsertTargetLocatorHelper.LocatePrecheckStream.ParagraphFormatContext,
+                        scopeArgs,
+                        "F_get_format_context");
+                    if (paraPrecheck.BatchBlocked)
                     {
-                        string targetParagraphCodes = args["target_paragraph_codes"].ToString()?.Trim() ?? "";
-                        var parsedParagraphTargets = FormatContextHelper.ParseParagraphCodes(targetParagraphCodes);
-                        ApplyFormatScopeArgs scopeArgs = ApplyFormatAmbiguityHelper.ParseScopeArgs(args);
-                        InsertTargetLocatorHelper.LocateSpanBatchResult paraPrecheck = InsertTargetLocatorHelper.LocateFormatSpan(
-                            doc,
-                            parsedParagraphTargets,
-                            paragraph: true,
-                            scopeArgs.TableId,
-                            textSpan,
-                            docHandle.DisallowBackendApi,
-                            InsertTargetLocatorHelper.LocatePrecheckStream.ParagraphFormatContext,
-                            scopeArgs,
-                            "F_get_format_context");
-                        if (paraPrecheck.BatchBlocked)
+                        if (paraPrecheck.Ambiguity != null && paraPrecheck.Ambiguity.HasBlockingError)
                         {
-                            if (paraPrecheck.Ambiguity != null && paraPrecheck.Ambiguity.HasBlockingError)
-                            {
-                                return Task.FromResult(SentenceCodeAmbiguityHelper.BuildApplyAmbiguityFailureResult(
-                                    "F_get_format_context",
-                                    paraPrecheck.Ambiguity));
-                            }
-
-                            return Task.FromResult(new ToolResult { Success = false, Error = paraPrecheck.Error });
+                            return Task.FromResult(SentenceCodeAmbiguityHelper.BuildApplyAmbiguityFailureResult(
+                                "F_get_format_context",
+                                paraPrecheck.Ambiguity));
                         }
 
-                        built = FormatContextHelper.BuildParagraphContext(
-                            doc,
-                            targetParagraphCodes,
-                            contextWindow,
-                            scopeArgs.TableId,
-                            paraPrecheck.TableScope,
-                            paraPrecheck.Ambiguity,
-                            docHandle.DisallowBackendApi,
-                            textSpan);
+                        return Task.FromResult(new ToolResult { Success = false, Error = paraPrecheck.Error });
                     }
-                    else
-                    {
-                        string targetCodes = args["target_codes"].ToString()?.Trim() ?? "";
-                        string formatPolicy = FormatContextHelper.LocateThenFormatPolicyError(
-                            doc,
-                            targetCodes,
-                            docHandle.DisallowBackendApi);
-                        if (!string.IsNullOrEmpty(formatPolicy))
-                        {
-                            return Task.FromResult(new ToolResult
-                            {
-                                Success = false,
-                                Error = formatPolicy
-                            });
-                        }
 
-                        var parsedTargets = FormatContextHelper.ParseSentenceCodes(targetCodes);
-                        ApplyFormatScopeArgs scopeArgs = ApplyFormatAmbiguityHelper.ParseScopeArgs(args);
-                        InsertTargetLocatorHelper.LocateSpanBatchResult sentPrecheck = InsertTargetLocatorHelper.LocateFormatSpan(
-                            doc,
-                            parsedTargets,
-                            paragraph: false,
-                            scopeArgs.TableId,
-                            textSpan,
-                            docHandle.DisallowBackendApi,
-                            InsertTargetLocatorHelper.LocatePrecheckStream.SentenceFormatContext,
-                            scopeArgs,
-                            "F_get_format_context");
-                        if (sentPrecheck.BatchBlocked)
-                        {
-                            if (sentPrecheck.Ambiguity != null && sentPrecheck.Ambiguity.HasBlockingError)
-                            {
-                                return Task.FromResult(SentenceCodeAmbiguityHelper.BuildApplyAmbiguityFailureResult(
-                                    "F_get_format_context",
-                                    sentPrecheck.Ambiguity));
-                            }
-
-                            return Task.FromResult(new ToolResult { Success = false, Error = sentPrecheck.Error });
-                        }
-
-                        built = FormatContextHelper.BuildContext(
-                            doc,
-                            targetCodes,
-                            contextWindow,
-                            scopeArgs.TableId,
-                            sentPrecheck.TableScope,
-                            sentPrecheck.Ambiguity,
-                            docHandle.DisallowBackendApi,
-                            textSpan);
-                    }
+                    FormatContextHelper.FormatContextBuildResult built = FormatContextHelper.BuildParagraphContext(
+                        doc,
+                        targetParagraphCodes,
+                        contextWindow,
+                        scopeArgs.TableId,
+                        paraPrecheck.TableScope,
+                        paraPrecheck.Ambiguity,
+                        docHandle.DisallowBackendApi,
+                        textSpan);
 
                     if (!built.Success)
                     {
@@ -318,14 +265,7 @@ namespace WordAddIn1
                         ["entries"] = built.Entries
                     };
 
-                    if (built.IsParagraphMode)
-                    {
-                        data["target_paragraph_codes"] = built.TargetParagraphCodes;
-                    }
-                    else
-                    {
-                        data["target_codes"] = built.TargetCodes;
-                    }
+                    data["target_paragraph_codes"] = built.TargetParagraphCodes;
 
                     if (built.Errors.Count > 0)
                     {

@@ -375,22 +375,16 @@ namespace WordAddIn1
 
         internal static string ReadLocateDisplay()
         {
-            ProcessDocumentCacheEntry cache = DocumentState.LastProcessCache;
-            if (cache != null && cache.ChunkInfo != null && cache.ChunkInfo.Count > 0)
+            IReadOnlyList<string> agent = DocumentState.ChunkParagraphAgentDisplays;
+            if (agent != null && agent.Count > 0)
             {
-                var sb = new StringBuilder();
-                foreach (WordDocumentExtractor.ChunkInfo chunk in cache.ChunkInfo)
-                {
-                    if (chunk != null && !string.IsNullOrEmpty(chunk.LocateDisplayContent))
-                    {
-                        sb.Append(chunk.LocateDisplayContent);
-                    }
-                }
+                return string.Join("", agent);
+            }
 
-                if (sb.Length > 0)
-                {
-                    return sb.ToString();
-                }
+            IReadOnlyList<string> paras = DocumentState.ChunkParagraphDisplayContents;
+            if (paras != null && paras.Count > 0)
+            {
+                return string.Join("", paras);
             }
 
             return "";

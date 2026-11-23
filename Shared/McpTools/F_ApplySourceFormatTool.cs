@@ -27,7 +27,7 @@ namespace WordAddIn1
                         return new ToolResult { Success = false, Error = textError };
                     }
 
-                    string targetCodes = FormatSourceResolver.GetArgString(args, "target_codes");
+                    string targetCodes = FormatSourceResolver.GetArgString(args, "target_paragraph_codes");
                     string kbDetailedSubtype = FormatSourceResolver.GetArgString(args, "kb_detailed_subtype");
                     string tableId = FormatSourceResolver.GetArgString(args, "in_table");
                     if (string.IsNullOrEmpty(tableId))

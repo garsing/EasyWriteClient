@@ -39,15 +39,15 @@ namespace WordAddIn1
             var docName = (source.DocumentName ?? "").Trim();
             var kbUuid = (source.KnowledgeBaseUuid ?? "").Trim();
 
-            var targetCodes = FormatContextHelper.ParseSentenceCodes(targetCodesCsv ?? "");
+            var targetCodes = FormatContextHelper.ParseParagraphCodes(targetCodesCsv ?? "");
             if (targetCodes.Count == 0)
             {
-                return new ToolResult { Success = false, Error = "target_codes 为空" };
+                return new ToolResult { Success = false, Error = "target_paragraph_codes 为空" };
             }
 
             if (targetCodes.Any(c => c.StartsWith("T_", StringComparison.Ordinal)))
             {
-                return new ToolResult { Success = false, Error = "apply 仅支持 S_ 句子编码，不支持 T_" };
+                return new ToolResult { Success = false, Error = "apply 仅支持 P_，不支持 T_" };
             }
 
             if (source.Kind == FormatSourceKind.KnowledgeBase && !UserService.Instance.CheckLoginStatus())
@@ -136,11 +136,11 @@ namespace WordAddIn1
             InsertTargetLocatorHelper.LocateSpanBatchResult locatedBatch = InsertTargetLocatorHelper.LocateFormatSpan(
                 doc,
                 targetCodes,
-                paragraph: false,
+                paragraph: true,
                 tableId,
                 textSpan,
                 disallowBackendApi,
-                InsertTargetLocatorHelper.LocatePrecheckStream.SentenceFormatApply,
+                InsertTargetLocatorHelper.LocatePrecheckStream.ParagraphFormatApply,
                 scopeArgs,
                 "F_apply_source_format");
             if (locatedBatch.BatchBlocked)

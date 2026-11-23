@@ -18,19 +18,12 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (!F_GetDocumentContentTool.TryParseCodeLevel(args, out string codeLevel, out string codeLevelError))
-                    {
-                        return new ToolResult { Success = false, Error = codeLevelError };
-                    }
-
-                    bool isParagraph = codeLevel == F_GetDocumentContentTool.CodeLevelParagraph;
-
                     AgentRunCancellation.ThrowIfCancelled();
 
                     if (!DocumentHostAdapter.TryExtractDocumentImages(
                             args,
                             wordApplication,
-                            codeLevel,
+                            F_GetDocumentContentTool.CodeLevelParagraph,
                             out GetDocumentContentHostResult hostResult,
                             out ToolResult resolveError))
                     {
@@ -38,11 +31,9 @@ namespace WordAddIn1
                     }
 
                     var processingResult = hostResult.ProcessingResult;
-                    string documentContent = F_GetDocumentContentTool.BuildDocumentContent(processingResult, isParagraph);
-                    string note = F_GetDocumentContentTool.BuildNote(processingResult.ProcessingMethod, isParagraph);
-                    string duplicateCodeNote = isParagraph
-                        ? F_GetDocumentContentTool.BuildDuplicateParagraphCodeNote()
-                        : F_GetDocumentContentTool.BuildDuplicateSentenceCodeNote();
+                    string documentContent = F_GetDocumentContentTool.BuildDocumentContent(processingResult, true);
+                    string note = F_GetDocumentContentTool.BuildNote(processingResult.ProcessingMethod, true);
+                    string duplicateCodeNote = F_GetDocumentContentTool.BuildDuplicateParagraphCodeNote();
 
                     if (!string.IsNullOrEmpty(duplicateCodeNote))
                     {
@@ -52,7 +43,6 @@ namespace WordAddIn1
                     var resultData = new Dictionary<string, object>
                     {
                         { "document_content", documentContent },
-                        { "code_level", codeLevel },
                         { "processing_method", processingResult.ProcessingMethod ?? "Unknown" },
                         { "note", note },
                         { "channel_id", ChannelRegistry.ToPublicId(hostResult.Context?.ChannelId) ?? "" },

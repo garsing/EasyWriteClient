@@ -45,7 +45,9 @@ namespace WordAddIn1
             "定位对象须为 codes / paragraph_codes / table / chart / image / position 六选一";
         public const string SentenceOnlyLocatorError = "仅支持 codes / paragraph_codes";
         public const string InTableRejectedError = "不再接受 in_table";
-        public const string CodesRejectParagraphError = "codes 仅支持 S_ 或真空几何码；段落请用 paragraph_codes";
+        public const string CodesRejectParagraphError = "codes 仅支持真空几何码；正文请用 paragraph_codes";
+        public const string CodesRejectSentenceError =
+            "codes 不再支持 S_，请改用 paragraph_codes（格式工具用 target_paragraph_codes），可用 text 收窄";
         public const string ParagraphCodesOnlyPError = "paragraph_codes 仅支持 P_ 段落编码";
         public const string FromFileRetiredFlatLocatorError =
             "请改用嵌套 target / original（与 process_actions 同构）；已废止 target_codes / original_codes / in_table 等扁平定位键";
@@ -514,6 +516,11 @@ namespace WordAddIn1
                     return FailParse($"{fieldLabel}.{CodesRejectParagraphError}");
                 }
 
+                if (part.StartsWith("S_", StringComparison.Ordinal))
+                {
+                    return FailParse($"{fieldLabel}.{CodesRejectSentenceError}");
+                }
+
                 if (part.StartsWith("T_", StringComparison.Ordinal)
                     || part.StartsWith("C_", StringComparison.Ordinal)
                     || part.StartsWith("I_", StringComparison.Ordinal))
@@ -523,27 +530,13 @@ namespace WordAddIn1
                         return FailParse($"{fieldLabel}.codes 表号含非字母数字，几何码无法写入");
                     }
 
-                    return FailParse($"{fieldLabel}.codes 仅支持 S_；表/图/图片请用 table / chart / image 字段");
+                    return FailParse($"{fieldLabel}.codes 仅支持真空几何码；表/图/图片请用 table / chart / image 字段");
                 }
 
-                if (!part.StartsWith("S_", StringComparison.Ordinal))
-                {
-                    return FailParse($"{fieldLabel}.codes 仅支持 S_ 句子编码");
-                }
+                return FailParse($"{fieldLabel}.{CodesRejectSentenceError}");
             }
 
-            return WithText(
-                new LocatorParseResult
-                {
-                    Success = true,
-                    Spec = new LocatorSpec
-                    {
-                        Kind = LocatorKind.Sentence,
-                        Codes = string.Join(",", parts)
-                    }
-                },
-                dict,
-                singleCode: parts.Count == 1);
+            return FailParse($"{fieldLabel}.{CodesRejectSentenceError}");
         }
 
         private static LocatorParseResult ParseParagraphMode(

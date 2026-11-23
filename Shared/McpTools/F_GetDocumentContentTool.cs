@@ -8,12 +8,11 @@ using WordAddIn1.DocumentMapping.CodeResolve;
 namespace WordAddIn1
 {
     /// <summary>
-    /// 读取文档 display 内容工具（支持 S_ 句子级与 P_ 段落级）。
+    /// 读取文档 display 内容工具（段落 P_）。
     /// 文档触点经 <see cref="DocumentHostAdapter"/>，按 channel_id 分发 Word/WPS。
     /// </summary>
     public static class F_GetDocumentContentTool
     {
-        public const string CodeLevelSentence = "sentence";
         public const string CodeLevelParagraph = "paragraph";
 
         /// <summary>
@@ -27,20 +26,13 @@ namespace WordAddIn1
             {
                 try
                 {
-                    if (!TryParseCodeLevel(args, out string codeLevel, out string codeLevelError))
-                    {
-                        return new ToolResult { Success = false, Error = codeLevelError };
-                    }
-
-                    bool isParagraph = codeLevel == CodeLevelParagraph;
-
                     AgentRunCancellation.ThrowIfCancelled();
 
                     var getSw = System.Diagnostics.Stopwatch.StartNew();
                     if (!DocumentHostAdapter.TryGetDocumentContent(
                             args,
                             wordApplication,
-                            codeLevel,
+                            CodeLevelParagraph,
                             out GetDocumentContentHostResult hostResult,
                             out ToolResult resolveError))
                     {
@@ -48,11 +40,9 @@ namespace WordAddIn1
                     }
 
                     var processingResult = hostResult.ProcessingResult;
-                    string documentContent = BuildDocumentContent(processingResult, isParagraph);
-                    string note = BuildNote(processingResult.ProcessingMethod, isParagraph);
-                    string duplicateCodeNote = isParagraph
-                        ? BuildDuplicateParagraphCodeNote()
-                        : BuildDuplicateSentenceCodeNote();
+                    string documentContent = BuildDocumentContent(processingResult, true);
+                    string note = BuildNote(processingResult.ProcessingMethod, true);
+                    string duplicateCodeNote = BuildDuplicateParagraphCodeNote();
 
                     if (!string.IsNullOrEmpty(duplicateCodeNote))
                     {
@@ -62,7 +52,6 @@ namespace WordAddIn1
                     var resultData = new Dictionary<string, object>
                     {
                         { "document_content", documentContent },
-                        { "code_level", codeLevel },
                         { "processing_method", processingResult.ProcessingMethod ?? "Unknown" },
                         { "note", note },
                         { "channel_id", ChannelRegistry.ToPublicId(hostResult.Context?.ChannelId) ?? "" },
@@ -79,7 +68,7 @@ namespace WordAddIn1
                         + " displayLen=" + documentContent.Length);
                     System.Diagnostics.Debug.WriteLine(
                         $"[F_get_document_content] host={resultData["host"]}, channel_id={resultData["channel_id"]}, " +
-                        $"code_level={codeLevel}, {resultData["processing_method"]}, " +
+                        $"{resultData["processing_method"]}, " +
                         $"chunks={processingResult.ChunkInfo?.Count ?? 0}, " +
                         $"displayLen={documentContent.Length}");
 
@@ -92,7 +81,7 @@ namespace WordAddIn1
                         System.Diagnostics.Debug.WriteLine($"文档名称: {hostResult.DocumentDisplayName ?? "未命名文档"}");
                         System.Diagnostics.Debug.WriteLine($"channel_id: {resultData["channel_id"]}");
                         System.Diagnostics.Debug.WriteLine($"host: {resultData["host"]}");
-                        System.Diagnostics.Debug.WriteLine($"code_level: {codeLevel}");
+                        System.Diagnostics.Debug.WriteLine("code_level: paragraph");
                         System.Diagnostics.Debug.WriteLine($"处理方式: {resultData["processing_method"]}");
                         System.Diagnostics.Debug.WriteLine($"返回内容长度: {documentContent.Length} 字符");
                         System.Diagnostics.Debug.WriteLine("==========================================");
@@ -115,41 +104,35 @@ namespace WordAddIn1
             };
         }
 
-        internal static bool TryParseCodeLevel(
-            Dictionary<string, object> args,
-            out string codeLevel,
-            out string error)
+        internal static string TryBuildParagraphDisplayFromLastCache(out string error)
         {
-            codeLevel = CodeLevelSentence;
             error = null;
-
-            if (args == null || !args.ContainsKey("code_level") || args["code_level"] == null)
+            ProcessDocumentCacheEntry cache = DocumentState.LastProcessCache;
+            if (cache == null || cache.ChunkInfo == null || cache.ChunkInfo.Count == 0)
             {
-                return true;
+                error = "没带上 display：写后没有段落 display";
+                return null;
             }
 
-            string raw = args["code_level"].ToString()?.Trim() ?? "";
-            if (string.IsNullOrEmpty(raw))
+            if (string.Equals(cache.ProcessingMethod, "API", StringComparison.Ordinal))
             {
-                return true;
+                error = "没带上 display：本次读文不是本地全文";
+                return null;
             }
 
-            switch (raw.ToLowerInvariant())
+            var processing = new WordDocumentExtractor.ProcessingResult
             {
-                case "sentence":
-                case "s":
-                case "s_":
-                    codeLevel = CodeLevelSentence;
-                    return true;
-                case "paragraph":
-                case "p":
-                case "p_":
-                    codeLevel = CodeLevelParagraph;
-                    return true;
-                default:
-                    error = "code_level 无效，须为 sentence（S_，默认）或 paragraph（P_）";
-                    return false;
+                ProcessingMethod = string.IsNullOrEmpty(cache.ProcessingMethod) ? "Local" : cache.ProcessingMethod,
+                ChunkInfo = cache.ChunkInfo
+            };
+            string text = BuildDocumentContent(processing, true);
+            if (string.IsNullOrEmpty(text))
+            {
+                error = "没带上 display：段落 display 为空";
+                return null;
             }
+
+            return text;
         }
 
         internal static string TryBuildSentenceDisplayFromLastCache(out string error)
@@ -260,7 +243,7 @@ namespace WordAddIn1
                         + "大文档请用 F_get_curr_doc_chunk_paragraph_display_content（chunk_idx）取完整 P_ 原文。"
                         + "\n\n[P_00000 start] 与 [P_00000 end] 是段落编号标记，不是正文。"
                         + "撞码段写作 P_xxxxx_N；套段须原样传入，禁止去掉 _N。"
-                        + "套段版式（F_apply_paragraph_format）须使用 P_ 编码，与 S_ 不可混用。";
+                        + "套段版式（F_apply_paragraph_format）须使用 P_ 编码。";
                 }
 
                 return "⚠️ 当前返回的是各分块摘要，不是 DisplayContent。"
@@ -272,7 +255,7 @@ namespace WordAddIn1
             if (isParagraph)
             {
                 return "注意：[P_00000 start] 与 [P_00000 end] 是段落编号标记，不是正文。"
-                    + "套段版式（F_apply_paragraph_format）须使用 P_ 编码；句子改字仍用 S_（code_level=sentence）。"
+                    + "套段版式（F_apply_paragraph_format）须使用 P_ 编码；小范围改字用 paragraph_codes 加 text。"
                     + "同文撞码写成 P_xxxxx_N，apply 须原样传入该公开码；禁止传已撞码的光杆 P_，禁止 index。"
                     + " 表内末段在 [P_… start] 后带 [in_table=T_xxx]（旁标，不是编码、不是入参）。要插在表后请用 target.table，不要锚该段；要接在该段后仍用 paragraph_codes。";
             }

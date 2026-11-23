@@ -493,14 +493,14 @@ namespace WordAddIn1
                 && !string.IsNullOrWhiteSpace(args["target_codes"]?.ToString());
             bool hasParagraph = args.ContainsKey("target_paragraph_codes")
                 && !string.IsNullOrWhiteSpace(args["target_paragraph_codes"]?.ToString());
-            if (!hasSentence && !hasParagraph)
+            if (hasSentence)
             {
-                return "缺少 target_codes 或 target_paragraph_codes";
+                return InsertTargetLocatorHelper.CodesRejectSentenceError.Replace("paragraph_codes", "target_paragraph_codes");
             }
 
-            if (hasSentence && hasParagraph)
+            if (!hasParagraph)
             {
-                return "target_codes 与 target_paragraph_codes 互斥，请二选一";
+                return "缺少 target_paragraph_codes";
             }
 
             if (ActionFormatHelper.HasCancelledInheritKeys(args))
@@ -572,37 +572,8 @@ namespace WordAddIn1
                 return true;
             }
 
-            string sentenceCsv = args.ContainsKey("target_codes")
-                ? args["target_codes"]?.ToString()?.Trim() ?? ""
-                : "";
-            targetCodes = FormatContextHelper.ParseSentenceCodes(sentenceCsv);
-            if (targetCodes.Count == 0)
-            {
-                error = "target_codes 为空";
-                return false;
-            }
-
-            if (targetCodes.Any(c => c.StartsWith("T_", StringComparison.Ordinal)
-                && !EmptyCellCode.IsEmptyCellCode(c)))
-            {
-                error = "apply 仅支持 S_ / P_，不支持 T_";
-                return false;
-            }
-
-            bool anyP = targetCodes.Any(FormatContextHelper.IsParagraphCode);
-            bool anyS = targetCodes.Any(FormatContextHelper.IsSentenceCode);
-            if (anyP && anyS)
-            {
-                error = "target_codes 不可混用 S_ 与 P_；撞码段改 char 请只传 P_xxxxx_N";
-                return false;
-            }
-
-            if (anyP)
-            {
-                paragraphMode = true;
-            }
-
-            return true;
+            error = "缺少 target_paragraph_codes";
+            return false;
         }
 
         private static Dictionary<string, object> ParseNestedObject(Dictionary<string, object> args, string key)

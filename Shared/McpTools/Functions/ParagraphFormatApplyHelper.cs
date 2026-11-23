@@ -53,7 +53,7 @@ namespace WordAddIn1
             DocumentState.BindAndActivate(doc);
 
             string validationError = ValidateArgs(args, out string mode, out List<string> targetParagraphCodes,
-                out List<string> sentenceCodes, out Dictionary<string, object> paraFormat, out List<string> warnings);
+                out Dictionary<string, object> paraFormat, out List<string> warnings);
             if (validationError != null)
             {
                 return Task.FromResult(new ToolResult { Success = false, Error = validationError });
@@ -65,12 +65,11 @@ namespace WordAddIn1
                 return Task.FromResult(new ToolResult { Success = false, Error = earlyTextError });
             }
 
-            bool sentenceInput = sentenceCodes.Count > 0;
-            List<string> locateCodes = sentenceInput ? sentenceCodes : targetParagraphCodes;
+            List<string> locateCodes = targetParagraphCodes;
             InsertTargetLocatorHelper.LocateSpanBatchResult locatedBatch = InsertTargetLocatorHelper.LocateFormatSpan(
                 doc,
                 locateCodes,
-                paragraph: !sentenceInput,
+                paragraph: true,
                 scopeArgs.TableId,
                 earlyTextSpan,
                 disallowBackendApi,
@@ -114,7 +113,7 @@ namespace WordAddIn1
             targetSpan = ApplyToTargetParagraphSpan(
                 doc,
                 locateCodes,
-                sentenceInput,
+                false,
                 scopeArgs,
                 paraFormat,
                 appliedParagraphCodes,
@@ -391,7 +390,7 @@ namespace WordAddIn1
                 return false;
             }
 
-            string validationError = ValidateArgs(args, out _, out _, out _, out _, out _);
+            string validationError = ValidateArgs(args, out _, out _, out _, out _);
             if (validationError != null)
             {
                 failure = DocumentCheckpointMutatingTools.Fail(validationError);
@@ -405,35 +404,25 @@ namespace WordAddIn1
             Dictionary<string, object> args,
             out string mode,
             out List<string> targetParagraphCodes,
-            out List<string> sentenceCodes,
             out Dictionary<string, object> paraFormat,
             out List<string> warnings)
         {
             mode = "explicit";
             targetParagraphCodes = new List<string>();
-            sentenceCodes = new List<string>();
             paraFormat = null;
             warnings = new List<string>();
+
+            if (args != null && args.ContainsKey("target_codes")
+                && !string.IsNullOrWhiteSpace(args["target_codes"]?.ToString()))
+            {
+                return InsertTargetLocatorHelper.CodesRejectSentenceError.Replace(
+                    "paragraph_codes", "target_paragraph_codes");
+            }
 
             ResolveTargetParagraphCodes(args, out targetParagraphCodes, warnings);
             if (targetParagraphCodes.Count == 0)
             {
-                string sentenceCsv = args != null && args.ContainsKey("target_codes")
-                    ? args["target_codes"]?.ToString()?.Trim()
-                    : "";
-                var seen = new HashSet<string>(StringComparer.Ordinal);
-                foreach (string code in FormatContextHelper.ParseSentenceCodes(sentenceCsv))
-                {
-                    if (seen.Add(code))
-                    {
-                        sentenceCodes.Add(code);
-                    }
-                }
-            }
-
-            if (targetParagraphCodes.Count == 0 && sentenceCodes.Count == 0)
-            {
-                return "缺少 target_paragraph_codes 或 target_codes";
+                return "缺少 target_paragraph_codes";
             }
 
             if (ActionFormatHelper.HasCancelledInheritKeys(args))

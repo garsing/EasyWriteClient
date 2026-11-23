@@ -1449,6 +1449,7 @@ namespace WordAddIn1
             DocumentState.SetChunkParagraphDisplays(
                 mapResult.ChunkParagraphDisplayContents,
                 mapResult.ChunkParagraphAgentDisplays);
+            DocumentState.SetSentenceMappings(null);
 
             var nameToContentMap = mapResult.NameToSentenceContentMap ?? new Dictionary<string, string>();
             var allChunkSentenceNames = mapResult.AllChunkSentenceNames;
@@ -2122,8 +2123,8 @@ namespace WordAddIn1
                                             }
                                         }
                                     }
-                                    DocumentState.SetSentenceMappings(sentenceMappings);
-                                    System.Diagnostics.Debug.WriteLine($"[API] 已设置 {sentenceMappings.Count} 条句子映射（四元组格式：名称、哈希、内容、标记）");
+                                    System.Diagnostics.Debug.WriteLine($"[API] 跳过 {sentenceMappings.Count} 条句子映射（本期不调用切句）");
+                                    DocumentState.SetSentenceMappings(null);
                                 }
 
                                 if (data["ParagraphMappings"] != null)

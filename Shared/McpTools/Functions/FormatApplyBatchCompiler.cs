@@ -74,9 +74,9 @@ namespace WordAddIn1
                     return "items[" + i + "] 不是对象";
                 }
 
-                if (HasText(item, "target_codes") && HasText(item, "target_paragraph_codes"))
+                if (HasText(item, "target_codes"))
                 {
-                    return "items[" + i + "] 的 target_codes 与 target_paragraph_codes 互斥";
+                    return "items[" + i + "] 请使用 target_paragraph_codes";
                 }
 
                 if (!TryReadCodes(item, out List<string> codes, out bool paragraph, out string codeError))
@@ -89,9 +89,9 @@ namespace WordAddIn1
                     return "items[" + i + "] 缺少编码";
                 }
 
-                if (codes.Any(IsTableCode))
+                if (codes.Any(IsTableCode) || codes.Any(IsSentenceCode) || !codes.All(IsParagraphCode))
                 {
-                    return "items[" + i + "] 仅支持 S_ / P_，不支持 T_";
+                    return "items[" + i + "] 仅支持 P_，请用 target_paragraph_codes";
                 }
 
                 Dictionary<string, object> format = ReadObject(item, "char_format");
@@ -100,21 +100,9 @@ namespace WordAddIn1
                     return "items[" + i + "] 缺少 char_format";
                 }
 
-                bool anyP = codes.Any(IsParagraphCode);
-                bool anyS = codes.Any(IsSentenceCode);
-                if (anyP && anyS)
+                if (!paragraph)
                 {
-                    continue;
-                }
-
-                if (!anyP && !anyS)
-                {
-                    return "items[" + i + "] 仅支持 S_ / P_";
-                }
-
-                if (paragraph && anyS)
-                {
-                    return "items[" + i + "] 的 target_paragraph_codes 只能是 P_";
+                    return "items[" + i + "] 请使用 target_paragraph_codes";
                 }
             }
 
@@ -214,9 +202,9 @@ namespace WordAddIn1
                     return "items[" + i + "] 不是对象";
                 }
 
-                if (HasText(item, "target_codes") && HasText(item, "target_paragraph_codes"))
+                if (HasText(item, "target_codes"))
                 {
-                    return "items[" + i + "] 的 target_codes 与 target_paragraph_codes 互斥";
+                    return "items[" + i + "] 请使用 target_paragraph_codes";
                 }
 
                 if (!TryReadCodes(item, out List<string> codes, out bool paragraph, out string codeError))
@@ -229,26 +217,14 @@ namespace WordAddIn1
                     return "items[" + i + "] 缺少编码";
                 }
 
-                if (codes.Any(IsTableCode))
+                if (codes.Any(IsTableCode) || codes.Any(IsSentenceCode) || !codes.All(IsParagraphCode))
                 {
-                    return "items[" + i + "] 仅支持 S_ / P_，不支持 T_";
+                    return "items[" + i + "] 仅支持 P_，请用 target_paragraph_codes";
                 }
 
-                bool anyP = codes.Any(IsParagraphCode);
-                bool anyS = codes.Any(IsSentenceCode);
-                if (anyP && anyS)
+                if (!paragraph)
                 {
-                    continue;
-                }
-
-                if (!anyP && !anyS)
-                {
-                    return "items[" + i + "] 仅支持 S_ / P_";
-                }
-
-                if (paragraph && anyS)
-                {
-                    return "items[" + i + "] 的 target_paragraph_codes 只能是 P_";
+                    return "items[" + i + "] 请使用 target_paragraph_codes";
                 }
             }
 
@@ -273,19 +249,19 @@ namespace WordAddIn1
                 return Compile(items, null, paragraphTool: false, mixedSkipMessage: "同一项混用 S_ 与 P_，未读取");
             }
 
-            if (HasText(args, "target_codes") && HasText(args, "target_paragraph_codes"))
+            if (HasText(args, "target_codes"))
             {
                 return new CompileResult
                 {
-                    ContractError = "target_codes 与 target_paragraph_codes 互斥，请二选一（mutually_exclusive_targets）"
+                    ContractError = "请使用 target_paragraph_codes，不再支持 target_codes / S_"
                 };
             }
 
-            if (!HasText(args, "target_codes") && !HasText(args, "target_paragraph_codes"))
+            if (!HasText(args, "target_paragraph_codes"))
             {
                 return new CompileResult
                 {
-                    ContractError = "缺少 target_codes 或 target_paragraph_codes（missing_target）"
+                    ContractError = "缺少 target_paragraph_codes（missing_target）"
                 };
             }
 
@@ -357,9 +333,9 @@ namespace WordAddIn1
 
                 bool anyP = codes.Any(IsParagraphCode);
                 bool anyS = codes.Any(IsSentenceCode);
-                if (anyP && anyS)
+                if (anyS)
                 {
-                    result.Warnings.Add(Warning(i, string.Join(",", codes), mixedSkipMessage));
+                    result.Warnings.Add(Warning(i, string.Join(",", codes), "请使用 target_paragraph_codes，不再支持 S_"));
                     continue;
                 }
 
@@ -508,13 +484,7 @@ namespace WordAddIn1
                 return true;
             }
 
-            if (HasText(item, "target_codes"))
-            {
-                codes = SplitCodes(Text(item, "target_codes"));
-                return true;
-            }
-
-            error = "缺少 target_codes 或 target_paragraph_codes";
+            error = "缺少 target_paragraph_codes";
             return false;
         }
 
@@ -553,14 +523,7 @@ namespace WordAddIn1
             }
 
             string csv = string.Join(",", op.Codes ?? new List<string>());
-            if (op.Paragraph)
-            {
-                one["target_paragraph_codes"] = csv;
-            }
-            else
-            {
-                one["target_codes"] = csv;
-            }
+            one["target_paragraph_codes"] = csv;
 
             if (op.Format != null && !string.IsNullOrEmpty(formatKey))
             {

@@ -14,11 +14,11 @@ namespace WordAddIn1
         private static readonly XNamespace Mc = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 
         private static readonly Regex SentenceStart = new Regex(
-            @"\[S_([0-9A-Za-z]{5})-start[^\]]*\]",
+            @"\[(P_[0-9A-Za-z]{5}(?:_[1-9][0-9]*)?)(?:-start| start)[^\]]*\]",
             RegexOptions.Compiled);
 
         private static readonly Regex SentenceEnd = new Regex(
-            @"\[S_([0-9A-Za-z]{5})-end\]",
+            @"\[(P_[0-9A-Za-z]{5}(?:_[1-9][0-9]*)?)(?:-end| end)\]",
             RegexOptions.Compiled);
 
         private static readonly Regex CellStart = new Regex(
@@ -36,7 +36,7 @@ namespace WordAddIn1
         {
             if (string.IsNullOrEmpty(display))
             {
-                return Fail("没有定位用的句子 display。请先 F_get_document_content。");
+                return Fail("没有定位用的段落 display。请先 F_get_document_content。");
             }
 
             if (body == null)
@@ -66,7 +66,7 @@ namespace WordAddIn1
                 List<StyledSpan> parts = BindPiece(displayChars, slots, piece);
                 if (parts.Count == 0)
                 {
-                    errors.Add("「" + TrimMark(piece.Text) + "」没有落在句子码里。");
+                    errors.Add("「" + TrimMark(piece.Text) + "」没有落在段落码里。");
                     continue;
                 }
 
@@ -74,7 +74,7 @@ namespace WordAddIn1
                 {
                     var row = new Dictionary<string, object>
                     {
-                        ["target_codes"] = part.Code,
+                        ["target_paragraph_codes"] = part.Code,
                         ["structure"] = piece.Style.Structure,
                         ["scope"] = piece.Scope
                     };
@@ -655,7 +655,7 @@ namespace WordAddIn1
             int endCursor = 0;
             foreach (Match start in starts)
             {
-                string code = "S_" + start.Groups[1].Value;
+                string code = start.Groups[1].Value;
                 Match end = null;
                 for (int i = endCursor; i < ends.Count; i++)
                 {
@@ -751,7 +751,7 @@ namespace WordAddIn1
                     continue;
                 }
 
-                if (slot.Code != null && slot.Code.StartsWith("S_", StringComparison.Ordinal))
+                if (slot.Code != null && slot.Code.StartsWith("P_", StringComparison.Ordinal))
                 {
                     return slot;
                 }
@@ -1093,17 +1093,17 @@ namespace WordAddIn1
                 return true;
             }
 
-            string id = code.Substring(2);
-            int startAt = display.IndexOf("[S_" + id + "-start", StringComparison.Ordinal);
+            string id = code.StartsWith("P_", StringComparison.Ordinal) ? code : "P_" + code;
+            int startAt = display.IndexOf("[" + id + "-start", StringComparison.Ordinal);
             if (startAt < 0)
             {
-                startAt = display.IndexOf("[S_" + id + " start", StringComparison.Ordinal);
+                startAt = display.IndexOf("[" + id + " start", StringComparison.Ordinal);
             }
 
-            int endAt = display.IndexOf("[S_" + id + "-end]", StringComparison.Ordinal);
+            int endAt = display.IndexOf("[" + id + "-end]", StringComparison.Ordinal);
             if (endAt < 0)
             {
-                endAt = display.IndexOf("[S_" + id + " end]", StringComparison.Ordinal);
+                endAt = display.IndexOf("[" + id + " end]", StringComparison.Ordinal);
             }
 
             if (startAt < 0 || endAt < 0 || endAt < startAt)
@@ -1261,7 +1261,7 @@ namespace WordAddIn1
 
             foreach (SentenceSlot slot in slots)
             {
-                if (slot == null || slot.Code == null || !slot.Code.StartsWith("S_", StringComparison.Ordinal))
+                if (slot == null || slot.Code == null || !slot.Code.StartsWith("P_", StringComparison.Ordinal))
                 {
                     continue;
                 }

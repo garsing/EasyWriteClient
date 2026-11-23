@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
@@ -144,8 +145,12 @@ namespace WordAddIn1
                 return plan;
             }
 
-            string code = Arg(item, "target_codes");
-            List<string> codes = SplitCodes(code);
+            string codeError = ReadStyleCodes(item, out string code, out List<string> codes, out bool paragraphMode);
+            if (codeError != null)
+            {
+                plan.Finished = Fail(codeError);
+                return plan;
+            }
             string sibling = TextSpanArg.RejectSiblingIndex(item);
             if (sibling != null)
             {
@@ -176,50 +181,14 @@ namespace WordAddIn1
                 }
             }
 
-            bool anyP = false;
-            bool anyS = false;
-            bool anyT = false;
-            foreach (string one in codes)
-            {
-                if (EmptyCellCode.IsEmptyCellCode(one))
-                {
-                    anyT = true;
-                }
-                else if (FormatContextHelper.IsParagraphCode(one))
-                {
-                    anyP = true;
-                }
-                else if (FormatContextHelper.IsSentenceCode(one))
-                {
-                    anyS = true;
-                }
-            }
-
-            if (anyT && (anyP || anyS))
-            {
-                plan.Finished = Fail("同一项不能把几何码和 S_、P_ 写在一起。");
-                return plan;
-            }
-
+            bool anyT = codes.Count > 0 && codes.All(EmptyCellCode.IsEmptyCellCode);
             if (anyT && codes.Count != 1)
             {
                 plan.Finished = Fail("几何码一次一条。");
                 return plan;
             }
 
-            if (anyP && anyS)
-            {
-                plan.Finished = Fail("同一项混用 S_ 与 P_，未套用");
-                return plan;
-            }
-
-            if (!anyP && !anyS && !anyT)
-            {
-                plan.Finished = Fail("locate_failed: 无法定位编码序列");
-                return plan;
-            }
-
-            bool paragraph = ParagraphCodes(codes);
+            bool paragraph = paragraphMode;
             List<List<string>> runs;
             if (anyT)
             {
@@ -297,6 +266,63 @@ namespace WordAddIn1
             plan.Warnings = warnings;
             plan.Ranges = ranges;
             return plan;
+        }
+
+        private static string ReadStyleCodes(
+            Dictionary<string, object> item,
+            out string code,
+            out List<string> codes,
+            out bool paragraph)
+        {
+            code = "";
+            codes = new List<string>();
+            paragraph = false;
+            string paraCsv = Arg(item, "target_paragraph_codes");
+            string geoCsv = Arg(item, "target_codes");
+            bool hasPara = !string.IsNullOrWhiteSpace(paraCsv);
+            bool hasGeo = !string.IsNullOrWhiteSpace(geoCsv);
+            if (hasPara && hasGeo)
+            {
+                return "target_codes 与 target_paragraph_codes 不能同时传";
+            }
+
+            if (hasPara)
+            {
+                codes = SplitCodes(paraCsv);
+                code = paraCsv.Trim();
+                paragraph = true;
+                if (codes.Count == 0 || codes.Any(c => !FormatContextHelper.IsParagraphCode(c)))
+                {
+                    return "target_paragraph_codes 仅支持 P_";
+                }
+
+                return null;
+            }
+
+            if (!hasGeo)
+            {
+                return "缺少 target_paragraph_codes 或几何码 target_codes";
+            }
+
+            codes = SplitCodes(geoCsv);
+            code = geoCsv.Trim();
+            if (codes.Any(c => FormatContextHelper.IsSentenceCode(c)))
+            {
+                return InsertTargetLocatorHelper.CodesRejectSentenceError.Replace(
+                    "paragraph_codes", "target_paragraph_codes");
+            }
+
+            if (codes.Any(c => FormatContextHelper.IsParagraphCode(c)))
+            {
+                return "正文请用 target_paragraph_codes";
+            }
+
+            if (codes.Count == 0 || !codes.All(EmptyCellCode.IsEmptyCellCode))
+            {
+                return "target_codes 仅支持一条几何码 T_…_r_c";
+            }
+
+            return null;
         }
 
         private static List<string> SplitCodes(string raw)
@@ -519,10 +545,17 @@ namespace WordAddIn1
             var done = new Dictionary<string, object>
             {
                 ["ok"] = true,
-                ["target_codes"] = code.Trim(),
                 ["structure"] = style.Structure,
                 ["scope"] = scope
             };
+            if (!string.IsNullOrEmpty(code) && code.Trim().StartsWith("P_", StringComparison.Ordinal))
+            {
+                done["target_paragraph_codes"] = code.Trim();
+            }
+            else
+            {
+                done["target_codes"] = code.Trim();
+            }
             if (!string.IsNullOrEmpty(note))
             {
                 done["note"] = note;
