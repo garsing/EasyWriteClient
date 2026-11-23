@@ -519,6 +519,32 @@ namespace WordDocumentRoundtripTest
                 return wuRun.CasesFailed == 0 ? 0 : 1;
             }
 
+            if (caseFilter.StartsWith("wl-", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(caseFilter, "wl", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("文字 一批定位重叠/重复/一次 PD（wl-）");
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop。");
+                    return 1;
+                }
+
+                int wordBeforeWl = OfficeAlive.Count("WINWORD");
+                int wpsBeforeWl = OfficeAlive.Count("wps");
+                bool wordWinBeforeWl = OfficeAlive.HasWindow("WINWORD");
+                bool wpsWinBeforeWl = OfficeAlive.HasWindow("wps");
+                var wlRun = new TestRun { TotalTarget = WlCases.Target };
+                WlCases.Run(
+                    wlRun, host, wordBeforeWl, wpsBeforeWl, wordWinBeforeWl, wpsWinBeforeWl);
+                Console.WriteLine("正式用例 通过 " + wlRun.CasesPassed
+                    + "  失败 " + wlRun.CasesFailed
+                    + "  跳过 " + wlRun.CasesSkipped
+                    + "  （目标 " + WlCases.Target + "）");
+                return wlRun.CasesFailed == 0 ? 0 : 1;
+            }
+
             if (caseFilter.StartsWith("wm-", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(caseFilter, "wm", StringComparison.OrdinalIgnoreCase))
             {

@@ -1453,10 +1453,10 @@ namespace WordAddIn1
             {
                 IDisposable sortAll = EasyWriteDiagnostics.Time("process_actions.sort_all");
                 var ordered = actions
-                    .Select((action, originalIndex) => new IndexedAction
+                    .Select(action => new IndexedAction
                     {
                         Action = action,
-                        OriginalIndex = originalIndex
+                        OriginalIndex = action.ActionIndex
                     })
                     .OrderByDescending(x => GetActionSortKey(x.Action))
                     .ToList();
