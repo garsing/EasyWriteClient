@@ -42,18 +42,18 @@ namespace WordAddIn1
 
             string codesRaw = anchor.Code;
             List<string> codeList = ParseCodeList(codesRaw)
-                .Where(c => c.StartsWith("S_", StringComparison.Ordinal))
+                .Where(c => c.StartsWith("P_", StringComparison.Ordinal))
                 .ToList();
 
             if (codeList.Count == 0)
             {
-                error = $"无法定位句子 {codesRaw}";
+                error = $"无法定位段落 {codesRaw}";
                 return false;
             }
 
             var spec = new InsertTargetLocatorHelper.LocatorSpec
             {
-                Kind = InsertTargetLocatorHelper.LocatorKind.Sentence,
+                Kind = InsertTargetLocatorHelper.LocatorKind.Paragraph,
                 Codes = string.Join(",", codeList)
             };
             InsertTargetLocatorHelper.LocateSpanBatchResult batch = InsertTargetLocatorHelper.TryLocateSpans(
@@ -62,7 +62,7 @@ namespace WordAddIn1
             InsertTargetLocatorHelper.LocateSpanItem item = batch.Items.Count > 0 ? batch.Items[0] : null;
             if (batch.BatchBlocked || item == null || !item.Success || item.Range == null)
             {
-                error = item?.Error ?? batch.Error ?? $"无法定位句子 {codesRaw}";
+                error = item?.Error ?? batch.Error ?? $"无法定位段落 {codesRaw}";
                 return false;
             }
 

@@ -76,7 +76,7 @@ namespace WordAddIn1
                             cells_skipped = applyResult.CellsSkipped,
                             warnings = applyResult.Warnings,
                             message =
-                                "表格 Data apply 成功，已 ReadWord；若需 S_ 编码可再调 F_get_document_content",
+                                "表格 Data apply 成功，已 ReadWord；若需 P_ 编码可再调 F_get_document_content",
                         },
                     };
                 }

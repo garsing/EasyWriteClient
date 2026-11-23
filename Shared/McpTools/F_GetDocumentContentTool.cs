@@ -247,8 +247,8 @@ namespace WordAddIn1
                 }
 
                 return "⚠️ 当前返回的是各分块摘要，不是 DisplayContent。"
-                    + "大文档请用 F_get_curr_doc_chunk_display_content（chunk_idx）取完整 S_ 原文。"
-                    + "\n\n[S_00000-start] 与 [S_00000-end] 是句子编号标记，不是正文。"
+                    + "大文档请用 F_get_curr_doc_chunk_paragraph_display_content（chunk_idx）取完整 P_ 原文。"
+                    + "\n\n[P_00000 start] 与 [P_00000 end] 是段落编号标记，不是正文。"
                     + "F_process_document_actions 的 new 中不要包含这些标记。";
             }
 
@@ -260,10 +260,10 @@ namespace WordAddIn1
                     + " 表内末段在 [P_… start] 后带 [in_table=T_xxx]（旁标，不是编码、不是入参）。要插在表后请用 target.table，不要锚该段；要接在该段后仍用 paragraph_codes。";
             }
 
-            return "注意：[S_00000-start] 与 [S_00000-end] 是句子编号标记，不是正文。"
+            return "注意：[P_00000 start] 与 [P_00000 end] 是段落编号标记，不是正文。"
                 + "F_process_document_actions 定位时 new 中不要包含这些标记。"
-                + " 若文档几乎为空（仅空 S_00000、无实质正文），insert 请省略 pre/post，在用户光标处插入，勿锚 S_00000。"
-                + " 表内末句在 [S_…-start] 后带 [in_table=T_xxx]（旁标，不是编码、不是入参）。要插在表后请用 target.table，不要锚该句；要接在该句后仍用 codes。";
+                + " 若文档几乎为空（仅空 P_、无实质正文），insert 用 target.position=start，勿锚空段。"
+                + " 表内末段在 [P_… start] 后带 [in_table=T_xxx]（旁标，不是编码、不是入参）。要插在表后请用 target.table，不要锚该段；要接在该段后仍用 paragraph_codes。";
         }
 
         internal static string BuildDuplicateSentenceCodeNote()

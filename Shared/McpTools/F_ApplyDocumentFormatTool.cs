@@ -197,18 +197,6 @@ namespace WordAddIn1
                         return Done(false, targetError);
                     }
 
-                    if (!paragraphMode)
-                    {
-                        string formatPolicy = FormatContextHelper.LocateThenFormatPolicyError(
-                            doc,
-                            string.Join(",", targetCodes),
-                            docHandle.DisallowBackendApi);
-                        if (!string.IsNullOrEmpty(formatPolicy))
-                        {
-                            return Done(false, formatPolicy);
-                        }
-                    }
-
                     ApplyFormatScopeArgs scopeArgs = ApplyFormatAmbiguityHelper.ParseScopeArgs(args);
                     if (!TextSpanArg.TryRead(args, out TextSpan textSpan, out string textError))
                     {
@@ -217,7 +205,7 @@ namespace WordAddIn1
 
                     var locator = new Dictionary<string, object>
                     {
-                        [paragraphMode ? "paragraph_codes" : "codes"] = string.Join(",", targetCodes)
+                        ["paragraph_codes"] = string.Join(",", targetCodes)
                     };
                     if (textSpan != null && !string.IsNullOrEmpty(textSpan.Value))
                     {
@@ -228,9 +216,7 @@ namespace WordAddIn1
                         doc,
                         new[] { locator },
                         docHandle.DisallowBackendApi,
-                        paragraphMode
-                            ? InsertTargetLocatorHelper.LocatePrecheckStream.ParagraphFormatApply
-                            : InsertTargetLocatorHelper.LocatePrecheckStream.SentenceFormatApply,
+                        InsertTargetLocatorHelper.LocatePrecheckStream.ParagraphFormatApply,
                         scopeArgs,
                         "F_apply_document_format");
                     if (locatedBatch.BatchBlocked)
@@ -283,25 +269,12 @@ namespace WordAddIn1
 
                     foreach (string code in targetCodes)
                     {
-                        if (paragraphMode)
-                        {
-                            if (!FormatContextHelper.IsParagraphCode(code))
-                            {
-                                skippedCodes.Add(code);
-                                applyErrors.Add($"{code}: 非 P_ 编码");
-                            }
-                            else if (!DocumentState.HasParagraphMapping(code))
-                            {
-                                skippedCodes.Add(code);
-                                applyErrors.Add($"{code}: 映射表中不存在");
-                            }
-                        }
-                        else if (!FormatContextHelper.IsSentenceCode(code))
+                        if (!FormatContextHelper.IsParagraphCode(code))
                         {
                             skippedCodes.Add(code);
-                            applyErrors.Add($"{code}: 非 S_ 编码");
+                            applyErrors.Add($"{code}: 非 P_ 编码");
                         }
-                        else if (string.IsNullOrEmpty(DocumentState.GetSentenceContent(code)))
+                        else if (!DocumentState.HasParagraphMapping(code))
                         {
                             skippedCodes.Add(code);
                             applyErrors.Add($"{code}: 映射表中不存在");

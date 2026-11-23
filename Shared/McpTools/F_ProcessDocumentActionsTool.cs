@@ -2909,7 +2909,7 @@ namespace WordAddIn1
                     && names.Any(n => n.StartsWith("T_", StringComparison.Ordinal)
                     || n.StartsWith("C_", StringComparison.Ordinal)))
                 {
-                    result.ErrorMessage = "delete 支持 S_ 或一条几何码 T_…_r_c；光杆 T_/C_ 请用专用工具";
+                    result.ErrorMessage = "delete 支持 paragraph_codes 或一条几何码 T_…_r_c；光杆 T_/C_ 请用专用工具";
                     return result;
                 }
 
@@ -3221,8 +3221,13 @@ namespace WordAddIn1
             TableScopeIndex tableScope = null)
         {
             // 判断编码类型（检查第一个编码的前缀）
+            if (codeList.Any(c => c.StartsWith("S_", StringComparison.Ordinal)))
+            {
+                return InsertTargetLocatorHelper.CodesRejectSentenceError;
+            }
+
             bool isTableCode = codeList[0].StartsWith("T_");
-            bool isSentenceCode = codeList[0].StartsWith("S_");
+            bool isSentenceCode = false;
             bool isChartCode = codeList[0].StartsWith("C_");
 
             // 验证所有编码类型一致

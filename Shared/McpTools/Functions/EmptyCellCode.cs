@@ -10,7 +10,7 @@ namespace WordAddIn1
     /// </summary>
     public static class EmptyCellCode
     {
-        public const string MixError = "一格一条，禁止与 S_ 混排";
+        public const string MixError = "一格一条，禁止与 P_ 混排";
         public const string NoFormatError = "empty_cell_no_format: 空格码禁止取格式，写入请用默认宋体/12";
         public const string TableIdNotCellError = "table 须为光杆表号，不能用空格码";
 

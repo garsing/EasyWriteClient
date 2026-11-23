@@ -165,12 +165,12 @@ namespace WordAddIn1
 
             foreach (string code in targetCodes)
             {
-                if (!FormatContextHelper.IsSentenceCode(code))
+                if (!FormatContextHelper.IsParagraphCode(code))
                 {
                     skippedCodes.Add(code);
-                    applyErrors.Add($"{code}: 非 S_ 编码");
+                    applyErrors.Add($"{code}: 非 P_ 编码");
                 }
-                else if (string.IsNullOrEmpty(DocumentState.GetSentenceContent(code)))
+                else if (!DocumentState.HasParagraphMapping(code))
                 {
                     skippedCodes.Add(code);
                     applyErrors.Add($"{code}: 映射表中不存在");

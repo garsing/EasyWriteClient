@@ -20,7 +20,7 @@ namespace WordAddIn1
     public static class TextSpanArg
     {
         public const string SiblingIndexError = "index 只能出现在 text 对象里面";
-        public const string SingleCodeError = "text 只能配合恰好一个 S_ 或一个 P_";
+        public const string SingleCodeError = "text 只能配合恰好一个 P_";
 
         public static string Missing(string code, string value)
         {
@@ -31,7 +31,7 @@ namespace WordAddIn1
         {
             return code + " 里「" + value + "」出现 " + count
                 + " 次，有歧义。请用 text 里的 index 指定目标，例如 {\"value\":\""
-                + value + "\",\"index\":1}。index 从 1 起，只表示这句里这段字的第几次。";
+                + value + "\",\"index\":1}。index 从 1 起，只表示这段里这段字的第几次。";
         }
 
         public static string IndexOutOfRange(string code, string value, int count)

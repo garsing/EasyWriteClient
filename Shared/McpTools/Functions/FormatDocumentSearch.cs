@@ -11,7 +11,7 @@ using Word = Microsoft.Office.Interop.Word;
 
 namespace WordAddIn1
 {
-    /// <summary>按最终格式搜索。字符收 S_，段落按读文映射收 P_。</summary>
+    /// <summary>按最终格式搜索。字符和段落都收 P_。</summary>
     public static class FormatDocumentSearch
     {
         public const int InlineLimit = 50;

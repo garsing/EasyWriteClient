@@ -155,12 +155,17 @@ namespace WordAddIn1
                     return FailAt(i, code, "缺少 anchor.code");
                 }
 
+                if (code.StartsWith("S_", StringComparison.Ordinal))
+                {
+                    return FailAt(i, code, InsertTargetLocatorHelper.CodesRejectSentenceError);
+                }
+
                 ProvenanceAnchorKind kind = ResolveKind(code);
                 if (kind == ProvenanceAnchorKind.Sentence)
                 {
                     if (item.Source == null || item.Sources != null && item.Sources.Count > 0)
                     {
-                        return FailAt(i, code, "S_ 项须使用 source，不可使用 sources");
+                        return FailAt(i, code, "P_ 项须使用 source，不可使用 sources");
                     }
                 }
                 else
@@ -189,6 +194,11 @@ namespace WordAddIn1
         public static ProvenanceAnchorKind ResolveKind(string code)
         {
             if (string.IsNullOrEmpty(code))
+            {
+                return ProvenanceAnchorKind.Sentence;
+            }
+
+            if (code.StartsWith("S_", StringComparison.Ordinal))
             {
                 return ProvenanceAnchorKind.Sentence;
             }

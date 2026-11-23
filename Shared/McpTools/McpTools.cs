@@ -24,7 +24,7 @@ namespace WordAddIn1
             object wordApplication = null)
         {
             // 注册各个工具（metadata 由 Backend Registry 维护，此处仅注册执行 handler）
-            // F_GetDocumentStructureTool 已下线：与 F_get_document_content（S_/T_ 快照）功能重叠，易误用
+            // F_GetDocumentStructureTool 已下线：与 F_get_document_content（P_/T_ 快照）功能重叠，易误用
             // F_GetDocumentStructureTool.Register(toolRegistry, wordApplication);
             F_WriteFileTool.Register(toolRegistry, wordApplication);
             F_ReadFileTool.Register(toolRegistry, wordApplication);
