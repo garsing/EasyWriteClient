@@ -112,6 +112,7 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
 
         /// <summary>
         /// 格内最后一段的 Range.End 会盖住格末/行末 \a。只削这个字符，正文段的 \r 不动。
+        /// 替换 / 后插走这里；格末最后一段删除不要用，见 ExcludeTrailingParagraphMark。
         /// </summary>
         public static Word.Range ExcludeTrailingCellMarks(Word.Document doc, Word.Range range)
         {
@@ -164,6 +165,65 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
             catch (Exception)
             {
                 return range;
+            }
+        }
+
+        /// <summary>
+        /// 格末最后一段删除时再用：在已削 \a 的 Range 上再削段标 \r，只留下正文。
+        /// 定位 / 替换 / 后插不要调用。
+        /// </summary>
+        public static Word.Range ExcludeTrailingParagraphMark(Word.Document doc, Word.Range range)
+        {
+            Word.Range clipped = ExcludeTrailingCellMarks(doc, range);
+            if (doc == null || clipped == null)
+            {
+                return clipped;
+            }
+
+            int start;
+            int end;
+            try
+            {
+                start = clipped.Start;
+                end = clipped.End;
+            }
+            catch (Exception)
+            {
+                return clipped;
+            }
+
+            while (end > start)
+            {
+                string last;
+                try
+                {
+                    last = doc.Range(end - 1, end).Text;
+                }
+                catch (Exception)
+                {
+                    break;
+                }
+
+                if (string.IsNullOrEmpty(last) || last[last.Length - 1] != '\r')
+                {
+                    break;
+                }
+
+                end--;
+            }
+
+            if (end == clipped.End)
+            {
+                return clipped;
+            }
+
+            try
+            {
+                return doc.Range(start, end);
+            }
+            catch (Exception)
+            {
+                return clipped;
             }
         }
     }

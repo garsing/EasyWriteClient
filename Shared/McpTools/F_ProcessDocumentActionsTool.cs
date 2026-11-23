@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -2951,6 +2952,64 @@ namespace WordAddIn1
             }
         }
 
+        internal static readonly string CellDeleteTracePath =
+            Path.Combine(Path.GetTempPath(), "yiwrite-pc-cell-delete.txt");
+
+        private static void TraceCellDelete(string line)
+        {
+            try
+            {
+                File.AppendAllText(CellDeleteTracePath, line + "\r\n", Encoding.UTF8);
+            }
+            catch
+            {
+            }
+
+            System.Diagnostics.Debug.WriteLine("[cell-delete] " + line);
+        }
+
+        private static string DumpRangeChars(string text)
+        {
+            if (text == null)
+            {
+                return "null";
+            }
+
+            var sb = new StringBuilder();
+            int n = text.Length;
+            for (int i = 0; i < n && sb.Length < 240; i++)
+            {
+                char c = text[i];
+                if (c == '\r')
+                {
+                    sb.Append("\\r");
+                }
+                else if (c == '\a')
+                {
+                    sb.Append("\\a");
+                }
+                else if (c == '\n')
+                {
+                    sb.Append("\\n");
+                }
+                else if (c < 32)
+                {
+                    sb.Append("\\x").Append(((int)c).ToString("X2"));
+                }
+                else
+                {
+                    sb.Append(c);
+                }
+            }
+
+            if (n > 80)
+            {
+                sb.Append("…len=").Append(n);
+            }
+
+            return sb.ToString();
+        }
+
         private static bool TryDeleteWritableRange(Word.Document doc, Word.Range targetRange, out string error)
         {
             error = null;
@@ -2962,23 +3021,38 @@ namespace WordAddIn1
 
             try
             {
+                try
+                {
+                    File.WriteAllText(CellDeleteTracePath, "", Encoding.UTF8);
+                }
+                catch
+                {
+                }
+
+                TraceCellDelete(
+                    "target Start=" + targetRange.Start
+                    + " End=" + targetRange.End
+                    + " Text=" + DumpRangeChars(targetRange.Text));
                 if (TryClearCellWhenDeleteWouldHitMark(doc, targetRange))
                 {
+                    TraceCellDelete("branch=cell-handled");
                     return true;
                 }
 
+                TraceCellDelete("branch=Range.Delete");
                 targetRange.Delete();
                 return true;
             }
             catch (Exception ex)
             {
+                TraceCellDelete("ex=" + ex.Message);
                 error = ex.Message;
                 return false;
             }
         }
 
         /// <summary>
-        /// 格子必须留一段。定位已削 \a 后，若删除仍会清掉格内唯一段 / 整格，改成清文字留空段。
+        /// 格子必须留一段。定位已削 \a 后：唯一段 / 整格改清文字；多段里删最后一段再削 \r，只删正文。
         /// </summary>
         private static bool TryClearCellWhenDeleteWouldHitMark(Word.Document doc, Word.Range targetRange)
         {
@@ -2997,21 +3071,54 @@ namespace WordAddIn1
             }
 
             Word.Cell cell = targetRange.Cells[1];
-            Word.Range writableCell = ParagraphRangeLocator.ExcludeTrailingCellMarks(doc, cell.Range);
-            if (writableCell == null || targetRange.End < writableCell.End)
+            int paraCount = cell.Range.Paragraphs.Count;
+            if (paraCount < 1)
             {
+                TraceCellDelete("cell paraCount=0");
                 return false;
             }
 
-            int paraCount = cell.Range.Paragraphs.Count;
             int cellContentStart = cell.Range.Paragraphs[1].Range.Start;
-            if (paraCount == 1 || targetRange.Start <= cellContentStart)
+            int lastStart = cell.Range.Paragraphs[paraCount].Range.Start;
+            Word.Range writableCell = ParagraphRangeLocator.ExcludeTrailingCellMarks(doc, cell.Range);
+            bool coversCell = writableCell != null && targetRange.End >= writableCell.End;
+            TraceCellDelete(
+                "cell paras=" + paraCount
+                + " firstStart=" + cellContentStart
+                + " lastStart=" + lastStart
+                + " writableEnd=" + (writableCell == null ? -1 : writableCell.End)
+                + " coversCell=" + coversCell);
+            for (int i = 1; i <= paraCount; i++)
             {
+                Word.Range p = cell.Range.Paragraphs[i].Range;
+                TraceCellDelete(
+                    "  P[" + i + "] " + p.Start + ".." + p.End
+                    + " " + DumpRangeChars(p.Text));
+            }
+
+            if (paraCount == 1 || (coversCell && targetRange.Start <= cellContentStart))
+            {
+                TraceCellDelete("branch=ClearCellKeepOneParagraph");
                 TableCellContentWriter.ClearCellKeepOneParagraph(cell.Range);
                 return true;
             }
 
-            return false;
+            if (targetRange.Start < lastStart)
+            {
+                TraceCellDelete("branch=not-last-para → Delete");
+                return false;
+            }
+
+            Word.Range body = ParagraphRangeLocator.ExcludeTrailingParagraphMark(doc, targetRange);
+            TraceCellDelete(
+                "branch=last-para body "
+                + (body == null ? "null" : (body.Start + ".." + body.End + " " + DumpRangeChars(body.Text))));
+            if (body != null && body.End > body.Start)
+            {
+                body.Text = "";
+            }
+
+            return true;
         }
 
         /// <summary>
