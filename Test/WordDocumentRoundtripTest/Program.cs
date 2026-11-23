@@ -727,6 +727,53 @@ namespace WordDocumentRoundtripTest
                 return afterRun.CasesFailed == 0 ? 0 : 1;
             }
 
+            if (caseFilter.StartsWith("pc-", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(caseFilter, "pc", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("文字 格末段削 \\a 后改写（pc-）");
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
+                Console.WriteLine("本套测表内最后一段 replace / insert / delete，需加载已削格末的客户端。");
+                Console.WriteLine();
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop（已尝试自动拉起）。请手动打开易写应用，再跑本套。");
+                    return 1;
+                }
+
+                int wordBeforePc = OfficeAlive.Count("WINWORD");
+                int wpsBeforePc = OfficeAlive.Count("wps");
+                bool wordWinBeforePc = OfficeAlive.HasWindow("WINWORD");
+                bool wpsWinBeforePc = OfficeAlive.HasWindow("wps");
+                WdSession.SweepBeforeRun(host);
+                var pcRun = new TestRun { TotalTarget = PcCases.Target };
+                var pcSw = Stopwatch.StartNew();
+                try
+                {
+                    PcCases.Run(
+                        pcRun,
+                        host,
+                        caseFilter,
+                        wordBeforePc,
+                        wpsBeforePc,
+                        wordWinBeforePc,
+                        wpsWinBeforePc);
+                }
+                finally
+                {
+                    pcSw.Stop();
+                    WdSession.SweepAfterRun(host);
+                }
+
+                Console.WriteLine();
+                Console.WriteLine("正式用例 通过 " + pcRun.CasesPassed
+                    + "  失败 " + pcRun.CasesFailed
+                    + "  跳过 " + pcRun.CasesSkipped
+                    + "  （目标 " + pcRun.TotalTarget + "）");
+                Console.WriteLine("ELAPSED_SEC=" + pcSw.Elapsed.TotalSeconds.ToString("F1"));
+                return pcRun.CasesFailed == 0 ? 0 : 1;
+            }
+
             if (caseFilter.StartsWith("ts-", StringComparison.OrdinalIgnoreCase))
             {
                 Console.WriteLine("文字 句子内按字符串定位（ts-）");
