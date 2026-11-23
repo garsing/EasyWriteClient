@@ -97,9 +97,9 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
 
                 int start = doc.Paragraphs[firstK].Range.Start;
                 int end = doc.Paragraphs[lastK].Range.End;
-                Word.Range range = doc.Range(start, end);
+                Word.Range range = ExcludeTrailingCellMarks(doc, doc.Range(start, end));
                 System.Diagnostics.Debug.WriteLine(
-                    $"[ParagraphRangeLocator] {tag} → 段[{firstK}..{lastK}] Start={start} End={end}");
+                    $"[ParagraphRangeLocator] {tag} → 段[{firstK}..{lastK}] Start={start} End={range.End}");
                 return range;
             }
             catch (Exception ex)
@@ -107,6 +107,63 @@ namespace WordAddIn1.DocumentMapping.CodeResolve
                 System.Diagnostics.Debug.WriteLine(
                     $"[ParagraphRangeLocator] Paragraphs 失败 {tag}: {ex.Message}");
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// 格内最后一段的 Range.End 会盖住格末/行末 \a。只削这个字符，正文段的 \r 不动。
+        /// </summary>
+        public static Word.Range ExcludeTrailingCellMarks(Word.Document doc, Word.Range range)
+        {
+            if (doc == null || range == null)
+            {
+                return range;
+            }
+
+            int start;
+            int end;
+            try
+            {
+                start = range.Start;
+                end = range.End;
+            }
+            catch (Exception)
+            {
+                return range;
+            }
+
+            while (end > start)
+            {
+                string last;
+                try
+                {
+                    last = doc.Range(end - 1, end).Text;
+                }
+                catch (Exception)
+                {
+                    break;
+                }
+
+                if (string.IsNullOrEmpty(last) || last[last.Length - 1] != '\a')
+                {
+                    break;
+                }
+
+                end--;
+            }
+
+            if (end == range.End)
+            {
+                return range;
+            }
+
+            try
+            {
+                return doc.Range(start, end);
+            }
+            catch (Exception)
+            {
+                return range;
             }
         }
     }

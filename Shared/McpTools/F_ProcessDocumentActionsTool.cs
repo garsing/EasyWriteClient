@@ -2931,7 +2931,11 @@ namespace WordAddIn1
                 Word.Range targetRange = locate.Range;
 
                 int cursorPos = targetRange.Start;
-                targetRange.Delete();
+                if (!TryDeleteWritableRange(doc, targetRange, out string deleteError))
+                {
+                    result.ErrorMessage = deleteError ?? "删除失败";
+                    return result;
+                }
 
                 MoveSelectionAfterDelete(doc, cursorPos);
 
@@ -2945,6 +2949,69 @@ namespace WordAddIn1
                 System.Diagnostics.Debug.WriteLine($"[删除操作] 删除失败: {ex.Message}");
                 return result;
             }
+        }
+
+        private static bool TryDeleteWritableRange(Word.Document doc, Word.Range targetRange, out string error)
+        {
+            error = null;
+            if (targetRange == null)
+            {
+                error = "未找到定位 Range";
+                return false;
+            }
+
+            try
+            {
+                if (TryClearCellWhenDeleteWouldHitMark(doc, targetRange))
+                {
+                    return true;
+                }
+
+                targetRange.Delete();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 格子必须留一段。定位已削 \a 后，若删除仍会清掉格内唯一段 / 整格，改成清文字留空段。
+        /// </summary>
+        private static bool TryClearCellWhenDeleteWouldHitMark(Word.Document doc, Word.Range targetRange)
+        {
+            object inTableObj = targetRange.Information[Word.WdInformation.wdWithInTable];
+            bool inTable = inTableObj is bool flag
+                ? flag
+                : Convert.ToInt32(inTableObj) != 0;
+            if (!inTable)
+            {
+                return false;
+            }
+
+            if (targetRange.Cells == null || targetRange.Cells.Count < 1)
+            {
+                return false;
+            }
+
+            Word.Cell cell = targetRange.Cells[1];
+            Word.Range writableCell = ParagraphRangeLocator.ExcludeTrailingCellMarks(doc, cell.Range);
+            if (writableCell == null || targetRange.End < writableCell.End)
+            {
+                return false;
+            }
+
+            int paraCount = cell.Range.Paragraphs.Count;
+            int cellContentStart = cell.Range.Paragraphs[1].Range.Start;
+            if (paraCount == 1 || targetRange.Start <= cellContentStart)
+            {
+                TableCellContentWriter.ClearCellKeepOneParagraph(cell.Range);
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>
