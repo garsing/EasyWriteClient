@@ -1726,6 +1726,8 @@ button.section-header {
   min-width: 0;
   font-size: 12px;
   font-weight: 600;
+  line-height: 18px;
+  padding-bottom: 1px;
   color: #3d3c38;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1978,6 +1980,8 @@ button.section-header {
   flex: 1;
   min-width: 0;
   font-size: 13px;
+  line-height: 20px;
+  padding-bottom: 2px;
   color: #1f1e1c;
   white-space: nowrap;
   overflow: hidden;
