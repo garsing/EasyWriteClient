@@ -233,6 +233,14 @@ function lastUserTurn () {
   return { bubble, turn }
 }
 
+function pinRoom (el) {
+  const style = getComputedStyle(el)
+  const padTop = parseFloat(style.paddingTop) || 0
+  const padBottom = parseFloat(style.paddingBottom) || 0
+  // clientHeight 含上下 padding。底 padding 仍能再滚一截，会把运行时间拽进吸顶气泡
+  return Math.max(0, el.clientHeight - padTop - padBottom)
+}
+
 function alignUserBubbleToTop () {
   if (gestureActive || !userPinArmed.value) return
   const gen = alignGen
@@ -243,7 +251,8 @@ function alignUserBubbleToTop () {
       const found = lastUserTurn()
       if (!el || !found || el.clientHeight <= 0) return
       const { turn } = found
-      if (turn.offsetHeight >= el.clientHeight) {
+      const room = pinRoom(el)
+      if (turn.offsetHeight >= room) {
         userPinSpacerHeight.value = 0
         nextTick(() => {
           const box = messagesContainer.value
@@ -252,7 +261,7 @@ function alignUserBubbleToTop () {
         })
         return
       }
-      userPinSpacerHeight.value = Math.max(0, el.clientHeight - turn.offsetHeight)
+      userPinSpacerHeight.value = room - turn.offsetHeight
       nextTick(() => {
         const box = messagesContainer.value
         const again = lastUserTurn()
