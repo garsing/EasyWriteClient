@@ -1,12 +1,7 @@
 <template>
   <div class="chat-messages" ref="messagesContainer">
     <div class="chat-main-column">
-    <div
-      v-for="turn in displayTurns"
-      :key="turn.key"
-      class="chat-turn"
-      :class="{ 'chat-turn--latest': turn.pinStatus }"
-    >
+    <div v-for="turn in displayTurns" :key="turn.key" class="chat-turn">
       <div v-if="turn.user" class="chat-turn-user">
         <UserMessageBubble :message="turn.user" />
       </div>
@@ -22,7 +17,6 @@
           :messages="item.messages"
           :archived="item.archived"
           :duration-ms="item.durationMs"
-          :pin-status="!!turn.pinStatus"
         />
       </div>
     </div>
@@ -125,8 +119,7 @@ const displayItems = computed(() => {
   return items
 })
 
-/** 一轮 = 一条用户消息 + 其后的助手/提示；用户气泡在轮内 sticky，滚过本轮才离开顶部。
- * 最新一条已归档的系统回复，「已运行」或「奋力工作的记录」吸在该轮气泡下面。 */
+/** 一轮 = 一条用户消息 + 其后的助手/提示；用户气泡在轮内 sticky，滚过本轮才离开顶部 */
 const displayTurns = computed(() => {
   const turns = []
   for (const item of displayItems.value) {
@@ -143,12 +136,6 @@ const displayTurns = computed(() => {
   if (props.liveTimerText && turns.length) {
     turns[turns.length - 1].liveTimerText = props.liveTimerText
   }
-  for (let i = turns.length - 1; i >= 0; i--) {
-    if (turns[i].rest.some((item) => item.kind === 'assistant' && item.archived)) {
-      turns[i].pinStatus = true
-      break
-    }
-  }
   return turns
 })
 
@@ -160,7 +147,6 @@ const userPinSpacerHeight = ref(0)
 const NEAR_BOTTOM_PX = 50
 let suppressScrollUntil = 0
 let resizeObserver = null
-let statusStickyObserver = null
 const pinTimers = []
 let scrollLock = 0
 let lastScrollTop = 0
@@ -358,33 +344,6 @@ watch(() => props.searchScrollToken, () => {
   nextTick(() => setConversationSearchCurrent(props.searchIndex, true))
 })
 
-function syncLatestStatusSticky () {
-  const root = messagesContainer.value
-  if (!root) return
-  const turn = root.querySelector('.chat-turn--latest')
-  if (!turn) return
-  const user = turn.querySelector('.chat-turn-user')
-  const h = user ? user.offsetHeight : 0
-  turn.style.setProperty('--turn-user-sticky-h', `${h}px`)
-}
-
-function bindStatusStickyObserver () {
-  syncLatestStatusSticky()
-  if (typeof ResizeObserver === 'undefined') return
-  if (!statusStickyObserver) {
-    statusStickyObserver = new ResizeObserver(() => syncLatestStatusSticky())
-  }
-  const root = messagesContainer.value
-  const user = root?.querySelector('.chat-turn--latest .chat-turn-user')
-  if (user) statusStickyObserver.observe(user)
-}
-
-function scheduleStatusSticky () {
-  nextTick(() => {
-    requestAnimationFrame(bindStatusStickyObserver)
-  })
-}
-
 onMounted(() => {
   nextTick(() => {
     if (messagesContainer.value) {
@@ -404,7 +363,6 @@ onMounted(() => {
     if (props.pendingUserPin) armUserPin()
     else forcePinToLatest()
     applySearchHighlight()
-    scheduleStatusSticky()
   })
 })
 
@@ -415,10 +373,6 @@ onUnmounted(() => {
   if (resizeObserver) {
     resizeObserver.disconnect()
     resizeObserver = null
-  }
-  if (statusStickyObserver) {
-    statusStickyObserver.disconnect()
-    statusStickyObserver = null
   }
   if (messagesContainer.value) {
     messagesContainer.value.removeEventListener('scroll', handleScroll)
@@ -433,7 +387,6 @@ watch(() => props.pinToLatestToken, (next, prev) => {
   userPinLatched.value = false
   userPinSpacerHeight.value = 0
   forcePinToLatest()
-  scheduleStatusSticky()
 })
 
 watch(() => props.pinUserToTopToken, (next, prev) => {
@@ -450,7 +403,6 @@ watch(() => props.messages.length, (newLength, oldLength) => {
 })
 
 watch(() => props.messages, () => {
-  scheduleStatusSticky()
   if (userPinArmed.value) {
     alignUserBubbleToTop()
     return
@@ -536,25 +488,6 @@ watch(() => props.messages, () => {
 
 .chat-turn-user :deep(.user-message) {
   margin-bottom: 0;
-}
-
-/* 最新一轮的「已运行 / 奋力工作的记录」吸在该轮用户气泡下面，下滑时整行停住 */
-.chat-turn--latest {
-  --turn-user-sticky-h: 0px;
-}
-
-.chat-turn--latest :deep(.work-fold-header.is-pin),
-.chat-turn--latest :deep(.ran-line.is-pin) {
-  position: sticky;
-  top: var(--turn-user-sticky-h);
-  z-index: 4;
-  background: #f7f7f5;
-  box-shadow: 0 -6px 0 #f7f7f5;
-}
-
-.chat-turn--latest :deep(.ran-line.is-pin) {
-  margin-bottom: 0;
-  padding-bottom: 4px;
 }
 
 .chat-turn:first-child:not(:has(.chat-turn-user)) {

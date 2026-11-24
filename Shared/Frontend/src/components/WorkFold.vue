@@ -1,15 +1,17 @@
 <template>
-  <div class="work-fold-header" :class="{ 'is-pin': pin }" @click="toggleExpand">
-    <span class="chat-title">奋力工作的记录</span>
-    <span v-if="durationText" class="work-fold-duration">{{ durationText }}</span>
-    <span
-      class="chevron"
-      :class="isExpanded ? 'chevron-down' : 'chevron-right'"
-      aria-hidden="true"
-    />
-  </div>
-  <div v-if="isExpanded" class="work-fold work-fold-body">
-    <slot />
+  <div class="work-fold">
+    <div class="work-fold-header" @click="toggleExpand">
+      <span class="chat-title">奋力工作的记录</span>
+      <span v-if="durationText" class="work-fold-duration">{{ durationText }}</span>
+      <span
+        class="chevron"
+        :class="isExpanded ? 'chevron-down' : 'chevron-right'"
+        aria-hidden="true"
+      />
+    </div>
+    <div v-if="isExpanded" class="work-fold-body">
+      <slot />
+    </div>
   </div>
 </template>
 
@@ -21,11 +23,6 @@ const props = defineProps({
   durationMs: {
     type: Number,
     default: null
-  },
-  /** 最新一轮：标题吸在用户气泡下面 */
-  pin: {
-    type: Boolean,
-    default: false
   }
 })
 
@@ -56,14 +53,16 @@ const toggleExpand = () => {
 </script>
 
 <style scoped>
+.work-fold {
+  margin: 0;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .work-fold-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-  box-sizing: border-box;
   padding: 8px 10px 8px 0;
   cursor: pointer;
   user-select: none;

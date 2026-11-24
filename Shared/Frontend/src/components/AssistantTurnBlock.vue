@@ -17,10 +17,10 @@
     </template>
     <div v-else class="system-message">
       <div class="message-content">
-        <WorkFold v-if="workMessage" :duration-ms="durationMs" :pin="pinStatus">
+        <WorkFold v-if="workMessage" :duration-ms="durationMs">
           <SystemMessageBubble :message="workMessage" compact force-process />
         </WorkFold>
-        <div v-else-if="ranText" class="ran-line" :class="{ 'is-pin': pinStatus }">{{ ranText }}</div>
+        <div v-else-if="ranText" class="ran-line">{{ ranText }}</div>
         <div v-if="finalMessage" class="assistant-reply-wrap">
           <SystemMessageBubble :message="finalMessage" compact />
           <MessageCopyBar :text="finalCopyText" align="left" />
@@ -50,11 +50,6 @@ const props = defineProps({
   durationMs: {
     type: Number,
     default: null
-  },
-  /** 最新一轮已归档回复：已运行 / 奋力工作的记录吸在用户气泡下 */
-  pinStatus: {
-    type: Boolean,
-    default: false
   }
 })
 
