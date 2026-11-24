@@ -8,7 +8,7 @@ namespace WordDocumentRoundtripTest
     /// <summary>自动编号只作读文标记。对照 docs/测试/word测试/自动编号只作读文标记。前缀 au-。</summary>
     internal static class AuCases
     {
-        public const int Target = 17;
+        public const int Target = 37;
 
         private static readonly Regex AutonumTag = new Regex(
             @"<autonum\b[^>]*\bv\s*=\s*""([^""]*)""[^>]*/>",
@@ -28,6 +28,7 @@ namespace WordDocumentRoundtripTest
             Read(run, session);
             Write(run, session);
             Clear(run, session);
+            More(run, session);
         }
 
         private static void Read(TestRun run, WdSession session)
@@ -442,6 +443,498 @@ namespace WordDocumentRoundtripTest
             });
         }
 
+        private static void More(TestRun run, WdSession session)
+        {
+            Case(run, "au-read-three", () =>
+            {
+                using (FormatProbe doc = Open(session, "甲\r乙\r丙\r"))
+                {
+                    if (!doc.Ready || !session.ApplyNumberDefault(doc.Path, 1, 3) || !doc.ReadParagraphs())
+                    {
+                        return "铺失败 " + doc.Snapshot();
+                    }
+
+                    List<string> lists = session.ParaListStrings(doc.Path);
+                    List<string> stories = session.ParaStories(doc.Path);
+                    return TaggedBody(doc, "甲", ListFor(stories, lists, "甲"))
+                        && TaggedBody(doc, "乙", ListFor(stories, lists, "乙"))
+                        && TaggedBody(doc, "丙", ListFor(stories, lists, "丙"))
+                        && Story(At(stories, 0)) == "甲"
+                        && Story(At(stories, 1)) == "乙"
+                        && Story(At(stories, 2)) == "丙"
+                        && doc.Snapshot().IndexOf("[list]", StringComparison.OrdinalIgnoreCase) < 0
+                        ? null
+                        : doc.Snapshot();
+                }
+            });
+
+            Case(run, "au-read-same", () =>
+            {
+                using (FormatProbe doc = Open(session, "甲\r甲\r"))
+                {
+                    if (!doc.Ready || !session.ApplyNumberDefault(doc.Path, 1, 2) || !doc.ReadParagraphs())
+                    {
+                        return "铺失败 " + doc.Snapshot();
+                    }
+
+                    List<string> lists = session.ParaListStrings(doc.Path);
+                    int tagged = 0;
+                    for (int i = 0; i < doc.Paragraphs.Count; i++)
+                    {
+                        string text = doc.Paragraphs[i].Text ?? "";
+                        if (text.IndexOf("甲", StringComparison.Ordinal) < 0)
+                        {
+                            continue;
+                        }
+
+                        if (!TagThen(text, "甲", At(lists, i)))
+                        {
+                            return text + " list=" + At(lists, i);
+                        }
+
+                        tagged++;
+                    }
+
+                    return tagged == 2 ? null : "tagged=" + tagged + " " + doc.Snapshot();
+                }
+            });
+
+            Case(run, "au-read-mid", () =>
+            {
+                using (FormatProbe doc = Open(session, "甲\r乙\r丙\r"))
+                {
+                    if (!doc.Ready || !NumberBody(session, doc.Path, "乙") || !doc.ReadParagraphs())
+                    {
+                        return "铺失败 " + doc.Snapshot();
+                    }
+
+                    string yi = ListFor(session.ParaStories(doc.Path), session.ParaListStrings(doc.Path), "乙");
+                    return TaggedBody(doc, "乙", yi)
+                        && NoTag(Inner(doc, "甲"))
+                        && NoTag(Inner(doc, "丙"))
+                        ? null
+                        : doc.Snapshot();
+                }
+            });
+
+            Case(run, "au-read-hand-cn", () =>
+            {
+                using (FormatProbe doc = Open(session, "一、不是列表\r"))
+                {
+                    if (!doc.Ready || !doc.ReadParagraphs())
+                    {
+                        return "读段失败";
+                    }
+
+                    string inner = Inner(doc, "不是列表");
+                    string story = Story(At(session.ParaStories(doc.Path), 0));
+                    string list = At(session.ParaListStrings(doc.Path), 0).Trim();
+                    return NoTag(inner)
+                        && inner.IndexOf("一、不是列表", StringComparison.Ordinal) >= 0
+                        && story.IndexOf("一、", StringComparison.Ordinal) >= 0
+                        && list.Length == 0
+                        ? null
+                        : inner + " story=" + story + " list=" + list;
+                }
+            });
+
+            Case(run, "au-read-bullets", () =>
+            {
+                using (FormatProbe doc = Open(session, "项甲\r项乙\r"))
+                {
+                    if (!doc.Ready || !session.ApplyBulletDefault(doc.Path, 1, 2) || !doc.ReadParagraphs())
+                    {
+                        return "铺失败 " + doc.Snapshot();
+                    }
+
+                    List<string> lists = session.ParaListStrings(doc.Path);
+                    List<string> stories = session.ParaStories(doc.Path);
+                    return TaggedBody(doc, "项甲", ListFor(stories, lists, "项甲"))
+                        && TaggedBody(doc, "项乙", ListFor(stories, lists, "项乙"))
+                        && Story(At(stories, 0)) == "项甲"
+                        && Story(At(stories, 1)) == "项乙"
+                        ? null
+                        : doc.Snapshot();
+                }
+            });
+
+            Case(run, "au-read-mix", () =>
+            {
+                using (FormatProbe doc = Open(session, "甲\r项\r"))
+                {
+                    if (!doc.Ready
+                        || !session.ApplyNumberDefault(doc.Path, 1, 1)
+                        || !session.ApplyBulletDefault(doc.Path, 2, 2)
+                        || !doc.ReadParagraphs())
+                    {
+                        return "铺失败 " + doc.Snapshot();
+                    }
+
+                    List<string> lists = session.ParaListStrings(doc.Path);
+                    List<string> stories = session.ParaStories(doc.Path);
+                    return TaggedBody(doc, "甲", ListFor(stories, lists, "甲"))
+                        && TaggedBody(doc, "项", ListFor(stories, lists, "项"))
+                        ? null
+                        : doc.Snapshot();
+                }
+            });
+
+            Case(run, "au-read-long", () =>
+            {
+                string body = new string('测', 40);
+                using (FormatProbe doc = Open(session, body + "\r"))
+                {
+                    if (!doc.Ready || !session.ApplyNumberDefault(doc.Path, 1, 1) || !doc.ReadParagraphs())
+                    {
+                        return "铺失败";
+                    }
+
+                    string inner = Inner(doc, "测");
+                    string list = At(session.ParaListStrings(doc.Path), 0);
+                    return AutonumTag.Matches(inner).Count == 1
+                        && TagThen(inner, body, list)
+                        && Story(At(session.ParaStories(doc.Path), 0)) == body
+                        ? null
+                        : inner;
+                }
+            });
+
+            Case(run, "au-read-symbol", () =>
+            {
+                const string body = "甲<乙>&丙";
+                using (FormatProbe doc = Open(session, body + "\r"))
+                {
+                    if (!doc.Ready || !session.ApplyNumberDefault(doc.Path, 1, 1) || !doc.ReadParagraphs())
+                    {
+                        return "铺失败 " + doc.Snapshot();
+                    }
+
+                    string inner = Inner(doc, "甲");
+                    string list = At(session.ParaListStrings(doc.Path), 0);
+                    return TagThen(inner, body, list)
+                        && Story(At(session.ParaStories(doc.Path), 0)) == body
+                        ? null
+                        : "story=" + Story(At(session.ParaStories(doc.Path), 0)) + " inner=" + inner;
+                }
+            });
+
+            Case(run, "au-read-gap", () =>
+            {
+                using (FormatProbe doc = Open(session, "甲\r\r乙\r"))
+                {
+                    if (!doc.Ready
+                        || !NumberBody(session, doc.Path, "甲")
+                        || !NumberBody(session, doc.Path, "乙")
+                        || !doc.ReadParagraphs())
+                    {
+                        return "铺失败 " + doc.Snapshot();
+                    }
+
+                    List<string> lists = session.ParaListStrings(doc.Path);
+                    List<string> stories = session.ParaStories(doc.Path);
+                    int tags = 0;
+                    foreach (Marker marker in doc.Paragraphs)
+                    {
+                        if ((marker.Text ?? "").IndexOf("<autonum", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            tags++;
+                        }
+                    }
+
+                    return tags == 2
+                        && TaggedBody(doc, "甲", ListFor(stories, lists, "甲"))
+                        && TaggedBody(doc, "乙", ListFor(stories, lists, "乙"))
+                        ? null
+                        : "tags=" + tags + " " + doc.Snapshot();
+                }
+            });
+
+            Case(run, "au-read-cell-out", () =>
+            {
+                using (FormatProbe doc = Open(session, "外\r"))
+                {
+                    if (!doc.Ready
+                        || !session.InsertTableBeforePara(doc.Path, 1, "格甲")
+                        || !session.NumberFirstTableCell(doc.Path)
+                        || !NumberBody(session, doc.Path, "外")
+                        || !doc.ReadParagraphs())
+                    {
+                        return "铺失败 " + doc.Snapshot();
+                    }
+
+                    List<string> lists = session.ParaListStrings(doc.Path);
+                    List<string> stories = session.ParaStories(doc.Path);
+                    string cell = Inner(doc, "格甲");
+                    return cell.IndexOf("<table", StringComparison.OrdinalIgnoreCase) < 0
+                        && TaggedBody(doc, "格甲", ListFor(stories, lists, "格甲"))
+                        && TaggedBody(doc, "外", ListFor(stories, lists, "外"))
+                        ? null
+                        : doc.Snapshot();
+                }
+            });
+
+            Case(run, "au-rep-tag", () =>
+            {
+                using (FormatProbe doc = Open(session, "甲\r"))
+                {
+                    if (!ReadyNumbered(session, doc, 1, 1))
+                    {
+                        return "铺失败";
+                    }
+
+                    const string literal = "<autonum v=\"9.\"/>正文";
+                    ToolResult written = session.ProcessActions(doc.Id, Replace(doc.Paragraph("甲"), literal));
+                    if (written == null || !written.Success || !doc.ReadParagraphs())
+                    {
+                        return written == null ? "无回包" : (written.Error ?? doc.Snapshot());
+                    }
+
+                    string story = Story(At(session.ParaStories(doc.Path), 0));
+                    string list = At(session.ParaListStrings(doc.Path), 0);
+                    return story.IndexOf(literal, StringComparison.Ordinal) >= 0
+                        && list.Trim().Length > 0
+                        && TagThen(Inner(doc, "正文"), literal, list)
+                        ? null
+                        : "story=" + story + " inner=" + Inner(doc, "正文");
+                }
+            });
+
+            Case(run, "au-rep-cn", () =>
+            {
+                using (FormatProbe doc = Open(session, "甲\r"))
+                {
+                    if (!ReadyNumbered(session, doc, 1, 1))
+                    {
+                        return "铺失败";
+                    }
+
+                    ToolResult written = session.ProcessActions(doc.Id, Replace(doc.Paragraph("甲"), "一、正文"));
+                    if (written == null || !written.Success || !doc.ReadParagraphs())
+                    {
+                        return written == null ? "无回包" : (written.Error ?? "重读失败");
+                    }
+
+                    string list = At(session.ParaListStrings(doc.Path), 0);
+                    string story = Story(At(session.ParaStories(doc.Path), 0));
+                    return story.IndexOf("一、正文", StringComparison.Ordinal) >= 0
+                        && list.Trim().Length > 0
+                        && TagThen(Inner(doc, "正文"), "一、正文", list)
+                        ? null
+                        : "story=" + story + " inner=" + Inner(doc, "正文");
+                }
+            });
+
+            Case(run, "au-rep-symbol", () =>
+            {
+                const string body = "新<文>&字";
+                using (FormatProbe doc = Open(session, "甲\r"))
+                {
+                    if (!ReadyNumbered(session, doc, 1, 1))
+                    {
+                        return "铺失败";
+                    }
+
+                    ToolResult written = session.ProcessActions(doc.Id, Replace(doc.Paragraph("甲"), body));
+                    if (written == null || !written.Success || !doc.ReadParagraphs())
+                    {
+                        return written == null ? "无回包" : (written.Error ?? doc.Snapshot());
+                    }
+
+                    string list = At(session.ParaListStrings(doc.Path), 0);
+                    return Story(At(session.ParaStories(doc.Path), 0)) == body
+                        && list.Trim().Length > 0
+                        && TagThen(Inner(doc, "新"), body, list)
+                        ? null
+                        : "story=" + Story(At(session.ParaStories(doc.Path), 0)) + " inner=" + Inner(doc, "新");
+                }
+            });
+
+            Case(run, "au-rep-mid", () =>
+            {
+                using (FormatProbe doc = Open(session, "甲\r乙\r丙\r"))
+                {
+                    if (!doc.Ready || !session.ApplyNumberDefault(doc.Path, 1, 3) || !doc.ReadParagraphs())
+                    {
+                        return "铺失败";
+                    }
+
+                    ToolResult written = session.ProcessActions(doc.Id, Replace(doc.Paragraph("乙"), "改中"));
+                    if (written == null || !written.Success || !doc.ReadParagraphs())
+                    {
+                        return written == null ? "无回包" : (written.Error ?? doc.Snapshot());
+                    }
+
+                    List<string> lists = session.ParaListStrings(doc.Path);
+                    List<string> stories = session.ParaStories(doc.Path);
+                    return Story(At(stories, 1)) == "改中"
+                        && At(lists, 1).Trim().Length > 0
+                        && TaggedBody(doc, "甲", ListFor(stories, lists, "甲"))
+                        && TaggedBody(doc, "改中", ListFor(stories, lists, "改中"))
+                        && TaggedBody(doc, "丙", ListFor(stories, lists, "丙"))
+                        ? null
+                        : doc.Snapshot();
+                }
+            });
+
+            Case(run, "au-ins-start", () =>
+            {
+                using (FormatProbe doc = Open(session, "甲\r"))
+                {
+                    if (!ReadyNumbered(session, doc, 1, 1))
+                    {
+                        return "铺失败";
+                    }
+
+                    ToolResult written = session.ProcessActions(doc.Id, InsertStart("前言\r"));
+                    if (written == null || !written.Success || !doc.ReadParagraphs())
+                    {
+                        return written == null ? "无回包" : (written.Error ?? doc.Snapshot());
+                    }
+
+                    List<string> lists = session.ParaListStrings(doc.Path);
+                    List<string> stories = session.ParaStories(doc.Path);
+                    string plain = ListFor(stories, lists, "前言");
+                    bool plainOk = plain.Trim().Length > 0
+                        ? TaggedBody(doc, "前言", plain)
+                        : NoTag(Inner(doc, "前言"));
+                    return plainOk
+                        && TaggedBody(doc, "甲", ListFor(stories, lists, "甲"))
+                        && StoryHas(stories, "前言")
+                        && StoryHas(stories, "甲")
+                        ? null
+                        : doc.Snapshot();
+                }
+            });
+
+            Case(run, "au-ins-multi", () =>
+            {
+                using (FormatProbe doc = Open(session, "甲\r乙\r"))
+                {
+                    if (!ReadyNumbered(session, doc, 1, 2))
+                    {
+                        return "铺失败";
+                    }
+
+                    ToolResult written = session.ProcessActions(doc.Id, InsertAfter(doc.Paragraph("甲"), "丙\r丁"));
+                    if (written == null || !written.Success)
+                    {
+                        return written == null ? "无回包" : written.Error;
+                    }
+
+                    List<string> stories = session.ParaStories(doc.Path);
+                    string list = At(session.ParaListStrings(doc.Path), 0).Trim();
+                    return list.Length > 0
+                        && StoryHas(stories, "丙")
+                        && StoryHas(stories, "丁")
+                        && StoryHas(stories, "甲")
+                        ? null
+                        : string.Join("|", stories.ToArray());
+                }
+            });
+
+            Case(run, "au-clear-mid", () =>
+            {
+                using (FormatProbe doc = Open(session, "甲\r乙\r丙\r"))
+                {
+                    if (!doc.Ready || !session.ApplyNumberDefault(doc.Path, 1, 3) || !doc.ReadParagraphs())
+                    {
+                        return "铺失败";
+                    }
+
+                    ToolResult cleared = ClearCodes(session, doc, doc.Paragraph("乙"));
+                    if (cleared == null || !cleared.Success || !doc.ReadParagraphs())
+                    {
+                        return cleared == null ? "无回包" : (cleared.Error ?? "重读失败");
+                    }
+
+                    List<string> lists = session.ParaListStrings(doc.Path);
+                    List<string> stories = session.ParaStories(doc.Path);
+                    return ListFor(stories, lists, "乙").Trim().Length == 0
+                        && NoTag(Inner(doc, "乙"))
+                        && TaggedBody(doc, "甲", ListFor(stories, lists, "甲"))
+                        && TaggedBody(doc, "丙", ListFor(stories, lists, "丙"))
+                        ? null
+                        : doc.Snapshot();
+                }
+            });
+
+            Case(run, "au-clear-both", () =>
+            {
+                using (FormatProbe doc = Open(session, "甲\r乙\r"))
+                {
+                    if (!ReadyNumbered(session, doc, 1, 2))
+                    {
+                        return "铺失败";
+                    }
+
+                    string codes = doc.Paragraph("甲") + "," + doc.Paragraph("乙");
+                    ToolResult cleared = ClearCodes(session, doc, codes);
+                    if (cleared == null || !cleared.Success || !doc.ReadParagraphs())
+                    {
+                        return cleared == null ? "无回包" : (cleared.Error ?? "重读失败");
+                    }
+
+                    return NoTag(Inner(doc, "甲"))
+                        && NoTag(Inner(doc, "乙"))
+                        && At(session.ParaListStrings(doc.Path), 0).Trim().Length == 0
+                        && At(session.ParaListStrings(doc.Path), 1).Trim().Length == 0
+                        && Story(At(session.ParaStories(doc.Path), 0)) == "甲"
+                        && Story(At(session.ParaStories(doc.Path), 1)) == "乙"
+                        ? null
+                        : doc.Snapshot();
+                }
+            });
+
+            Case(run, "au-clear-last", () =>
+            {
+                using (FormatProbe doc = Open(session, "甲\r乙\r丙\r"))
+                {
+                    if (!doc.Ready || !session.ApplyNumberDefault(doc.Path, 1, 3) || !doc.ReadParagraphs())
+                    {
+                        return "铺失败";
+                    }
+
+                    ToolResult cleared = ClearCodes(session, doc, doc.Paragraph("丙"));
+                    if (cleared == null || !cleared.Success || !doc.ReadParagraphs())
+                    {
+                        return cleared == null ? "无回包" : (cleared.Error ?? "重读失败");
+                    }
+
+                    List<string> lists = session.ParaListStrings(doc.Path);
+                    List<string> stories = session.ParaStories(doc.Path);
+                    return ListFor(stories, lists, "丙").Trim().Length == 0
+                        && NoTag(Inner(doc, "丙"))
+                        && TaggedBody(doc, "甲", ListFor(stories, lists, "甲"))
+                        && TaggedBody(doc, "乙", ListFor(stories, lists, "乙"))
+                        ? null
+                        : doc.Snapshot();
+                }
+            });
+
+            Case(run, "au-clear-plain", () =>
+            {
+                using (FormatProbe doc = Open(session, "普通\r"))
+                {
+                    if (!doc.Ready || !doc.ReadParagraphs())
+                    {
+                        return "读段失败";
+                    }
+
+                    ToolResult cleared = ClearCodes(session, doc, doc.Paragraph("普通"));
+                    if (cleared == null || !cleared.Success || !doc.ReadParagraphs())
+                    {
+                        return cleared == null ? "无回包" : (cleared.Error ?? "重读失败");
+                    }
+
+                    return NoTag(Inner(doc, "普通"))
+                        && Story(At(session.ParaStories(doc.Path), 0)) == "普通"
+                        && At(session.ParaListStrings(doc.Path), 0).Trim().Length == 0
+                        ? null
+                        : doc.Snapshot();
+                }
+            });
+        }
+
         private static bool ReadyNumbered(WdSession session, FormatProbe doc, int from, int to)
         {
             return doc.Ready && session.ApplyNumberDefault(doc.Path, from, to) && doc.ReadParagraphs();
@@ -510,6 +1003,89 @@ namespace WordDocumentRoundtripTest
         private static string At(List<string> list, int index)
         {
             return list != null && index >= 0 && index < list.Count ? list[index] ?? "" : "";
+        }
+
+        private static bool NoTag(string inner)
+        {
+            return (inner ?? "").IndexOf("<autonum", StringComparison.OrdinalIgnoreCase) < 0;
+        }
+
+        private static bool TaggedBody(FormatProbe doc, string body, string list)
+        {
+            return TagThen(Inner(doc, body), body, list);
+        }
+
+        private static string ListFor(List<string> stories, List<string> lists, string body)
+        {
+            if (stories == null)
+            {
+                return "";
+            }
+
+            for (int i = 0; i < stories.Count; i++)
+            {
+                if (Story(stories[i]) == body)
+                {
+                    return At(lists, i);
+                }
+            }
+
+            return "";
+        }
+
+        private static bool StoryHas(List<string> stories, string body)
+        {
+            if (stories == null)
+            {
+                return false;
+            }
+
+            foreach (string story in stories)
+            {
+                if (Story(story) == body || (story ?? "").IndexOf(body, StringComparison.Ordinal) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool NumberBody(WdSession session, string path, string body)
+        {
+            List<string> stories = session.ParaStories(path);
+            for (int i = 0; i < stories.Count; i++)
+            {
+                if (Story(stories[i]) == body)
+                {
+                    return session.ApplyNumberDefault(path, i + 1, i + 1);
+                }
+            }
+
+            return false;
+        }
+
+        private static ToolResult ClearCodes(WdSession session, FormatProbe doc, string codes)
+        {
+            return session.ApplyParagraphFormat(new Dictionary<string, object>
+            {
+                ["channel_id"] = doc.Id,
+                ["target_paragraph_codes"] = codes,
+                ["para_format"] = new Dictionary<string, object>
+                {
+                    ["list"] = new Dictionary<string, object> { ["kind"] = "none" }
+                }
+            });
+        }
+
+        private static List<Dictionary<string, object>> InsertStart(string insert)
+        {
+            return One("insert", new Dictionary<string, object>
+            {
+                ["target"] = new Dictionary<string, object> { ["position"] = "start" },
+                ["insert"] = insert,
+                ["format"] = DefaultFormat()
+            });
         }
 
         private static List<Dictionary<string, object>> Replace(string codes, string neu)
