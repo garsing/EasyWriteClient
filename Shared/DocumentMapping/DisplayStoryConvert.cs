@@ -102,6 +102,7 @@ namespace WordAddIn1.DocumentMapping
             s = InTable.Replace(s, "");
             s = Chart.Replace(s, "");
             s = Image.Replace(s, "");
+            s = AutonumConvert.StripTags(s);
             s = FormFeedText.UnescapeToChar12(s);
             return s.Replace("\n", "\x0B");
         }

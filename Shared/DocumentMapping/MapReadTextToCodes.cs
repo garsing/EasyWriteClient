@@ -38,6 +38,7 @@ namespace WordAddIn1.DocumentMapping
                 var chunkNonSegs = new List<string>();
                 var chunkSegsSentenceNames = new List<List<string>>();
                 var chunkSegsParagraphNames = new List<List<string>>();
+                var chunkSegsParagraphInners = new List<List<string>>();
                 var chunkSegsSentenceFieldIds = new List<List<string>>();
                 var chunkSegsParagraphFieldIds = new List<List<string>>();
                 var chunkSegMarksList = new List<int>();
@@ -62,6 +63,7 @@ namespace WordAddIn1.DocumentMapping
                     SegMapResult segResult = MapSegTextToCodes(chunkParts[partIdx], segMark, store, openTocId);
                     chunkSegsSentenceNames.Add(segResult.SentenceNames);
                     chunkSegsParagraphNames.Add(segResult.ParagraphNames);
+                    chunkSegsParagraphInners.Add(segResult.ParagraphInners);
                     chunkSegsSentenceFieldIds.Add(segResult.SentenceFieldIds);
                     chunkSegsParagraphFieldIds.Add(segResult.ParagraphFieldIds);
                     chunkAllSentenceNames.AddRange(segResult.SentenceNames);
@@ -85,12 +87,14 @@ namespace WordAddIn1.DocumentMapping
                     BuildParagraphDisplayContent.Build(
                         chunkNonSegs,
                         chunkSegsParagraphNames,
-                        paragraphDisplayMap));
+                        paragraphDisplayMap,
+                        chunkSegsParagraphInners));
                 mapped.ChunkParagraphAgentDisplays.Add(
                     BuildParagraphDisplayContent.BuildAgent(
                         chunkNonSegs,
                         chunkSegsParagraphNames,
-                        paragraphDisplayMap));
+                        paragraphDisplayMap,
+                        chunkSegsParagraphInners));
             }
 
             mapped.NameToSentenceContentMap = ContentMapFromMappings(store.GetSentenceMappings());
@@ -252,7 +256,8 @@ namespace WordAddIn1.DocumentMapping
                 string stored = AutonumConvert.StripTags(tagged);
                 var pPair = store.FindOrCreateParagraph(stored, segMark);
                 string pName = pPair.Item1;
-                RememberDisplayInner(store, pName, tagged, stored);
+                result.ParagraphInners.Add(tagged ?? "");
+                RememberDisplayInner(store, pName, tagged);
                 result.ParagraphNames.Add(pName);
                 paragraphRanges.Add(new ParagraphRange(pName, paragraphOffset, paragraphOffset + stored.Length));
                 paragraphOffset += stored.Length;
@@ -272,7 +277,7 @@ namespace WordAddIn1.DocumentMapping
                 string storedSentence = AutonumConvert.StripTags(sentenceContent);
                 var sPair = store.FindOrCreateSentence(storedSentence, segMark);
                 string sName = sPair.Item1;
-                RememberDisplayInner(store, sName, sentenceContent, storedSentence);
+                RememberDisplayInner(store, sName, sentenceContent);
                 result.SentenceNames.Add(sName);
                 sentenceParagraphIndex.Add(sentencePara);
                 sentenceOffset += storedSentence.Length;
@@ -406,17 +411,9 @@ namespace WordAddIn1.DocumentMapping
             return clone;
         }
 
-        private static void RememberDisplayInner(
-            IMappingStore store,
-            string name,
-            string tagged,
-            string stored)
+        private static void RememberDisplayInner(IMappingStore store, string name, string tagged)
         {
-            string existing = store.GetDisplayInner(name);
-            if (string.IsNullOrEmpty(existing) || existing == stored)
-            {
-                store.SetDisplayInner(name, tagged ?? "");
-            }
+            store.SetDisplayInner(name, tagged ?? "");
         }
 
         private static Dictionary<string, string> DisplayMapFromMappings(IReadOnlyList<IReadOnlyList<string>> mappings)

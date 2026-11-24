@@ -24,6 +24,7 @@ namespace WordAddIn1.DocumentMapping
     public sealed class SegMapResult
     {
         public List<string> ParagraphNames { get; } = new List<string>();
+        public List<string> ParagraphInners { get; } = new List<string>();
         public List<string> SentenceNames { get; } = new List<string>();
         public List<string> ParagraphFieldIds { get; } = new List<string>();
         public List<string> SentenceFieldIds { get; } = new List<string>();

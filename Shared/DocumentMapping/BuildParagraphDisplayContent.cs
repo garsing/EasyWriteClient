@@ -68,24 +68,27 @@ namespace WordAddIn1.DocumentMapping
         public static string Build(
             IReadOnlyList<string> nonSegs,
             IReadOnlyList<IReadOnlyList<string>> segsParagraphNames,
-            IReadOnlyDictionary<string, string> nameToParagraphContent)
+            IReadOnlyDictionary<string, string> nameToParagraphContent,
+            IReadOnlyList<IReadOnlyList<string>> occurrenceInners = null)
         {
-            return BuildCore(nonSegs, segsParagraphNames, nameToParagraphContent);
+            return BuildCore(nonSegs, segsParagraphNames, nameToParagraphContent, occurrenceInners);
         }
 
         public static string BuildAgent(
             IReadOnlyList<string> nonSegs,
             IReadOnlyList<IReadOnlyList<string>> segsParagraphNames,
-            IReadOnlyDictionary<string, string> nameToParagraphContent)
+            IReadOnlyDictionary<string, string> nameToParagraphContent,
+            IReadOnlyList<IReadOnlyList<string>> occurrenceInners = null)
         {
             return WordAddIn1.TocFieldStamp.CollapseMarked(
-                Build(nonSegs, segsParagraphNames, nameToParagraphContent));
+                Build(nonSegs, segsParagraphNames, nameToParagraphContent, occurrenceInners));
         }
 
         private static string BuildCore(
             IReadOnlyList<string> nonSegs,
             IReadOnlyList<IReadOnlyList<string>> segsParagraphNames,
-            IReadOnlyDictionary<string, string> nameToParagraphContent)
+            IReadOnlyDictionary<string, string> nameToParagraphContent,
+            IReadOnlyList<IReadOnlyList<string>> occurrenceInners)
         {
             var displayParts = new List<string>();
             List<List<string>> publicSegs = BuildPublicSegs(segsParagraphNames);
@@ -105,8 +108,16 @@ namespace WordAddIn1.DocumentMapping
                 for (int i = 0; i < publicSegs[segIdx].Count; i++)
                 {
                     string paragraphName = baseSeg != null && i < baseSeg.Count ? baseSeg[i] : "";
-                    string paragraphContent = "";
-                    if (nameToParagraphContent != null && paragraphName != null)
+                    string paragraphContent = null;
+                    IReadOnlyList<string> inners = occurrenceInners != null && segIdx < occurrenceInners.Count
+                        ? occurrenceInners[segIdx]
+                        : null;
+                    if (inners != null && i < inners.Count)
+                    {
+                        paragraphContent = inners[i];
+                    }
+
+                    if (paragraphContent == null && nameToParagraphContent != null && paragraphName != null)
                     {
                         nameToParagraphContent.TryGetValue(paragraphName, out paragraphContent);
                     }
