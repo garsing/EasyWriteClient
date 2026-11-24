@@ -1098,7 +1098,9 @@ namespace WordAddIn1
                     return null;
                 }
 
-                return InsertTargetLocatorHelper.BuildTargetEcho(ToFacadeSpec(action.TargetLocator));
+                return EchoWithTextIndex(
+                    InsertTargetLocatorHelper.BuildTargetEcho(ToFacadeSpec(action.TargetLocator)),
+                    action.TargetLocator == null ? null : action.TargetLocator.TextSpan);
             }
 
             if ((type == "replace" || type == "delete") && !string.IsNullOrEmpty(action.SentenceNames))
@@ -1125,11 +1127,33 @@ namespace WordAddIn1
                     }
                 }
 
-                Dictionary<string, object> dict = InsertTargetLocatorHelper.BuildTargetEcho(spec);
+                Dictionary<string, object> dict = EchoWithTextIndex(
+                    InsertTargetLocatorHelper.BuildTargetEcho(spec),
+                    spec.TextSpan);
                 return dict == null || dict.Count == 0 ? null : dict;
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// echo 默认只回 text 字符串。带 index 时要写回对象，否则同段两处相同字会重新变成歧义。
+        /// </summary>
+        private static Dictionary<string, object> EchoWithTextIndex(
+            Dictionary<string, object> echo,
+            TextSpan span)
+        {
+            if (echo == null || span == null || !span.HasIndex || !span.IndexIsInteger)
+            {
+                return echo;
+            }
+
+            echo["text"] = new Dictionary<string, object>
+            {
+                ["value"] = span.Value ?? "",
+                ["index"] = span.Index
+            };
+            return echo;
         }
 
         private static InsertTargetLocatorHelper.ResolveRangeResult TakenSpan(

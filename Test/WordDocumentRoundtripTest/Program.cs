@@ -742,6 +742,53 @@ namespace WordDocumentRoundtripTest
                 return pcRun.CasesFailed == 0 ? 0 : 1;
             }
 
+            if (caseFilter.StartsWith("pw-", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(caseFilter, "pw", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("文字 一批同 P_ 按 Range 写（pw-）");
+                Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
+                Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
+                Console.WriteLine("同码不相交照写；Range 相交双方不写。需已放开同码拦截的客户端。");
+                Console.WriteLine();
+                if (!DesktopLauncher.EnsureAvailable())
+                {
+                    Console.WriteLine("连不上易写 Desktop（已尝试自动拉起）。请手动打开易写应用，再跑本套。");
+                    return 1;
+                }
+
+                int wordBeforePw = OfficeAlive.Count("WINWORD");
+                int wpsBeforePw = OfficeAlive.Count("wps");
+                bool wordWinBeforePw = OfficeAlive.HasWindow("WINWORD");
+                bool wpsWinBeforePw = OfficeAlive.HasWindow("wps");
+                WdSession.SweepBeforeRun(host);
+                var pwRun = new TestRun { TotalTarget = PwCases.Target };
+                var pwSw = Stopwatch.StartNew();
+                try
+                {
+                    PwCases.Run(
+                        pwRun,
+                        host,
+                        caseFilter,
+                        wordBeforePw,
+                        wpsBeforePw,
+                        wordWinBeforePw,
+                        wpsWinBeforePw);
+                }
+                finally
+                {
+                    pwSw.Stop();
+                    WdSession.SweepAfterRun(host);
+                }
+
+                Console.WriteLine();
+                Console.WriteLine("正式用例 通过 " + pwRun.CasesPassed
+                    + "  失败 " + pwRun.CasesFailed
+                    + "  跳过 " + pwRun.CasesSkipped
+                    + "  （目标 " + pwRun.TotalTarget + "）");
+                Console.WriteLine("ELAPSED_SEC=" + pwSw.Elapsed.TotalSeconds.ToString("F1"));
+                return pwRun.CasesFailed == 0 ? 0 : 1;
+            }
+
             if (caseFilter.StartsWith("ts-", StringComparison.OrdinalIgnoreCase))
             {
                 Console.WriteLine("文字 句子内按字符串定位（ts-）");
