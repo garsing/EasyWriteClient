@@ -2940,6 +2940,7 @@ namespace WordAddIn1
                     return result;
                 }
 
+                ClearEmptyNumberedParasInCell(doc, probeTable, probeRow, probeCol);
                 MoveSelectionAfterDelete(doc, cursorPos);
 
                 result.Success = true;
@@ -2973,14 +2974,15 @@ namespace WordAddIn1
 
             try
             {
-                if (TryClearCellWhenDeleteWouldHitMark(doc, targetRange))
+                Word.Range deleteRange = ParagraphRangeLocator.ExcludeTrailingCellMarks(doc, targetRange);
+                if (TryClearCellWhenDeleteWouldHitMark(doc, deleteRange))
                 {
                     path = "clear-body";
                     return true;
                 }
 
                 path = "Range.Delete";
-                targetRange.Delete();
+                deleteRange.Delete();
                 return true;
             }
             catch (Exception ex)
@@ -3226,27 +3228,49 @@ namespace WordAddIn1
                 return true;
             }
 
-            if (hit < paraCount)
+            return false;
+        }
+
+        /// <summary>
+        /// 格末 Delete 去不掉段本身，空段会留下自动编号。只清空段，有字的编号不动。
+        /// </summary>
+        private static void ClearEmptyNumberedParasInCell(
+            Word.Document doc,
+            Word.Table table,
+            int row,
+            int col)
+        {
+            if (doc == null || table == null || row < 1 || col < 1)
             {
-                return false;
+                return;
             }
 
-            Word.Range hitRange = cell.Range.Paragraphs[hit].Range;
             try
             {
-                hitRange.ListFormat.RemoveNumbers();
+                Word.Cell cell = table.Cell(row, col);
+                int n = cell.Range.Paragraphs.Count;
+                for (int i = 1; i <= n; i++)
+                {
+                    Word.Range hitRange = cell.Range.Paragraphs[i].Range;
+                    Word.Range body = ParagraphRangeLocator.ExcludeTrailingParagraphMark(doc, hitRange);
+                    string text = body == null ? "" : (body.Text ?? "");
+                    if (text.Trim().Length > 0)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        hitRange.ListFormat.RemoveNumbers();
+                    }
+                    catch
+                    {
+                    }
+                }
             }
             catch
             {
             }
-
-            Word.Range body = ParagraphRangeLocator.ExcludeTrailingParagraphMark(doc, hitRange);
-            if (body != null && body.End > body.Start)
-            {
-                body.Text = "";
-            }
-
-            return true;
         }
 
         private static int CellParaIndexAt(Word.Cell cell, int start)
