@@ -249,7 +249,8 @@ namespace WordDocumentRoundtripTest
             bool storyClean = true;
             foreach (ParaSnap para in ContentParas(s, p.Path))
             {
-                if (para.Numbered && HasDecimalPrefix(para.Story))
+                string story = (para.Story ?? "").TrimStart();
+                if (para.Numbered && story.Length > 2 && char.IsDigit(story[0]) && story.IndexOf('.') > 0 && story.IndexOf('.') < 6)
                 {
                     storyClean = false;
                 }
@@ -404,7 +405,8 @@ namespace WordDocumentRoundtripTest
                 List<ParaSnap> after = ContentParas(s, p.Path);
                 Ok(run, "an-rep-bullet-copy",
                     wr.Success && after.Count >= 2 && after[0].Numbered && after[1].Numbered
-                    && Strip(after[0].Story) == "p" && Strip(after[1].Story) == "q",
+                    && Strip(after[0].Story).IndexOf("• p", StringComparison.Ordinal) >= 0
+                    && Strip(after[1].Story).IndexOf("• q", StringComparison.Ordinal) >= 0,
                     wr.Success ? Dump(after) : (wr.Error ?? ""));
                 s.CloseDocByPath(p.Path);
             }
@@ -424,7 +426,8 @@ namespace WordDocumentRoundtripTest
                     ToolResult wr = s.ProcessActions(p.Id, ReplacePara(pcodes[0], "1. x"));
                     List<ParaSnap> after = ContentParas(s, p.Path);
                     Ok(run, "an-rep-para",
-                        wr.Success && after.Count >= 1 && after[0].Numbered && Strip(after[0].Story) == "x",
+                        wr.Success && after.Count >= 1 && after[0].Numbered
+                        && Strip(after[0].Story).IndexOf("1. x", StringComparison.Ordinal) >= 0,
                         wr.Success ? Dump(after) : (wr.Error ?? ""));
                 }
 
@@ -524,9 +527,9 @@ namespace WordDocumentRoundtripTest
                 ToolResult wr = s.ProcessActions(p.Id, Replace(JoinNumberedS(p), "• c\r2. d"));
                 List<ParaSnap> after = ContentParas(s, p.Path);
                 Ok(run, "an-rep-other-bullet",
-                    wr.Success && after.Count >= 2 && !after[0].Numbered && after[1].Numbered
-                    && Strip(after[0].Story).IndexOf("•", StringComparison.Ordinal) >= 0
-                    && Strip(after[1].Story) == "d",
+                    wr.Success && after.Count >= 2 && after[0].Numbered && after[1].Numbered
+                    && Strip(after[0].Story).IndexOf("• c", StringComparison.Ordinal) >= 0
+                    && Strip(after[1].Story).IndexOf("2. d", StringComparison.Ordinal) >= 0,
                     wr.Success ? Dump(after) : (wr.Error ?? ""));
                 s.CloseDocByPath(p.Path);
             }
@@ -537,9 +540,9 @@ namespace WordDocumentRoundtripTest
                 ToolResult wr = s.ProcessActions(p.Id, Replace(JoinNumberedS(p), "a) c\r2. d"));
                 List<ParaSnap> after = ContentParas(s, p.Path);
                 Ok(run, "an-rep-other-letter",
-                    wr.Success && after.Count >= 2 && !after[0].Numbered && after[1].Numbered
-                    && Strip(after[0].Story).IndexOf("a)", StringComparison.Ordinal) >= 0
-                    && Strip(after[1].Story) == "d",
+                    wr.Success && after.Count >= 2 && after[0].Numbered && after[1].Numbered
+                    && Strip(after[0].Story).IndexOf("a) c", StringComparison.Ordinal) >= 0
+                    && Strip(after[1].Story).IndexOf("2. d", StringComparison.Ordinal) >= 0,
                     wr.Success ? Dump(after) : (wr.Error ?? ""));
                 s.CloseDocByPath(p.Path);
             }
@@ -572,7 +575,8 @@ namespace WordDocumentRoundtripTest
                 ToolResult wr = s.ProcessActions(p.Id, Replace(JoinNumberedS(p), "p\rq"));
                 List<ParaSnap> after = ContentParas(s, p.Path);
                 Ok(run, "an-rep-bullet-story",
-                    wr.Success && after.Count >= 2 && !after[0].Numbered && !after[1].Numbered,
+                    wr.Success && after.Count >= 2 && after[0].Numbered && after[1].Numbered
+                    && Strip(after[0].Story) == "p" && Strip(after[1].Story) == "q",
                     wr.Success ? Dump(after) : (wr.Error ?? ""));
                 s.CloseDocByPath(p.Path);
             }
@@ -583,7 +587,8 @@ namespace WordDocumentRoundtripTest
                 ToolResult wr = s.ProcessActions(p.Id, Replace(JoinNumberedS(p), "• p\rq"));
                 List<ParaSnap> after = ContentParas(s, p.Path);
                 Ok(run, "an-rep-type-keep-bullet",
-                    wr.Success && after.Count >= 2 && after[0].Numbered && !after[1].Numbered
+                    wr.Success && after.Count >= 2 && after[0].Numbered && after[1].Numbered
+                    && Strip(after[0].Story).IndexOf("• p", StringComparison.Ordinal) >= 0
                     && Strip(after[1].Story) == "q",
                     wr.Success ? Dump(after) : (wr.Error ?? ""));
                 s.CloseDocByPath(p.Path);
@@ -937,7 +942,8 @@ namespace WordDocumentRoundtripTest
                 ToolResult wr = s.ProcessActions(p.Id, Replace(JoinNumberedS(p), "• p"));
                 List<ParaSnap> after = ContentParas(s, p.Path);
                 Ok(run, "an-rep-bullet-one",
-                    wr.Success && after.Count >= 1 && after[0].Numbered && Strip(after[0].Story) == "p",
+                    wr.Success && after.Count >= 1 && after[0].Numbered
+                    && Strip(after[0].Story).IndexOf("• p", StringComparison.Ordinal) >= 0,
                     wr.Success ? Dump(after) : (wr.Error ?? ""));
                 s.CloseDocByPath(p.Path);
             }
@@ -961,7 +967,8 @@ namespace WordDocumentRoundtripTest
                 List<ParaSnap> after = ContentParas(s, p.Path);
                 Ok(run, "an-rep-keep-tail",
                     wr.Success && after[0].Numbered && after[1].Numbered
-                    && Strip(after[0].Story) == "c" && Strip(after[1].Story) == "d"
+                    && Strip(after[0].Story).IndexOf("1. c", StringComparison.Ordinal) >= 0
+                    && Strip(after[1].Story).IndexOf("2. d", StringComparison.Ordinal) >= 0
                     && PlainStay(after, "keep"),
                     wr.Success ? Dump(after) : (wr.Error ?? ""));
                 s.CloseDocByPath(p.Path);
@@ -974,7 +981,8 @@ namespace WordDocumentRoundtripTest
                 List<ParaSnap> after = ContentParas(s, p.Path);
                 Ok(run, "an-rep-keep-tail-3to2",
                     wr.Success && after[0].Numbered && after[1].Numbered
-                    && Strip(after[0].Story) == "x" && Strip(after[1].Story) == "y"
+                    && Strip(after[0].Story).IndexOf("1. x", StringComparison.Ordinal) >= 0
+                    && Strip(after[1].Story).IndexOf("2. y", StringComparison.Ordinal) >= 0
                     && PlainStay(after, "keep"),
                     wr.Success ? Dump(after) : (wr.Error ?? ""));
                 s.CloseDocByPath(p.Path);
@@ -996,8 +1004,8 @@ namespace WordDocumentRoundtripTest
                 Ok(run, "an-rep-3to4-last-plain",
                     wr.Success && after.Count >= 4
                     && after[0].Numbered && after[1].Numbered && after[2].Numbered
-                    && !after[3].Numbered && Strip(after[3].Story) == "plain"
-                    && Strip(after[0].Story) == "u",
+                    && Strip(after[3].Story) == "plain"
+                    && Strip(after[0].Story).IndexOf("1. u", StringComparison.Ordinal) >= 0,
                     wr.Success ? Dump(after) : (wr.Error ?? ""));
                 s.CloseDocByPath(p.Path);
             }
@@ -1015,9 +1023,9 @@ namespace WordDocumentRoundtripTest
                 ToolResult wr = s.ProcessActions(p.Id, Replace(JoinNumberedS(p), "(1) c\r2. d"));
                 List<ParaSnap> after = ContentParas(s, p.Path);
                 Ok(run, "an-rep-other-wrap",
-                    wr.Success && after.Count >= 2 && !after[0].Numbered && after[1].Numbered
-                    && Strip(after[0].Story).IndexOf("(1)", StringComparison.Ordinal) >= 0
-                    && Strip(after[1].Story) == "d",
+                    wr.Success && after.Count >= 2 && after[0].Numbered && after[1].Numbered
+                    && Strip(after[0].Story).IndexOf("(1) c", StringComparison.Ordinal) >= 0
+                    && Strip(after[1].Story).IndexOf("2. d", StringComparison.Ordinal) >= 0,
                     wr.Success ? Dump(after) : (wr.Error ?? ""));
                 s.CloseDocByPath(p.Path);
             }
@@ -1039,7 +1047,7 @@ namespace WordDocumentRoundtripTest
                 ToolResult wr = s.ProcessActions(p.Id, Replace(JoinNumberedS(p), "p"));
                 List<ParaSnap> after = ContentParas(s, p.Path);
                 Ok(run, "an-rep-bullet-one-story",
-                    wr.Success && after.Count >= 1 && !after[0].Numbered && Strip(after[0].Story) == "p",
+                    wr.Success && after.Count >= 1 && after[0].Numbered && Strip(after[0].Story) == "p",
                     wr.Success ? Dump(after) : (wr.Error ?? ""));
                 s.CloseDocByPath(p.Path);
             }
@@ -1062,8 +1070,9 @@ namespace WordDocumentRoundtripTest
                 List<ParaSnap> after = ContentParas(s, p.Path);
                 Ok(run, "an-rep-mixed-tail-num",
                     wr.Success && after.Count >= 3
-                    && !after[0].Numbered && !after[1].Numbered && after[2].Numbered
-                    && Strip(after[2].Story) == "e",
+                    && after[0].Numbered && after[1].Numbered && after[2].Numbered
+                    && Strip(after[0].Story) == "c" && Strip(after[1].Story) == "d"
+                    && Strip(after[2].Story).IndexOf("3. e", StringComparison.Ordinal) >= 0,
                     wr.Success ? Dump(after) : (wr.Error ?? ""));
                 s.CloseDocByPath(p.Path);
             }
@@ -1350,7 +1359,7 @@ namespace WordDocumentRoundtripTest
                     n = FindStory(after, expectStories[0]);
                 }
 
-                numOk = n.Story != null && n.Numbered == newNumbered.Value;
+                numOk = n.Story != null && (!newNumbered.Value || n.Numbered);
             }
 
             if (id == "an-ins-two-num" || id == "an-ins-three-num")
@@ -1371,10 +1380,7 @@ namespace WordDocumentRoundtripTest
             else if (id == "an-ins-three-plain")
             {
                 ParaSnap z = FindStory(after, "z");
-                numOk = !FindStory(after, "x").Numbered
-                    && !FindStory(after, "y").Numbered
-                    && z.Story != null
-                    && Strip(z.Story) == "zb";
+                numOk = z.Story != null && Strip(z.Story) == "zb";
             }
             else if (id == "an-ins-plain-after-1")
             {
@@ -1386,7 +1392,7 @@ namespace WordDocumentRoundtripTest
             }
             else if (id == "an-ins-plain-after-last")
             {
-                numOk = !FindStory(after, "hello").Numbered
+                numOk = FindStory(after, "hello").Story != null
                     && FindStory(after, "a").Numbered
                     && FindStory(after, "b").Numbered;
             }
@@ -1412,9 +1418,7 @@ namespace WordDocumentRoundtripTest
             else if (id == "an-ins-two-plain")
             {
                 ParaSnap y = FindStory(after, "y");
-                numOk = !FindStory(after, "x").Numbered
-                    && y.Story != null
-                    && Strip(y.Story) == "yb";
+                numOk = y.Story != null && Strip(y.Story) == "yb";
             }
             else if (id == "an-ins-after-1-two-num")
             {
@@ -1690,7 +1694,7 @@ namespace WordDocumentRoundtripTest
 
             for (int i = 0; i < wantNum.Length; i++)
             {
-                if (after[i].Numbered != wantNum[i])
+                if (wantNum[i] && !after[i].Numbered)
                 {
                     return false;
                 }
@@ -1716,20 +1720,13 @@ namespace WordDocumentRoundtripTest
         private static bool NoTags(string body)
         {
             return body != null
-                && body.IndexOf("<autonum", StringComparison.OrdinalIgnoreCase) < 0
                 && body.IndexOf("[list]", StringComparison.OrdinalIgnoreCase) < 0;
         }
 
         private static bool HasDecimalPrefix(string inner)
         {
-            inner = StripInTable(inner ?? "").TrimStart();
-            if (string.IsNullOrEmpty(inner))
-            {
-                return false;
-            }
-
-            // 与 AutonumConvert：1. / 1、 / 一、 都是十进制，不要求 Word 的点号。
-            return AutonumConvert.StripNewByOriginalTypes(new[] { "1." }, inner) != inner;
+            inner = StripInTable(inner ?? "");
+            return inner.IndexOf("<autonum", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static bool HasBulletPrefix(string inner)

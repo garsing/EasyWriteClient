@@ -412,11 +412,10 @@ namespace WordAddIn1.DocumentMapping
             string tagged,
             string stored)
         {
-            string visible = AutonumConvert.ToVisible(tagged);
             string existing = store.GetDisplayInner(name);
             if (string.IsNullOrEmpty(existing) || existing == stored)
             {
-                store.SetDisplayInner(name, visible);
+                store.SetDisplayInner(name, tagged ?? "");
             }
         }
 

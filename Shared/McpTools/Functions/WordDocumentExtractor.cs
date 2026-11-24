@@ -742,7 +742,6 @@ namespace WordAddIn1
                     }
 
                     string text = UnescapeHtmlEntities(block.Text ?? "");
-                    text = AutonumConvert.ToVisible(text);
                     rows.Add(new ParagraphMapProjection
                     {
                         SourceIndex = source,

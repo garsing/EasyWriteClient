@@ -13,7 +13,7 @@ namespace WordDocumentRoundtripTest
     {
         public const int Target = 8;
 
-        public static string IdFilter;
+        public static string IdFilter = "";
 
         public static void Run(
             TestRun run,
