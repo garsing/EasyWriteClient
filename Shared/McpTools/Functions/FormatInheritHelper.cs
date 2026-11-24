@@ -86,12 +86,69 @@ namespace WordAddIn1
 
                 if (!string.Equals(value, "automatic", StringComparison.OrdinalIgnoreCase))
                 {
+                    NoteNewTextMark(snapshot);
                     return;
                 }
             }
 
             snapshot["background_color"] = ConvertWdColorToRgb(
                 ConfigManager.DocumentColorHelper.InsertBackground);
+            NoteNewTextMark(snapshot);
+        }
+
+        [ThreadStatic]
+        private static List<string> t_newTextMarks;
+
+        /// <summary>写字批次开始时打开，只记录本批真正补过的新字标记。</summary>
+        public static void BeginNewTextMarks()
+        {
+            t_newTextMarks = new List<string>();
+        }
+
+        /// <summary>取出本批新字标记说明。没有写入则返回 null。</summary>
+        public static string TakeNewTextMarkSentence()
+        {
+            List<string> marks = t_newTextMarks;
+            t_newTextMarks = null;
+            if (marks == null || marks.Count == 0)
+            {
+                return null;
+            }
+
+            return string.Join("；", marks) + "。属于给用户标识这是新修改的文字，不用去除。";
+        }
+
+        public static void ClearNewTextMarks()
+        {
+            t_newTextMarks = null;
+        }
+
+        private static void NoteNewTextMark(Dictionary<string, object> snapshot)
+        {
+            if (t_newTextMarks == null || snapshot == null)
+            {
+                return;
+            }
+
+            if (!snapshot.TryGetValue("background_color", out object raw) || raw == null)
+            {
+                return;
+            }
+
+            string value = raw.ToString() ?? "";
+            if (string.IsNullOrEmpty(value))
+            {
+                return;
+            }
+
+            string insertRgb = ConvertWdColorToRgb(ConfigManager.DocumentColorHelper.InsertBackground);
+            string phrase = string.Equals(value, insertRgb, StringComparison.OrdinalIgnoreCase)
+                ? "highlight_color_index 设置为 wdYellow"
+                : "background_color 设置为 " + value;
+            if (!t_newTextMarks.Contains(phrase))
+            {
+                t_newTextMarks.Add(phrase);
+            }
         }
 
         /// <summary>写格后套字符格式：先补未传开关和字色、再补浅黄，然后 <see cref="ApplySnapshot"/>。</summary>

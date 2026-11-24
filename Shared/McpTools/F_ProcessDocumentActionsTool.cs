@@ -66,6 +66,7 @@ namespace WordAddIn1
                     try
                     {
                     formatDefaults = FormatDefaultSource.Begin(document);
+                    FormatInheritHelper.BeginNewTextMarks();
 
                     string logPath = EasyWriteLog.BeginSession("process_document_actions");
                     WrittenFormatGlueHelper.ClearPlans();
@@ -213,6 +214,7 @@ namespace WordAddIn1
                     }
                     finally
                     {
+                        FormatInheritHelper.ClearNewTextMarks();
                         if (formatDefaults != null)
                         {
                             formatDefaults.Dispose();
@@ -782,7 +784,7 @@ namespace WordAddIn1
             string outcome = allOk
                 ? "all_succeeded"
                 : (executed > 0 ? "partial_succeeded" : "all_failed");
-            string message = BuildBatchMessage(ordered);
+            string message = AppendNewTextMark(BuildBatchMessage(ordered), ordered);
             var data = new Dictionary<string, object>
             {
                 ["document_name"] = documentName ?? "未命名文档",
@@ -882,6 +884,30 @@ namespace WordAddIn1
             }
 
             return sb.ToString();
+        }
+
+        private static string AppendNewTextMark(string message, List<ActionResult> ordered)
+        {
+            bool wroteText = ordered != null && ordered.Any(r =>
+                r.success && (r.type == "insert" || r.type == "replace"));
+            string mark = FormatInheritHelper.TakeNewTextMarkSentence();
+            if (!wroteText || string.IsNullOrEmpty(mark))
+            {
+                return message ?? "";
+            }
+
+            if (string.IsNullOrEmpty(message))
+            {
+                return mark;
+            }
+
+            string text = message.TrimEnd();
+            if (!text.EndsWith("。", StringComparison.Ordinal))
+            {
+                text += "。";
+            }
+
+            return text + mark;
         }
 
         private static string LocateMissMessage(string codes, string fallback)
