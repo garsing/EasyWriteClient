@@ -30,7 +30,7 @@ namespace WordAddIn1
                         return new ToolResult
                         {
                             Success = false,
-                            Error = "须提供 action（delete、group 或 duplicate_group）"
+                            Error = "须提供 action（delete、group、duplicate_group 或 clear_shapes）"
                         };
                     }
 
@@ -97,7 +97,8 @@ namespace WordAddIn1
                         ["display_contents"] = BuildDisplay(hostResult)
                     };
 
-                    if (string.Equals(hostResult.Action, "delete", StringComparison.Ordinal))
+                    if (string.Equals(hostResult.Action, "delete", StringComparison.Ordinal)
+                        || string.Equals(hostResult.Action, "clear_shapes", StringComparison.Ordinal))
                     {
                         data["deleted_count"] = hostResult.DeletedCount;
                         data["deleted_shape_ids"] = hostResult.DeletedShapeIds ?? new List<string>();
@@ -143,6 +144,7 @@ namespace WordAddIn1
             bool hasHeight = HasArgKey(args, "height");
             bool hasShapeId = HasArgKey(args, "shape_id");
             bool hasShapeIds = HasArgKey(args, "shape_ids");
+            bool hasConfirm = HasArgKey(args, "confirm");
 
             switch (action)
             {
@@ -176,8 +178,20 @@ namespace WordAddIn1
                     }
 
                     return true;
+                case "clear_shapes":
+                    if (hasShapeId || hasShapeIds || hasSource || hasToSlide || hasLeft || hasTop
+                        || hasWidth || hasHeight || hasConfirm)
+                    {
+                        error = "clear_shapes 不接受 shape_id / shape_ids / source_channel_id / to_slide_id / left / top / width / height / confirm";
+                        return false;
+                    }
+
+                    return true;
+                case "clear":
+                    error = "action=clear 会读成删页。删这一页上的全部形状请用 clear_shapes。删页请用 F_manage_ppt_slide 的 delete，并带 confirm=true";
+                    return false;
                 default:
-                    error = "action 须为 delete、group 或 duplicate_group";
+                    error = "action 须为 delete、group、duplicate_group 或 clear_shapes";
                     return false;
             }
         }
@@ -257,6 +271,12 @@ namespace WordAddIn1
             {
                 sb.Append(" deleted=").Append(result?.DeletedCount ?? 0);
             }
+            else if (string.Equals(result?.Action, "clear_shapes", StringComparison.Ordinal))
+            {
+                int deleted = result?.DeletedCount ?? 0;
+                sb.Append(" deleted=").Append(deleted);
+                sb.Append(" 这一页还在，删掉 ").Append(deleted).Append(" 个形状");
+            }
             else
             {
                 sb.Append(" group_shape_id=").Append(result?.GroupShapeId ?? "");
@@ -285,7 +305,7 @@ namespace WordAddIn1
                 failure = new ToolResult
                 {
                     Success = false,
-                    Error = "须提供 action（delete、group 或 duplicate_group）"
+                    Error = "须提供 action（delete、group、duplicate_group 或 clear_shapes）"
                 };
                 return true;
             }

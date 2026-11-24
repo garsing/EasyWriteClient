@@ -579,7 +579,8 @@ namespace ReadFileToolTest
                 }
             }
 
-            if (want("mi-group-merge") || want("mi-group-only") || want("mi-dup-reject"))
+            if (want("mi-group-merge") || want("mi-group-only") || want("mi-dup-reject")
+                || want("mi-clear-ids") || want("mi-clear-confirm") || want("mi-clear-bare"))
             {
                 MethodInfo merge = typeof(F_ManagePptShapeTool).GetMethod(
                     "MergeIds",
@@ -602,6 +603,21 @@ namespace ReadFileToolTest
                     if (want("mi-dup-reject"))
                     {
                         run.CaseFail("mi-dup-reject", "找不到拒绝方法");
+                    }
+
+                    if (want("mi-clear-ids"))
+                    {
+                        run.CaseFail("mi-clear-ids", "找不到拒绝方法");
+                    }
+
+                    if (want("mi-clear-confirm"))
+                    {
+                        run.CaseFail("mi-clear-confirm", "找不到拒绝方法");
+                    }
+
+                    if (want("mi-clear-bare"))
+                    {
+                        run.CaseFail("mi-clear-bare", "找不到拒绝方法");
                     }
                 }
                 else
@@ -656,6 +672,66 @@ namespace ReadFileToolTest
                         else
                         {
                             run.CaseFail("mi-dup-reject", error);
+                        }
+                    }
+
+                    if (want("mi-clear-ids"))
+                    {
+                        var box = new object[]
+                        {
+                            "clear_shapes",
+                            new Dictionary<string, object> { ["shape_ids"] = new[] { "sid1-s1" } },
+                            null
+                        };
+                        bool accepted = (bool)reject.Invoke(null, box);
+                        string error = box[2] as string ?? "";
+                        if (!accepted && error.IndexOf("shape_ids", StringComparison.Ordinal) >= 0)
+                        {
+                            run.CaseOk("mi-clear-ids");
+                        }
+                        else
+                        {
+                            run.CaseFail("mi-clear-ids", error);
+                        }
+                    }
+
+                    if (want("mi-clear-confirm"))
+                    {
+                        var box = new object[]
+                        {
+                            "clear_shapes",
+                            new Dictionary<string, object> { ["confirm"] = true },
+                            null
+                        };
+                        bool accepted = (bool)reject.Invoke(null, box);
+                        string error = box[2] as string ?? "";
+                        if (!accepted && error.IndexOf("confirm", StringComparison.Ordinal) >= 0)
+                        {
+                            run.CaseOk("mi-clear-confirm");
+                        }
+                        else
+                        {
+                            run.CaseFail("mi-clear-confirm", error);
+                        }
+                    }
+
+                    if (want("mi-clear-bare"))
+                    {
+                        var box = new object[]
+                        {
+                            "clear",
+                            new Dictionary<string, object> { ["slide_id"] = "256" },
+                            null
+                        };
+                        bool accepted = (bool)reject.Invoke(null, box);
+                        string error = box[2] as string ?? "";
+                        if (!accepted && error.IndexOf("clear_shapes", StringComparison.Ordinal) >= 0)
+                        {
+                            run.CaseOk("mi-clear-bare");
+                        }
+                        else
+                        {
+                            run.CaseFail("mi-clear-bare", error);
                         }
                     }
                 }

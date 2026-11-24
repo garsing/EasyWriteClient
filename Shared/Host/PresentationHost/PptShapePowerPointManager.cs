@@ -33,7 +33,7 @@ namespace WordAddIn1.PresentationHost
 
             if (request == null || string.IsNullOrWhiteSpace(request.Action))
             {
-                error = "须提供 action（delete、group 或 duplicate_group）";
+                error = "须提供 action（delete、group、duplicate_group 或 clear_shapes）";
                 return false;
             }
 
@@ -53,8 +53,10 @@ namespace WordAddIn1.PresentationHost
                         request,
                         out result,
                         out error);
+                case "clear_shapes":
+                    return TryClearShapes(dest, destChannelId, request, out result, out error);
                 default:
-                    error = "action 须为 delete、group 或 duplicate_group";
+                    error = "action 须为 delete、group、duplicate_group 或 clear_shapes";
                     return false;
             }
         }
@@ -132,6 +134,116 @@ namespace WordAddIn1.PresentationHost
             }
 
             result = BaseResult(channelId, "delete", request.SlideId.Trim());
+            result.DeletedCount = deleted.Count;
+            result.DeletedShapeIds = deleted;
+            return true;
+        }
+
+        private static bool TryClearShapes(
+            PowerPoint.Presentation presentation,
+            string channelId,
+            PresentationManageShapeRequest request,
+            out PresentationManageShapeResult result,
+            out string error)
+        {
+            result = null;
+            error = null;
+            if (string.IsNullOrWhiteSpace(request.SlideId))
+            {
+                error = "须提供 slide_id";
+                return false;
+            }
+
+            string slideId = request.SlideId.Trim();
+            if (!TryFindSlideById(presentation, slideId, out PowerPoint.Slide slide, out error))
+            {
+                return false;
+            }
+
+            PowerPoint.Shapes shapes;
+            try
+            {
+                shapes = slide.Shapes;
+            }
+            catch (Exception)
+            {
+                error = "无法读取 Shapes";
+                return false;
+            }
+
+            if (shapes == null)
+            {
+                error = "无法读取 Shapes";
+                return false;
+            }
+
+            int count;
+            try
+            {
+                count = shapes.Count;
+            }
+            catch (Exception)
+            {
+                error = "无法读取 Shapes";
+                return false;
+            }
+
+            var deleted = new List<string>();
+            if (count == 0)
+            {
+                result = BaseResult(channelId, "clear_shapes", slideId);
+                result.DeletedCount = 0;
+                result.DeletedShapeIds = deleted;
+                return true;
+            }
+
+            PowerPoint.PpAlertLevel prevAlerts = PowerPoint.PpAlertLevel.ppAlertsAll;
+            bool alertsSet = false;
+            try
+            {
+                PowerPoint.Application app = presentation.Application;
+                if (app != null)
+                {
+                    try
+                    {
+                        prevAlerts = app.DisplayAlerts;
+                        app.DisplayAlerts = PowerPoint.PpAlertLevel.ppAlertsNone;
+                        alertsSet = true;
+                    }
+                    catch (Exception)
+                    {
+                        alertsSet = false;
+                    }
+                }
+
+                for (int i = count; i >= 1; i--)
+                {
+                    PowerPoint.Shape shape = shapes[i];
+                    int id = shape.Id;
+                    shape.Delete();
+                    deleted.Add(PptShapeId.FormatShape(slideId, id));
+                }
+            }
+            catch (Exception ex)
+            {
+                error = "删除形状失败: 已删 " + deleted.Count + " 个。" + ex.Message;
+                return false;
+            }
+            finally
+            {
+                if (alertsSet)
+                {
+                    try
+                    {
+                        presentation.Application.DisplayAlerts = prevAlerts;
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+
+            result = BaseResult(channelId, "clear_shapes", slideId);
             result.DeletedCount = deleted.Count;
             result.DeletedShapeIds = deleted;
             return true;
