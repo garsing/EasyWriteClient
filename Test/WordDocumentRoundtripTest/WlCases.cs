@@ -6,7 +6,7 @@ using WordAddIn1;
 namespace WordDocumentRoundtripTest
 {
     /// <summary>
-    /// 一批定位：重叠/重复双方不写、相邻句从后往前、整批一次 PD。前缀 wl-。
+    /// 一批定位：Range 重叠双方不写（同码不拦）、相邻句从后往前、整批一次 PD。前缀 wl-。
     /// </summary>
     internal static class WlCases
     {
@@ -95,10 +95,10 @@ namespace WordDocumentRoundtripTest
                     && WdSession.IntOf(dupS, "executed_actions") == 0
                     && StillHas(s, p.Id, Jia)
                     && !StillHas(s, p.Id, JiaNew),
-                    Reason(dupS, "同码两条仍写了"));
+                    Reason(dupS, "同一 Range 两条仍写了"));
                 WmCases.Ok(run, "wl-msg-dup",
-                    BlobHas(dupS, "重复出现") && BlobHas(dupS, p.Jia),
-                    dupS.Success ? "未失败" : "回包未点名重复码 blob=" + WmCases.TrimBlob(dupBlob));
+                    BlobHas(dupS, "Range 重叠") && BlobHas(dupS, p.Jia),
+                    dupS.Success ? "未失败" : "回包未点名重叠码 blob=" + WmCases.TrimBlob(dupBlob));
                 WmCases.Ok(run, "wl-all-failed",
                     WdSession.Str(dupS, "batch_outcome") == "all_failed",
                     "outcome=" + WdSession.Str(dupS, "batch_outcome"));

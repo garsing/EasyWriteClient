@@ -901,6 +901,9 @@ namespace WordAddIn1
             return fallback ?? "未找到定位 Range";
         }
 
+        /// <summary>
+        /// Range 相交双方不写。同码由定位出示，这里不拦。
+        /// </summary>
         private static void TakeLocateProblems(
             List<ParagraphAction> actions,
             List<ActionResult> failed,
@@ -927,36 +930,6 @@ namespace WordAddIn1
                         + " 的 Range 重叠，这两条都未写";
                     MarkReject(reject, reasons, overlap.ActionIndexA, line);
                     MarkReject(reject, reasons, overlap.ActionIndexB, line);
-                }
-            }
-
-            if (located.Duplicates != null)
-            {
-                foreach (InsertTargetLocatorHelper.LocateDuplicateNote dup in located.Duplicates)
-                {
-                    if (dup == null || dup.ActionIndexes == null || dup.ActionIndexes.Count < 2)
-                    {
-                        continue;
-                    }
-
-                    var sb = new System.Text.StringBuilder();
-                    sb.Append("码 ").Append(dup.Codes ?? "").Append(" 在 ");
-                    for (int i = 0; i < dup.ActionIndexes.Count; i++)
-                    {
-                        if (i > 0)
-                        {
-                            sb.Append("、");
-                        }
-
-                        sb.Append("action[").Append(dup.ActionIndexes[i]).Append("]");
-                    }
-
-                    sb.Append(" 重复出现，这些条目都未写");
-                    string line = sb.ToString();
-                    foreach (int index in dup.ActionIndexes)
-                    {
-                        MarkReject(reject, reasons, index, line);
-                    }
                 }
             }
 

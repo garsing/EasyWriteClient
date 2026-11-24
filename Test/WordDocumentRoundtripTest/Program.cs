@@ -490,7 +490,7 @@ namespace WordDocumentRoundtripTest
             if (caseFilter.StartsWith("wl-", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(caseFilter, "wl", StringComparison.OrdinalIgnoreCase))
             {
-                Console.WriteLine("文字 一批定位重叠/重复/一次 PD（wl-）");
+                Console.WriteLine("文字 一批定位 Range 重叠双方不写、同码不拦（wl-）");
                 Console.WriteLine("经 Desktop 管道 " + DesktopToolPipe.PipeName + " 调本机已开的易写");
                 Console.WriteLine(host == "wps" ? "宿主 WPS 文字" : "宿主 Word");
                 if (!DesktopLauncher.EnsureAvailable())

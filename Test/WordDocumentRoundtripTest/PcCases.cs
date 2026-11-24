@@ -10,7 +10,7 @@ namespace WordDocumentRoundtripTest
     /// </summary>
     internal static class PcCases
     {
-        public const int Target = 20;
+        public const int Target = 21;
 
         private static HashSet<string> Only;
 
@@ -47,6 +47,7 @@ namespace WordDocumentRoundtripTest
 
             var s = new WdSession(host);
             RunBody(run, s);
+            RunSamePTwoText(run, s);
             RunTwoParaCell(run, s);
             RunLastOfManyDelete(run, s);
             RunOnlyCell(run, s);
@@ -88,6 +89,44 @@ namespace WordDocumentRoundtripTest
                 Ok(run, "pc-body-replace",
                     wrote.Success && doc.Has("正文寅已改") && !doc.Has("正文寅。"),
                     wrote.Success ? "正文整段没有换成新句" : (wrote.Error ?? ""));
+            }
+        }
+
+        /// <summary>
+        /// 同一 P_ 一批两处不重叠 text，同码不拦，应都写上。
+        /// </summary>
+        private static void RunSamePTwoText(TestRun run, WdSession s)
+        {
+            if (!Want("pc-same-p-two-text"))
+            {
+                return;
+            }
+
+            using (Planted doc = PlantBody(s, "见[3]和[4]。"))
+            {
+                if (!Ready(run, doc, "pc-same-p-two-text"))
+                {
+                    return;
+                }
+
+                string code = doc.Paragraph("见[3]和[4]");
+                if (string.IsNullOrEmpty(code))
+                {
+                    Ok(run, "pc-same-p-two-text", false, "抄不到段码");
+                    return;
+                }
+
+                ToolResult wrote = s.ProcessActions(
+                    doc.Id,
+                    new List<Dictionary<string, object>>
+                    {
+                        ReplaceSliceAction(code, "[3]", "[3改]"),
+                        ReplaceSliceAction(code, "[4]", "[4改]")
+                    });
+                Ok(run, "pc-same-p-two-text",
+                    wrote.Success && doc.Has("[3改]") && doc.Has("[4改]")
+                    && !doc.Has("[3]和") && !doc.Has("和[4]"),
+                    wrote.Success ? "同一段两处 text 没有都写上" : (wrote.Error ?? ""));
             }
         }
 
@@ -441,25 +480,27 @@ namespace WordDocumentRoundtripTest
             };
         }
 
-        private static List<Dictionary<string, object>> ReplaceSlice(string code, string text, string neu)
+        private static Dictionary<string, object> ReplaceSliceAction(string code, string text, string neu)
         {
-            return new List<Dictionary<string, object>>
+            return new Dictionary<string, object>
             {
-                new Dictionary<string, object>
+                ["type"] = "replace",
+                ["detail"] = new Dictionary<string, object>
                 {
-                    ["type"] = "replace",
-                    ["detail"] = new Dictionary<string, object>
+                    ["original"] = new Dictionary<string, object>
                     {
-                        ["original"] = new Dictionary<string, object>
-                        {
-                            ["paragraph_codes"] = code,
-                            ["text"] = text
-                        },
-                        ["new"] = neu,
-                        ["format"] = DefaultFormat()
-                    }
+                        ["paragraph_codes"] = code,
+                        ["text"] = text
+                    },
+                    ["new"] = neu,
+                    ["format"] = DefaultFormat()
                 }
             };
+        }
+
+        private static List<Dictionary<string, object>> ReplaceSlice(string code, string text, string neu)
+        {
+            return new List<Dictionary<string, object>> { ReplaceSliceAction(code, text, neu) };
         }
 
         private static List<Dictionary<string, object>> InsertAfter(string code, string insert)
