@@ -317,7 +317,65 @@ namespace WordAddIn1.DocumentMapping
                 return ToRoman(n).ToLowerInvariant();
             }
 
+            if (IsChineseCounting(fmt))
+            {
+                return ToChineseCounting(n);
+            }
+
             return n.ToString(CultureInfo.InvariantCulture);
+        }
+
+        private static bool IsChineseCounting(string fmt)
+        {
+            return string.Equals(fmt, "chineseCounting", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fmt, "chineseCountingThousand", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fmt, "japaneseCounting", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fmt, "taiwaneseCounting", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(fmt, "ideographDigital", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string ToChineseCounting(int n)
+        {
+            if (n <= 0)
+            {
+                return "零";
+            }
+
+            if (n >= 10000)
+            {
+                return n.ToString(CultureInfo.InvariantCulture);
+            }
+
+            string[] digit = { "零", "一", "二", "三", "四", "五", "六", "七", "八", "九" };
+            string[] unit = { "", "十", "百", "千" };
+            string s = n.ToString(CultureInfo.InvariantCulture);
+            var sb = new System.Text.StringBuilder();
+            bool zero = false;
+            for (int i = 0; i < s.Length; i++)
+            {
+                int d = s[i] - '0';
+                int place = s.Length - 1 - i;
+                if (d == 0)
+                {
+                    zero = sb.Length > 0;
+                    continue;
+                }
+
+                if (zero)
+                {
+                    sb.Append("零");
+                    zero = false;
+                }
+
+                if (!(d == 1 && place == 1 && sb.Length == 0))
+                {
+                    sb.Append(digit[d]);
+                }
+
+                sb.Append(unit[place]);
+            }
+
+            return sb.ToString();
         }
 
         private static string ToLetters(int n, char a)
